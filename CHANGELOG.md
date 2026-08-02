@@ -4,6 +4,15 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [Unreleased]
+
+### Changed
+
+- Replace the README banner's approximate waveform/play emblem with the exact packaged
+  application logo and identify YouTube Media Studio consistently as AI-powered.
+- Explain how hosted NVIDIA NIM, local Ollama, deterministic processing, and the
+  separate SerpApi credential help users while preserving evidence-based safety gates.
+
 ## [2.0.8] - 2026-08-03
 
 ### Fixed

@@ -8,6 +8,7 @@ downloads, return to the [main README](../README.md#download).
 
 - [First-time setup](#first-time-setup)
 - [How the interface works](#how-the-interface-works)
+- [How AI helps](#how-ai-helps)
 - [Screen reference](#screen-reference)
 - [Find and download a song](#find-and-download-a-song)
 - [Split an album or jukebox](#split-an-album-or-jukebox)
@@ -62,6 +63,37 @@ release.
 - A **Browse** button selects a local file or folder without requiring a typed path.
 - **Use AI for this task** affects the current supported workflow; it is not required
   for ordinary downloads, edits, playback, or deterministic metadata matching.
+
+## How AI helps
+
+AI is optional and is used only by workflows that show **Use AI for this task**. It can
+review a requested operation before work begins, compare local tags with internet and
+catalog evidence, identify conflicts, explain uncertain results, and perform an extra
+identity check before Album Consolidator moves a file. It does not replace the evidence
+rules: ambiguous files remain unchanged for manual review.
+
+The provider order is:
+
+1. **NVIDIA NIM (hosted):** save your own NVIDIA API key and model in **Global
+   Settings**. The app sends the verification context to the hosted provider. The key is
+   password-masked and is not printed in operation logs.
+2. **Ollama (local fallback):** install and run Ollama separately, make the selected
+   model available locally, and choose it under **Ollama fallback model**. No model API
+   key is required, and inference stays on the local computer. Catalog or web lookups
+   used by the workflow can still access the internet.
+3. **Static fallback:** if neither model is available, the app uses deterministic rules
+   and internet/catalog evidence only. You can select this behavior directly by leaving
+   **Use AI for this task** off.
+
+The **SerpApi key** is independent of both AI options. It authorizes Google Search and
+Google Images requests for missing album, movie, year, and artwork evidence; it does not
+run a language model. Provider and SerpApi usage may count against the respective user's
+plan or quota.
+
+Use Live Logs to confirm which path ran: `[AI-PROVIDER]`,
+`[AI-PROVIDER-FALLBACK]`, and `[AI-NOT-USED]` identify the effective mode, while
+`[AI-REVIEW]`, `[METADATA-REVIEW]`, or `[AGENT-REVIEW]` means the safety gate left the
+item unchanged.
 
 ## Screen reference
 

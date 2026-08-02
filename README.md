@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/media/readme-hero.svg" width="100%" alt="YouTube Media Studio — download, tag, split, play, and organize media">
+  <img src="docs/media/readme-hero.svg" width="100%" alt="YouTube Media Studio — an AI-powered app to download, tag, split, play, and organize media">
 </p>
 
 <p align="center">
@@ -14,12 +14,13 @@
   <a href="#using-the-desktop-app"><b>User guide</b></a> ·
   <a href="#see-it-running"><b>See it running</b></a> ·
   <a href="#what-it-does"><b>Features</b></a> ·
+  <a href="#how-ai-helps"><b>AI</b></a> ·
   <a href="#command-line"><b>CLI</b></a> ·
   <a href="#develop"><b>Develop</b></a> ·
   <a href="CHANGELOG.md"><b>Changelog</b></a>
 </p>
 
-**One studio for the entire media workflow.** YouTube Media Studio combines a modern
+**One AI-powered studio for the entire media workflow.** YouTube Media Studio combines a modern
 PyQt6 desktop application with a scriptable command line to download permitted media,
 write metadata and artwork, split albums and jukeboxes, edit files, detect duplicates,
 and manage a local playback library.
@@ -184,6 +185,28 @@ edit, consolidate, inspect logs, configure defaults, and play the finished libra
 
 The application stores settings and working data in a writable per-user directory,
 and the GUI can persist a custom location.
+
+## How AI helps
+
+AI is an optional verification assistant for workflows that expose **Use AI for this
+task**. It reviews metadata evidence, spots conflicting album or recording identities,
+explains why a file needs review, and adds a safety check before Album Consolidator
+moves files. Downloads, editing, splitting, playback, and deterministic catalog matching
+continue to work with AI switched off.
+
+| Mode | Setup | What happens |
+| --- | --- | --- |
+| **Local AI with Ollama** | Install and run Ollama separately, download a compatible model, then select it under **Global Settings → Ollama fallback model**. No model API key is required. | Prompts and model responses stay on the user's computer. Internet metadata sources are still contacted when the selected workflow requires them. |
+| **Hosted AI with an API key** | Add an NVIDIA NIM key and model under **Global Settings**. The credential field is password-masked. | The hosted model is used first; request context needed for verification is sent to that provider. If it is unavailable, the app can fall back to the selected local Ollama model. |
+| **No AI** | Leave **Use AI for this task** off. | Wikipedia, catalog, SerpApi (when separately configured), and deterministic rules perform the work without NVIDIA or Ollama calls. |
+
+AI does not invent missing tags or override conflicting evidence. If the available sources
+cannot establish a safe identity, the file remains unchanged and Live Logs reports a
+review outcome. A SerpApi key is separate from an AI-provider key: it enables authenticated
+Google Search and Google Images evidence, not language-model inference.
+
+See the [desktop user guide](docs/USER_GUIDE.md#how-ai-helps) for configuration,
+provider order, privacy notes, and log meanings.
 
 Album Enricher uses Wikipedia and Apple's public catalog by default. Users may add
 their own optional [SerpApi](https://serpapi.com/) key under **Global Settings** to use
