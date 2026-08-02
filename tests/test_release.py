@@ -27,7 +27,7 @@ def test_every_requested_platform_has_an_explicit_capability() -> None:
 def test_plan_json_is_machine_readable(capsys) -> None:
     release_tool.plan(json_output=True)
     payload = json.loads(capsys.readouterr().out)
-    assert payload["version"] == "2.0.0"
+    assert payload["version"] == release_tool.project_version()
     assert len(payload["targets"]) == 5
 
 

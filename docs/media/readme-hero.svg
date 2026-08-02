@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title description">
+  <title id="title">YouTube Media Studio</title>
+  <desc id="description">A desktop studio for downloading, tagging, splitting, playing, and organizing media.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#080c1a"/>
+      <stop offset="0.55" stop-color="#131a36"/>
+      <stop offset="1" stop-color="#102c3b"/>
+    </linearGradient>
+    <linearGradient id="play" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#9b5cff"/>
+      <stop offset="0.5" stop-color="#6757ff"/>
+      <stop offset="1" stop-color="#00d4d8"/>
+    </linearGradient>
+    <filter id="glow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="16"/>
+    </filter>
+  </defs>
+  <rect width="1200" height="360" rx="28" fill="url(#background)"/>
+  <circle cx="1060" cy="45" r="155" fill="#684bff" opacity="0.13" filter="url(#glow)"/>
+  <circle cx="135" cy="325" r="150" fill="#00c9d2" opacity="0.12" filter="url(#glow)"/>
+  <g opacity="0.22" stroke="#86dce5" stroke-width="2">
+    <path d="M70 280h18l11-38 18 76 20-116 19 82 17-46 16 42h52"/>
+    <path d="M950 278h22l14-56 18 91 21-132 20 95 18-52 18 54h67"/>
+  </g>
+  <g transform="translate(118 80)">
+    <circle cx="90" cy="90" r="86" fill="#10172e" stroke="#7281c9" stroke-opacity="0.35" stroke-width="2"/>
+    <circle cx="90" cy="90" r="68" fill="#6357ff" opacity="0.22" filter="url(#glow)"/>
+    <path d="M71 45L141 90 71 135Z" fill="url(#play)"/>
+    <path d="M39 104v-28M49 115V65M59 124V56M151 108V72M161 119V61" stroke="#66e3e6" stroke-width="7" stroke-linecap="round" opacity="0.9"/>
+  </g>
+  <g font-family="Segoe UI, Inter, Arial, sans-serif" fill="#f5f7ff">
+    <text x="338" y="126" font-size="58" font-weight="750" letter-spacing="-1">YouTube Media Studio</text>
+    <text x="341" y="179" font-size="25" fill="#b8c5eb">Your complete desktop media workflow—one polished workspace.</text>
+    <text x="341" y="233" font-size="20" fill="#8ee7e7">DOWNLOAD  ·  TAG  ·  SPLIT  ·  PLAY  ·  ORGANIZE</text>
+    <text x="341" y="286" font-size="17" fill="#9da9cc">Native installers for Windows, macOS, and Linux  •  Full CLI included</text>
+  </g>
+</svg>

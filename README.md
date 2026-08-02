@@ -1,150 +1,157 @@
-# YouTube Media Studio
+<p align="center">
+  <img src="docs/media/readme-hero.svg" width="100%" alt="YouTube Media Studio — download, tag, split, play, and organize media">
+</p>
 
-YouTube Media Studio is a desktop media toolkit with a PyQt6 GUI and a complete command-line interface. It downloads audio and video, writes metadata and cover art, splits albums and jukeboxes, finds duplicate links, normalizes artist names, and manages a local media library.
+<p align="center">
+  <a href="https://github.com/DhimanGhosh/YouTube_Media_Studio/releases/latest"><img src="https://img.shields.io/github/v/release/DhimanGhosh/YouTube_Media_Studio?display_name=tag&sort=semver&style=for-the-badge&color=6f5cff" alt="Latest release"></a>
+  <a href="https://github.com/DhimanGhosh/YouTube_Media_Studio/actions/workflows/cross-platform-build.yml"><img src="https://img.shields.io/github/actions/workflow/status/DhimanGhosh/YouTube_Media_Studio/cross-platform-build.yml?branch=main&style=for-the-badge&label=build&color=00aeb8" alt="Build status"></a>
+  <img src="https://img.shields.io/badge/Python-3.11%2B-3776ab?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.11 or newer">
+  <img src="https://img.shields.io/badge/GUI-PyQt6-41cd52?style=for-the-badge&logo=qt&logoColor=white" alt="PyQt6 GUI">
+</p>
 
-The supported product surfaces are:
+<p align="center">
+  <a href="#download"><b>Download</b></a> ·
+  <a href="#see-it-running"><b>See it running</b></a> ·
+  <a href="#what-it-does"><b>Features</b></a> ·
+  <a href="#command-line"><b>CLI</b></a> ·
+  <a href="#develop"><b>Develop</b></a> ·
+  <a href="CHANGELOG.md"><b>Changelog</b></a>
+</p>
 
-| Platform | GUI | CLI | Release artifact |
+**One studio for the entire media workflow.** YouTube Media Studio combines a modern
+PyQt6 desktop application with a scriptable command line to download permitted media,
+write metadata and artwork, split albums and jukeboxes, edit files, detect duplicates,
+and manage a local playback library.
+
+> **Everything required by the desktop app travels with the installer.** Python,
+> FFmpeg, FFprobe, Deno, yt-dlp, and application dependencies are bundled—no developer
+> environment and no administrator access are required.
+
+## See it running
+
+<p align="center">
+  <img src="docs/media/application-dashboard.png" width="100%" alt="YouTube Media Studio dashboard">
+</p>
+<p align="center"><em>The dashboard brings every downloader, splitter, metadata tool, log, and library action into one responsive workspace.</em></p>
+
+The same installation also provides a complete terminal interface:
+
+```console
+$ youtube-media-studio doctor
+FFmpeg:  .../runtime-tools/ffmpeg
+FFprobe: .../runtime-tools/ffprobe
+Deno:    .../runtime-tools/deno
+yt-dlp:  installed
+Bundled tools: .../runtime-tools
+```
+
+## Download
+
+Get the newest tested build from **[GitHub Releases](https://github.com/DhimanGhosh/YouTube_Media_Studio/releases/latest)**.
+
+| Your system | What to download | Interface | Installation |
 | --- | --- | --- | --- |
-| Windows 10/11 (x64) | Yes | Optional installer component | Setup `.exe` |
-| macOS (Intel and Apple silicon) | Yes | Optional installer component | Installer `.dmg` |
-| Desktop Linux (x64) | Yes | Optional installer component | Graphical `.run` installer |
-| Raspberry Pi OS (64-bit) | No | Yes | CLI installer `.tar.gz` |
+| **Windows 10/11 x64** | `YouTubeMediaStudio-*-windows-amd64-Setup.exe` | Desktop + optional CLI | Run the setup wizard |
+| **macOS Apple silicon** | `youtube-media-studio-*-macos-arm64-installer.dmg` | Desktop + optional CLI | Open DMG, launch Setup |
+| **macOS Intel** | `youtube-media-studio-*-macos-x86_64-installer.dmg` | Desktop + optional CLI | Open DMG, launch Setup |
+| **Desktop Linux x64** | `youtube-media-studio-*-linux-x86_64-installer.run` | Desktop + optional CLI | Make executable, then launch |
+| **Raspberry Pi OS 64-bit** | `youtube-media-tools-*-raspi-cli.tar.gz` | CLI only | Extract and run `install.sh` |
 
-Desktop installers contain Python, FFmpeg, FFprobe, Deno, the application, and its Python dependencies. End users do not need a development environment.
+Checksums for every artifact are published as `SHA256SUMS.txt` in the same release.
 
-## Features
+<details>
+<summary><b>Windows installation</b></summary>
 
-- Download and tag individual audio tracks.
-- Download video at a selected resolution.
-- Split full-album and compilation videos from timestamps.
-- Search for songs, albums, metadata, release years, and artwork.
-- Inspect, repair, reorder, and consolidate local media metadata.
-- Play audio and video from the desktop library.
-- Trim audio and edit batches through the GUI.
-- Use the same core workflows through scriptable CLI commands.
-- Store application settings and working data in a user-selected folder.
+1. Download and run the Windows setup executable.
+2. Choose the destination folder.
+3. Select the optional command-line tools if wanted.
+4. Select **Install**, then launch the app from the Start menu.
 
-Use downloads only when you have permission and follow the source service's terms and applicable law.
+The per-user installer does not request administrator access. Remove it later from
+**Settings → Apps → Installed apps → YouTube Media Studio**. The uninstaller can
+optionally retain or remove settings, history, and application data.
 
-## Install a released desktop build
+</details>
 
-Download the artifact for your operating system from the GitHub Releases page.
+<details>
+<summary><b>macOS installation</b></summary>
 
-### Windows
+1. Download the DMG matching your Mac architecture.
+2. Open it and launch `YouTubeMediaStudio-Setup.app`.
+3. Select the optional CLI if wanted, then choose **Install**.
+4. Launch `~/Applications/YouTubeMediaStudio.app`.
 
-1. Download `YouTubeMediaStudio-<version>-windows-amd64-Setup.exe`.
-2. Run the setup program.
-3. Enable **Install command-line interface and add it to my user PATH** if you want terminal commands.
-4. Select **Install**.
-5. Open **YouTube Media Studio** from the Start menu.
-6. Open a new PowerShell window and run `youtube-media-studio doctor` if you installed the CLI.
-
-The installer is per-user and does not require administrator access.
-
-To uninstall, open **Settings → Apps → Installed apps** or **Control Panel → Programs and Features**, select **YouTube Media Studio**, and choose **Uninstall**. The installed uninstaller removes the GUI, optional CLI, Start-menu shortcut, user `PATH` entry, and Installed Apps registration. Its optional checkbox also removes settings and application data.
-
-### macOS
-
-1. Download the DMG matching the Mac architecture.
-2. Open the DMG and launch `YouTubeMediaStudio-Setup.app`.
-3. Enable **Install command-line interface in ~/.local/bin** if wanted.
-4. Select **Install**.
-5. Open `~/Applications/YouTubeMediaStudio.app`.
-
-Release artifacts are unsigned until Apple signing is configured. On a test machine, macOS may require **System Settings → Privacy & Security → Open Anyway**. A public release should be signed and notarized before distribution.
-
-If the CLI was selected, ensure this line is present in `~/.zprofile`:
+Current releases are unsigned. macOS may require **System Settings → Privacy &
+Security → Open Anyway**. If the CLI is installed, add this to `~/.zprofile`:
 
 ```sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-Then open a new Terminal and run:
+</details>
+
+<details>
+<summary><b>Linux installation</b></summary>
 
 ```sh
-youtube-media-studio doctor
+chmod +x youtube-media-studio-*-installer.run
+./youtube-media-studio-*-installer.run
 ```
 
-To uninstall, open `~/Applications/Uninstall YouTube Media Studio.app`. It removes the application and optional CLI; enable its data-removal checkbox only when settings and history should also be deleted. If removing manually, move both `YouTubeMediaStudio.app` and `Uninstall YouTube Media Studio.app` to Trash, then remove `~/.local/bin/youtube-media-studio` if the CLI was installed.
+Choose the optional CLI during setup if wanted. The desktop app appears in the
+application menu; the CLI is installed to `~/.local/bin`.
 
-### Linux desktop
-
-1. Download `youtube-media-studio-<version>-linux-<architecture>-installer.run`.
-2. Make it executable:
-
-   ```sh
-   chmod +x youtube-media-studio-*-installer.run
-   ```
-
-3. Launch it from the desktop or terminal:
-
-   ```sh
-   ./youtube-media-studio-*-installer.run
-   ```
-
-4. Enable **Install command-line interface in ~/.local/bin** if wanted.
-5. Select **Install**.
-6. Launch YouTube Media Studio from the application menu.
-
-If the application does not start on a minimal distribution, install the standard Qt runtime system libraries for that distribution. For Debian/Ubuntu installations this commonly includes OpenGL, XCB, audio, and `libxcb-cursor0` support.
-
-Ensure `~/.local/bin` is in `PATH` before using the optional CLI.
-
-To uninstall, launch **Uninstall YouTube Media Studio** from the application menu. From a terminal, run:
+On a minimal distribution, standard Qt/OpenGL/XCB/audio libraries may also be
+required. The graphical uninstaller is available from the application menu, or run:
 
 ```sh
 ~/.local/opt/youtube-media-studio/youtube-media-studio-uninstaller --uninstall
 ```
 
-The uninstaller removes the GUI, optional CLI, and desktop-menu entries. Settings and history are retained unless **Also remove settings, history, and application data** is enabled.
+</details>
 
-## Install the Raspberry Pi CLI
+<details>
+<summary><b>Raspberry Pi CLI installation</b></summary>
 
-The Raspberry Pi package intentionally contains no GUI framework.
-
-1. Install 64-bit Raspberry Pi OS and Python 3.11 or newer.
-2. Download `youtube-media-tools-<version>-raspi-cli.tar.gz`.
-3. Extract and install it:
-
-   ```sh
-   tar -xzf youtube-media-tools-*-raspi-cli.tar.gz
-   cd youtube-media-tools-*-raspi-cli
-   ./install.sh
-   ```
-
-4. Add its command directory to `PATH`:
-
-   ```sh
-   echo 'export PATH="$HOME/.local/share/youtube-media-tools/bin:$PATH"' >> ~/.profile
-   . ~/.profile
-   ```
-
-5. Confirm the installation:
-
-   ```sh
-   youtube-media-studio --help
-   ```
-
-Uninstall from the command line:
+Use 64-bit Raspberry Pi OS with Python 3.11 or newer:
 
 ```sh
-youtube-media-studio-uninstall
+tar -xzf youtube-media-tools-*-raspi-cli.tar.gz
+cd youtube-media-tools-*-raspi-cli
+./install.sh
+echo 'export PATH="$HOME/.local/share/youtube-media-tools/bin:$PATH"' >> ~/.profile
+. ~/.profile
+youtube-media-studio doctor
 ```
 
-This removes the managed virtual environment and its uninstall command. User-created media and configuration files outside that environment are not removed.
+The Pi package intentionally excludes PyQt6. FFmpeg, FFprobe, and Deno must be
+available on the Pi. Remove the package with `youtube-media-studio-uninstall`.
 
-FFmpeg, FFprobe, and Deno must be available on Raspberry Pi OS. Install FFmpeg with `sudo apt install ffmpeg`; use a Deno package appropriate for the Pi architecture.
+</details>
 
-## CLI overview
+## What it does
 
-The installed desktop CLI and source-tree launcher use one command:
+| Workspace | Capability |
+| --- | --- |
+| **Audio Downloader** | Download permitted audio, write tags, embed artwork, and normalize filenames |
+| **Video Downloader** | Inspect formats and download video or audio at a selected quality |
+| **Album Splitter** | Turn a full-album source and timestamps into individual tagged tracks |
+| **Jukebox Splitter** | Split compilation videos and organize the resulting songs |
+| **Search Song** | Find tracks, albums, release years, performers, and cover artwork |
+| **Metadata tools** | Inspect, repair, reorder, retag, trim, rename, and consolidate local media |
+| **Media Library** | Browse, search, play, and manage local audio and video |
+| **Utilities** | Detect duplicate links, normalize artist names, and convert timestamps to JSON |
+| **Live Logs** | Follow background operations and diagnose failures without leaving the app |
+| **Automation** | Run the same core workflows through stable CLI commands and JSON job files |
+
+The application stores settings and working data in a writable per-user directory,
+and the GUI can persist a custom location.
+
+## Command line
 
 ```text
 youtube-media-studio [--data-dir FOLDER] <command> [options]
 ```
-
-Commands:
 
 | Command | Purpose |
 | --- | --- |
@@ -157,8 +164,6 @@ Commands:
 | `timestamps` | Convert timestamp text to track JSON |
 | `doctor` | Verify FFmpeg, FFprobe, Deno, and yt-dlp |
 
-Examples:
-
 ```sh
 youtube-media-studio audio config/songs.json
 youtube-media-studio video config/videos.json
@@ -166,9 +171,40 @@ youtube-media-studio album config/albums.json
 youtube-media-studio doctor
 ```
 
-Use `youtube-media-studio <command> --help` for every option.
+Run `youtube-media-studio <command> --help` for command-specific options.
 
-## Developer setup
+## How the release pipeline works
+
+Every successful push to `main` produces a complete, versioned release:
+
+```mermaid
+flowchart LR
+    A[Push to main] --> B[348 tests and 8 subtests]
+    B --> C[Select semantic version]
+    C --> D1[Windows installer]
+    C --> D2[Linux installer]
+    C --> D3[macOS Intel DMG]
+    C --> D4[macOS ARM64 DMG]
+    C --> D5[Python and Pi CLI]
+    D1 --> E[Checksums and changelog]
+    D2 --> E
+    D3 --> E
+    D4 --> E
+    D5 --> E
+    E --> F[Tag and GitHub Release]
+```
+
+Versions follow conventional commit intent:
+
+- `feat: ...` creates a **minor** release.
+- `type!: ...` or `BREAKING CHANGE:` creates a **major** release.
+- Other successful changes create a **patch** release.
+- Any failed test or platform build prevents the tag and release.
+
+The chosen version is included in every installer filename, Python package, checksum
+manifest, changelog entry, Git tag, and release title.
+
+## Develop
 
 ### Prerequisites
 
@@ -177,266 +213,104 @@ Use `youtube-media-studio <command> --help` for every option.
 - [uv](https://docs.astral.sh/uv/)
 - Git
 
-No Linux compatibility layer is required on Windows. Development and release commands run natively on the host operating system.
-
-### Clone and install
-
 ```sh
-git clone <your-repository-url>
+git clone https://github.com/DhimanGhosh/YouTube_Media_Studio.git
 cd YouTube_Media_Studio
 uv sync --extra gui --group dev
-```
-
-Run the GUI:
-
-```sh
 uv run python run_gui.py
 ```
 
-Run the unified launcher or a CLI command:
+Run the CLI from the checkout:
 
 ```sh
 uv run youtube-media-studio --help
 uv run youtube-media-studio doctor
 ```
 
-### Install or remove the CLI from a cloned repository
+Tracked job templates live in `config/*.sample.json`. Copy only the templates you
+need to their non-sample names; those local files are ignored by Git.
 
-For a persistent CLI installation managed by `uv`:
+<details>
+<summary><b>Quality checks and native builds</b></summary>
 
-```sh
-uv tool install .
-youtube-media-studio doctor
-```
-
-Remove that installation with:
-
-```sh
-uv tool uninstall youtube-media-studio
-```
-
-To install both project entry points and PyQt6 into a `uv`-managed tool environment, use:
-
-```sh
-uv tool install --with PyQt6 .
-youtube-media-studio-gui
-```
-
-Remove it with the same `uv tool uninstall youtube-media-studio` command.
-
-On the first source run, the project can download a local FFmpeg/FFprobe runtime through `portable-ffmpeg`. Deno is supplied by the Python dependency declared in `pyproject.toml`.
-
-### Create local job files
-
-Tracked examples live in `config/*.sample.json`. Copy only the files you need; the non-sample names are ignored so personal links, paths, and metadata are not committed.
-
-PowerShell:
-
-```powershell
-Copy-Item config/songs.sample.json config/songs.json
-Copy-Item config/albums.sample.json config/albums.json
-Copy-Item config/videos.sample.json config/videos.json
-Copy-Item config/jukeboxes.sample.json config/jukeboxes.json
-```
-
-macOS/Linux:
-
-```sh
-cp config/songs.sample.json config/songs.json
-cp config/albums.sample.json config/albums.json
-cp config/videos.sample.json config/videos.json
-cp config/jukeboxes.sample.json config/jukeboxes.json
-```
-
-## Quality checks
-
-Run the same checks used by CI:
+Run the same gate used by GitHub Actions:
 
 ```sh
 uv run python tools/release.py check
 ```
 
-Or run them separately:
-
-```sh
-uv run --group dev ruff check src tests tools
-uv run --group dev pytest -q
-```
-
-## Build releases locally
-
-PyInstaller builds are native: build each desktop installer on its matching operating system. Cross-compilation is not used.
-
-List the release matrix and commands:
+Build for the current desktop operating system:
 
 ```sh
 uv run python tools/release.py plan
-uv run python tools/release.py build --list-targets
-```
-
-Build the installer for the current desktop:
-
-```sh
 uv run python tools/release.py build --target current
 ```
 
-Or use an explicit target on its native host:
-
-```sh
-uv run python tools/release.py build --target windows
-uv run python tools/release.py build --target macos
-uv run python tools/release.py build --target linux
-```
-
-Build the Python package and Raspberry Pi CLI archive:
+Or build a non-desktop artifact:
 
 ```sh
 uv run python tools/release.py build --target wheel
 uv run python tools/release.py build --target raspi
 ```
 
-Artifacts, SHA-256 checksums, and `build-manifest.json` are written to `dist/`.
+Desktop builds are native—Windows installers build on Windows, DMGs on macOS, and
+Linux installers on Linux. Outputs and SHA-256 manifests are written to `dist/`.
 
-The desktop build performs four stages:
+</details>
 
-1. Freeze the PyQt6 application and bundled media runtimes.
-2. Freeze a console-enabled CLI with the same bundled runtimes.
-3. Freeze and embed a platform-integrated graphical uninstaller.
-4. Embed all payloads in a graphical per-user installer. The CLI is copied only when its checkbox is selected.
-
-After cloning, build and launch the native setup program from the command line:
-
-`clean` removes the complete `dist/` directory, including previously built installers. Run it before a fresh release build, not after one you intend to keep.
-
-Windows PowerShell:
-
-```powershell
-uv run python tools/release.py clean
-uv run python tools/release.py check
-uv run python tools/release.py build --target windows
-& .\dist\YouTubeMediaStudio-*-Setup.exe
-```
-
-Confirm that the Windows setup contains its GUI, CLI, and uninstaller payloads:
-
-```powershell
-$setup = Get-Item .\dist\YouTubeMediaStudio-*-Setup.exe
-$result = Start-Process -FilePath $setup.FullName -ArgumentList '--check' -Wait -PassThru
-$result.ExitCode  # 0 means the payload check passed
-Get-FileHash $setup.FullName -Algorithm SHA256
-```
-
-macOS:
-
-```sh
-uv run python tools/release.py clean
-uv run python tools/release.py check
-uv run python tools/release.py build --target macos
-open dist/youtube-media-studio-*-installer.dmg
-shasum -a 256 dist/youtube-media-studio-*-installer.dmg
-```
-
-Linux:
-
-```sh
-uv run python tools/release.py clean
-uv run python tools/release.py check
-uv run python tools/release.py build --target linux
-chmod +x dist/youtube-media-studio-*-installer.run
-./dist/youtube-media-studio-*-installer.run --check
-./dist/youtube-media-studio-*-installer.run
-sha256sum dist/youtube-media-studio-*-installer.run
-```
-
-Raspberry Pi CLI archive (build on any development host, then copy to the Pi):
-
-```sh
-uv run python tools/release.py clean
-uv run python tools/release.py check
-uv run python tools/release.py build --target raspi
-tar -tf dist/youtube-media-tools-*-raspi-cli.tar.gz
-sha256sum dist/youtube-media-tools-*-raspi-cli.tar.gz
-```
-
-Every build also writes `dist/SHA256SUMS.txt` and `dist/build-manifest.json`. The build command performs its own frozen CLI/runtime and embedded-installer payload checks before it reports success.
-
-## GitHub Actions and releases
-
-`.github/workflows/cross-platform-build.yml` provides:
-
-- lint and tests for pull requests;
-- full tests before every release build from `main`;
-- native Windows, Linux, Intel Mac, and Apple-silicon Mac installer builds;
-- Python wheel/source and Raspberry Pi CLI builds;
-- artifact checksums;
-- automatic version, changelog, Git tag, and GitHub Release creation after every successful `main` build.
-
-Automatic versions follow semantic versioning based on commit messages:
-
-- `type!: ...` or a `BREAKING CHANGE:` commit body increments the major version;
-- `feat: ...` increments the minor version;
-- all other successful `main` changes increment the patch version.
-
-Use conventional commit subjects so release intent and changelog sections remain clear:
-
-```sh
-git add .
-git commit -m "feat(gui): add a new batch operation"
-git push origin main
-```
-
-After tests and all four platform-family builds pass, the workflow updates `pyproject.toml`, `uv.lock`, and `CHANGELOG.md`, pushes a release commit and `vMAJOR.MINOR.PATCH` tag, and publishes the setup files. A failed test or failed platform build creates no tag or release.
-
-The workflow can also be started manually from the Actions tab on `main`, with `auto`, `patch`, `minor`, or `major` selected explicitly. Repository **Workflow permissions** must allow GitHub Actions to write repository contents. If `main` is protected, allow the GitHub Actions bot to push the generated release commit and tag, or adapt the final job to use a release pull request.
-
-For production distribution, configure Windows code signing and Apple signing/notarization in your release process. The repository does not contain private signing material.
-
-## Project layout
+## Project map
 
 ```text
-assets/                              Desktop icons and integration assets
-config/                              Tracked examples; local job files are ignored
-src/youtube_audio_video_downloader/  Application package
-  cli/                               CLI entry points
-  config/                            Settings and runtime-tool discovery
-  core/                              Shared filesystem and cancellation utilities
+assets/                              App icons and desktop integration
+config/                              Tracked JSON job templates
+docs/media/                          README artwork and product screenshots
+src/youtube_audio_video_downloader/
+  cli/                               Command-line entry points
+  config/                            Settings and runtime discovery
+  core/                              Shared filesystem and cancellation tools
   domain/                            Data models
   gui/                               PyQt6 desktop application
   loaders/                           Job-file loading
   metadata/                          Media tagging
-  services/                          Download, editing, search, and library services
+  services/                          Download, editing, search, and library logic
   utils/                             Parsing and normalization helpers
 tests/                               Automated test suite
-tools/desktop_installer.py           Cross-platform graphical installer
-tools/release.py                     Validation and release entry point
+tools/desktop_installer.py           Native graphical installer/uninstaller
+tools/release.py                     Validation, packaging, and release entry point
 ```
 
 ## Application data
 
-Installed builds use a writable per-user data directory:
+| Platform | Default location |
+| --- | --- |
+| Windows | `%APPDATA%\DhimanTools\YouTube Media Studio` |
+| macOS | `~/Library/Application Support/DhimanTools/YouTube Media Studio` |
+| Linux | `$XDG_DATA_HOME/DhimanTools/YouTube Media Studio` or `~/.local/share/...` |
 
-- Windows: `%APPDATA%\DhimanTools\YouTube Media Studio`
-- macOS: `~/Library/Application Support/DhimanTools/YouTube Media Studio`
-- Linux: `$XDG_DATA_HOME/DhimanTools/YouTube Media Studio` or `~/.local/share/...`
-
-Use `--data-dir FOLDER` for a one-run CLI override. The GUI can persist a different storage location.
+Use `--data-dir FOLDER` for a one-run CLI override.
 
 ## Troubleshooting
 
-Run this first:
+Start with:
 
 ```sh
 youtube-media-studio doctor
 ```
 
-It should report paths for FFmpeg, FFprobe, and Deno plus the installed yt-dlp version.
+- Reopen the terminal after enabling the Windows CLI so the updated user `PATH` loads.
+- Add `~/.local/bin` to `PATH` when a macOS/Linux shell cannot find the CLI.
+- Begin with the tracked sample files and keep job JSON encoded as UTF-8.
+- Update yt-dlp frequently when running from source because source sites change.
+- Include the generated crash report, operating system, and exact command when reporting an issue.
 
-- Reopen the terminal after enabling the Windows CLI so the updated user `PATH` is loaded.
-- Add `~/.local/bin` to `PATH` on macOS/Linux if the shell cannot find the CLI.
-- Keep job JSON valid UTF-8 and begin from the sample files.
-- Update yt-dlp frequently when running from source because video sites change.
-- Include the generated crash report and exact command when reporting a reproducible failure.
+## Responsible use and third-party software
 
-## Third-party software
+Download only material you are authorized to access. Follow source-service terms and
+applicable law. Packaged releases contain third-party runtimes; their sources,
+copyrights, and licenses are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-Packaged releases include third-party runtimes. See `THIRD_PARTY_NOTICES.md` for source and licensing details.
+---
+
+<p align="center">
+  Built as a native-feeling desktop application for Windows, macOS, and Linux—with the same workflows available from the command line.
+</p>
