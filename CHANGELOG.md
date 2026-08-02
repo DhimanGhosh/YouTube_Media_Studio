@@ -20,6 +20,8 @@ abbreviated hashes to the next version section.
 
 - Prevent Windows upgrades from failing with `WinError 5: Access is denied` when the
   installed YouTube Media Studio executable is still running.
+- Keep the Windows installer simulation isolated from the host operating system so the
+  cross-platform release gate does not import Windows-only registry modules on Linux.
 
 ## [2.0.5] - 2026-08-02
 

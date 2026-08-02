@@ -54,6 +54,7 @@ def test_windows_install_copies_gui_cli_uninstaller_and_registers(monkeypatch, t
     monkeypatch.setattr(installer, "cli_payload", lambda: cli)
     monkeypatch.setattr(installer, "uninstaller_payload", lambda: uninstaller)
     monkeypatch.setattr(installer, "default_gui_destination", lambda: destination)
+    monkeypatch.setattr(installer, "existing_installation_destination", lambda: None)
     monkeypatch.setattr(installer, "cli_destination", lambda: destination / cli.name)
     monkeypatch.setattr(
         installer, "uninstaller_destination", lambda: destination / uninstaller.name
