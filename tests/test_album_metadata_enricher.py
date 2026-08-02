@@ -62,6 +62,54 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
         self.assertEqual(_title_track_album_hint("Prem Amar (Title Song)"), "Prem Amar")
         self.assertEqual(_title_track_album_hint("An Ordinary Song"), "")
 
+    @patch(
+        "youtube_audio_video_downloader.services.album_metadata_enricher.find_album_art",
+        return_value="https://example.test/lorai.jpg",
+    )
+    @patch(
+        "youtube_audio_video_downloader.services.album_metadata_enricher."
+        "find_serpapi_song_metadata",
+        return_value={
+            "title": "Jonaki",
+            "album": "Lorai",
+            "artists": "Papon",
+            "year": "2014",
+            "source": "SerpApi Google Search",
+        },
+    )
+    @patch(
+        "youtube_audio_video_downloader.services.album_metadata_enricher."
+        "serpapi_is_configured",
+        return_value=True,
+    )
+    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.replace_media_metadata")
+    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.read_media_metadata")
+    def test_serpapi_fills_missing_album_year_and_artwork(
+        self, read_mock, replace_mock, _configured_mock, serp_mock, _art_mock
+    ) -> None:
+        read_mock.return_value = EditableMediaMetadata()
+        with tempfile.TemporaryDirectory() as directory:
+            original = Path(directory) / "Jonaki - Papon.mp3"
+            original.write_bytes(b"media")
+
+            report = enrich_folder_metadata(
+                directory, workers=1, ai_enabled=False
+            )
+
+            renamed = Path(directory) / "Jonaki - Lorai (2014) - Papon.mp3"
+            self.assertEqual(report.updated, (renamed,))
+            serp_mock.assert_called_once_with("Jonaki", "Papon")
+            replace_mock.assert_called_once_with(
+                original,
+                {
+                    "title": "Jonaki",
+                    "album": "Lorai (2014)",
+                    "artists": "Papon",
+                    "year": "2014",
+                },
+                artwork_path="https://example.test/lorai.jpg",
+            )
+
     @patch("youtube_audio_video_downloader.services.album_metadata_enricher.replace_media_metadata")
     @patch("youtube_audio_video_downloader.services.album_metadata_enricher.read_media_metadata")
     def test_mixed_language_album_tracks_receive_language_qualifiers(

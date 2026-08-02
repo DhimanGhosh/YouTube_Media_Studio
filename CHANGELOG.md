@@ -1,6 +1,41 @@
 # Changelog
 
-All notable changes to YouTube Media Studio are recorded here. Automated releases add commit subjects and abbreviated commit hashes to the next version section.
+All notable changes to YouTube Media Studio are recorded here. Automated releases
+promote curated `Unreleased` notes when present; otherwise they add commit subjects and
+abbreviated hashes to the next version section.
+
+## [Unreleased]
+
+### Added
+
+- Add an optional password-masked SerpApi key field to Global Settings so each user
+  can supply their own Google Search API access without placing the credential in
+  operation parameters or logs.
+- Add conservative SerpApi song-metadata evidence for Album Enricher when the built-in
+  Wikipedia and Apple catalog lookup cannot identify a usable album.
+- Extract exact title, artist, film/album, and release-year relationships from
+  structured Google knowledge data or independently agreeing search results, then use
+  the resolved album with the existing artwork lookup.
+- Add authenticated Google Images artwork fallback through SerpApi, accepting only
+  safe square original images when the Apple catalog has no suitable cover.
+
+### Changed
+
+- Treat SerpApi as an optional third verification source for both deterministic and
+  AI-assisted enrichment while continuing to protect populated local album metadata.
+- Use paid Google searches only as a fallback when the Apple catalog did not produce a
+  usable album, avoiding unnecessary SerpApi quota consumption.
+
+### Fixed
+
+- Promote curated `Unreleased` notes into the automatically selected release version
+  so detailed user-facing changes are not left behind when GitHub Actions publishes a
+  successful `main` build.
+
+### Security
+
+- Mask the SerpApi credential in the GUI and suppress request URLs and exception text
+  that could expose the API key when a SerpApi request fails.
 
 ## [2.0.2] - 2026-08-02
 

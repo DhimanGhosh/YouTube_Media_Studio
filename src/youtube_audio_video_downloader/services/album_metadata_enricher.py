@@ -52,6 +52,10 @@ from youtube_audio_video_downloader.services.media_metadata import (
     replace_media_metadata,
 )
 from youtube_audio_video_downloader.services.release_year_finder import find_album_release_year
+from youtube_audio_video_downloader.services.serpapi_metadata import (
+    find_serpapi_song_metadata,
+    serpapi_is_configured,
+)
 from youtube_audio_video_downloader.services.track_reorder import reorder_track_numbers
 from youtube_audio_video_downloader.services.wikipedia_tracks import (
     find_wikipedia_song_metadata,
@@ -681,7 +685,40 @@ def _enrich_one_file(
         catalog_match = {**catalog_match, "album": catalog_album}
         album_verified = True
 
-    evidence = {**catalog_match, **wiki_match}
+    serpapi_match: dict[str, str] = {}
+    # Paid Google searches are a fallback, not the first request for every file.
+    # Use them when the built-in sources failed to identify one coherent album.
+    if (
+        serpapi_is_configured()
+        and not protected_existing_album
+        and not catalog_album
+    ):
+        serpapi_match = find_serpapi_song_metadata(lookup_title, artists_hint)
+        serpapi_album, _serpapi_year = split_album_folder_name(
+            normalize_album_name(_known(serpapi_match.get("album")))
+        )
+        if album_contains_artist(
+            serpapi_album, artists_hint or _known(serpapi_match.get("artists"))
+        ):
+            serpapi_match = {}
+        elif serpapi_album:
+            serpapi_match = {**serpapi_match, "album": serpapi_album}
+            album_verified = True
+            agent_catalog_album, _agent_catalog_year = split_album_folder_name(
+                normalize_album_name(_known(agent_catalog_match.get("album")))
+            )
+            if (
+                candidate_album
+                and _track_key(candidate_album) == _track_key(serpapi_album)
+                and agent_catalog_album
+                and _track_key(agent_catalog_album) != _track_key(serpapi_album)
+            ):
+                # Two independent sources agree while the storefront points to
+                # another recording/version. Do not let that rejected collection
+                # force the final verifier back into review.
+                agent_catalog_match = {}
+
+    evidence = {**catalog_match, **serpapi_match, **wiki_match}
     # An Apple collection record describes the album as a whole. Wikipedia
     # discography/list pages often describe the individual track's release
     # year, which must not fragment one collection into multiple album years.
@@ -722,6 +759,7 @@ def _enrich_one_file(
             local_evidence,
             agent_wiki_match,
             agent_catalog_match,
+            serpapi=serpapi_match,
             model=agentic_model,
             catalog_duration_matches=(
                 _catalog_recording_matches_file(path, agent_catalog_match)

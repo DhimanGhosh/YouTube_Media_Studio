@@ -28,7 +28,9 @@ downloads, return to the [main README](../README.md#download).
 1. Start **YouTube Media Studio** from the Windows Start menu, macOS Applications, or
    the Linux application menu.
 2. Open **Global Settings** and confirm the application data directory, download
-   defaults, audio choices, network retries, and worker limits.
+   defaults, audio choices, network retries, and worker limits. Optionally add your
+   own SerpApi key to let Album Enricher use Google Search when its built-in sources
+   cannot identify a release.
 3. AI assistance is optional. Leave **Use AI for this task** off for deterministic
    internet/catalog matching. To use AI, configure a provider and model in **Global
    Settings** first.
@@ -68,7 +70,7 @@ background, so changing pages does not cancel an operation.
 | **Album Consolidator** | Enriches local metadata and routes verified files into album folders. | Select the source, run the enricher, inspect review items, select a destination, then move verified tracks. |
 | **Utilities** | Checks duplicate source links, formats artist names, and converts timestamp text. | Choose the relevant tab, paste or load input, run the tool, then copy or save its result. |
 | **Live Logs** | Explains what an operation changed, skipped, or could not verify. | Filter or copy the relevant block when troubleshooting or reporting a bug. |
-| **Global Settings** | Controls output defaults, concurrency, retries, networking, audio, and optional AI providers. | Change and save a setting before starting the workflow that uses it. A provider key is needed only for that provider. |
+| **Global Settings** | Controls output defaults, concurrency, retries, networking, audio, optional AI providers, and optional SerpApi search. | Paste your own provider credential into its password-masked field and select **Save and apply defaults**. A key is needed only for that provider. |
 | **Media Library** | Scans, browses, searches, plays, queues, and manages local media. | Add library locations, search by track/artist/album, then use the player or context actions. |
 
 ## Find and download a song
@@ -116,6 +118,17 @@ The Album Consolidator has two separate stages. **Album enricher** repairs metad
 does not move files. **Move into album folders** routes approved files to the selected
 library.
 
+By default, enrichment searches Wikipedia and Apple's music catalog. When a SerpApi
+key is saved in **Global Settings**, Google Search is used only as a fallback if Apple
+does not return a usable album. The key belongs to the user and SerpApi usage may count
+against that user's plan or quota. If Apple has no suitable cover, the same key also
+enables authenticated Google Images lookup; only safe square original images are used.
+
+The key is password-masked in the interface and saved in the application's local
+settings file so it can be restored after restart. It is not added to media-operation
+parameters or logs. Anyone who can read your operating-system account files may be able
+to read the settings file, so do not share it and revoke the key if it is exposed.
+
 1. Under **1. Album enricher**, select the source folder containing incoming tracks.
 2. Run **Album enricher** and inspect `[METADATA-REVIEW]` or `[ENRICH-SKIPPED]` lines.
    Correct unresolved files with **Edit File**, improve their filenames, or rerun when
@@ -140,6 +153,8 @@ the safety gate left a file in the source.
 - Internet/catalog candidates conflict or do not match the recording duration.
 - The AI verifier requested review even though its text mentions supporting evidence.
 - The configured AI provider failed and a fallback model produced a different result.
+- SerpApi was not configured, rejected the key, exhausted its quota, or did not return
+  independently agreeing exact results.
 - The file has an invalid or artist-contaminated album value.
 - The operation could not read the media or its metadata.
 
@@ -168,6 +183,10 @@ report the complete log block.
 | `[AI-REVIEW]` / `[METADATA-REVIEW]` | Evidence was ambiguous or incomplete and needs review. |
 | `[AGENT-REVIEW]` | An AI-enabled safety gate did not approve the file, so it remains in the source. |
 | `[AI-PROVIDER-FALLBACK]` | The selected provider was unavailable and a configured fallback was used. |
+| `[SERPAPI-MATCH]` | Exact Google evidence supplied a missing album/movie identity. |
+| `[SERPAPI-NO-MATCH]` | Google results did not satisfy the exact title/artist and evidence-agreement rules. |
+| `[SERPAPI-UNAVAILABLE]` | The optional SerpApi request failed or was rejected; the API key is never printed. |
+| `[SERPAPI-ART]` / `[SERPAPI-NO-ART]` | Authenticated Google Images found a safe square cover, or returned no acceptable cover. |
 | `[ERROR]` / `[FAILED]` | The operation could not finish that item. Copy the surrounding lines when opening an issue. |
 
 `[COMPLETE]` describes the end of a task, not a guarantee that every input file was

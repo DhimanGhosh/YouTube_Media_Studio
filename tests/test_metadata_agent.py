@@ -82,6 +82,28 @@ class MetadataAgentTest(unittest.TestCase):
         self.assertEqual(result.action, "review")
         self.assertLess(result.confidence, 0.85)
 
+    @patch("youtube_audio_video_downloader.services.metadata_agent.chat_json")
+    def test_accepts_serpapi_fields_without_allowing_invention(self, chat_mock) -> None:
+        chat_mock.return_value = response({
+            "action": "apply", "title": "Jonaki", "album": "Lorai",
+            "artists": "Papon", "year": "2014", "language": "",
+            "confidence": 0.94, "reason": "Exact Google evidence",
+            "sources": ["serpapi"],
+        })
+
+        result = adjudicate_metadata(
+            {}, {}, {},
+            serpapi={
+                "title": "Jonaki", "album": "Lorai",
+                "artists": "Papon", "year": "2014",
+            },
+            model="qwen",
+        )
+
+        self.assertEqual(result.action, "apply")
+        self.assertEqual(result.metadata["album"], "Lorai")
+        self.assertEqual(result.sources, ("serpapi",))
+
 
 if __name__ == "__main__":
     unittest.main()

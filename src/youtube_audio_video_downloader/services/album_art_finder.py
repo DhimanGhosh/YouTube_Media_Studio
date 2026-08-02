@@ -255,6 +255,18 @@ def find_album_art(
         )
     except (AlbumArtNotFoundError, OSError):
         pass
+    from youtube_audio_video_downloader.services.serpapi_metadata import (
+        find_serpapi_album_art,
+    )
+
+    serpapi_art = find_serpapi_album_art(
+        name,
+        release_year,
+        timeout,
+        exclude_url=exclude_url,
+    )
+    if serpapi_art:
+        return serpapi_art
     query = quote_plus(f"{name} {release_year.strip()} album art".replace("  ", " "))
     request = Request(
         f"https://www.google.com/search?tbm=isch&hl=en&safe=active&q={query}",

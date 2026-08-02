@@ -17,7 +17,7 @@ from youtube_audio_video_downloader.services.metadata_agent import adjudicate_me
 
 
 _FIELDS = ("title", "album", "artists", "year", "language")
-_SOURCE_NAMES = ("wikipedia", "catalog")
+_SOURCE_NAMES = ("wikipedia", "catalog", "serpapi")
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +38,7 @@ def verify_metadata(
     wikipedia: Mapping[str, object],
     catalog: Mapping[str, object],
     *,
+    serpapi: Mapping[str, object] | None = None,
     model: str,
     catalog_duration_matches: bool | None = None,
 ) -> MetadataVerificationDecision:
@@ -51,7 +52,11 @@ def verify_metadata(
     cleaned_local = _clean(local)
     accepted: dict[str, dict[str, str]] = {}
     rejected: list[str] = []
-    for name, source in (("wikipedia", wikipedia), ("catalog", catalog)):
+    for name, source in (
+        ("wikipedia", wikipedia),
+        ("catalog", catalog),
+        ("serpapi", serpapi or {}),
+    ):
         candidate = _clean(source)
         conflict = _local_conflict(cleaned_local, candidate)
         if conflict:
@@ -78,6 +83,7 @@ def verify_metadata(
         cleaned_local,
         accepted.get("wikipedia", {}),
         accepted.get("catalog", {}),
+        serpapi=accepted.get("serpapi", {}),
         model=selected_model,
         catalog_duration_matches=(
             catalog_duration_matches if "catalog" in accepted else None
@@ -212,6 +218,7 @@ def verify_metadata_evidence(
     wikipedia: Mapping[str, object],
     catalog: Mapping[str, object],
     *,
+    serpapi: Mapping[str, object] | None = None,
     model: str,
     catalog_duration_matches: bool | None = None,
 ) -> MetadataVerificationDecision:
@@ -221,6 +228,7 @@ def verify_metadata_evidence(
         local,
         wikipedia,
         catalog,
+        serpapi=serpapi,
         model=model,
         catalog_duration_matches=catalog_duration_matches,
     )

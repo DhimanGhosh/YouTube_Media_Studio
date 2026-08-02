@@ -231,6 +231,28 @@ class AlbumArtFinderTest(unittest.TestCase):
         )
 
     @patch("youtube_audio_video_downloader.services.album_art_finder.urlopen")
+    @patch(
+        "youtube_audio_video_downloader.services.serpapi_metadata."
+        "find_serpapi_album_art",
+        return_value="https://example.test/serpapi-cover.jpg",
+    )
+    @patch(
+        "youtube_audio_video_downloader.services.album_art_finder."
+        "_find_catalog_album_art",
+        side_effect=OSError("catalog unavailable"),
+    )
+    def test_find_album_art_uses_serpapi_before_unauthenticated_google(
+        self, _catalog_mock, serpapi_mock, google_open_mock
+    ) -> None:
+        result = find_album_art("Lorai", release_year="2014")
+
+        self.assertEqual(result, "https://example.test/serpapi-cover.jpg")
+        serpapi_mock.assert_called_once_with(
+            "Lorai", "2014", 12.0, exclude_url=""
+        )
+        google_open_mock.assert_not_called()
+
+    @patch("youtube_audio_video_downloader.services.album_art_finder.urlopen")
     def test_catalog_metadata_can_skip_current_album(self, urlopen_mock) -> None:
         class Response:
             def __enter__(self):

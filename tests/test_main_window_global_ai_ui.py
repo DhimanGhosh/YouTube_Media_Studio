@@ -30,7 +30,9 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def setUp(self) -> None:
-        self.environment_patch = patch.dict(os.environ, {"NVIDIA_API_KEY": ""})
+        self.environment_patch = patch.dict(
+            os.environ, {"NVIDIA_API_KEY": "", "SERPAPI_API_KEY": ""}
+        )
         self.environment_patch.start()
         self.temporary_directory = tempfile.TemporaryDirectory()
         settings = QSettings(
@@ -106,6 +108,10 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
             self.window.settings_nvidia_api_key.echoMode(),
             QLineEdit.EchoMode.Password,
         )
+        self.assertEqual(
+            self.window.settings_serpapi_api_key.echoMode(),
+            QLineEdit.EchoMode.Password,
+        )
         self.assertEqual(self.window.settings_nvidia_model.text(), "z-ai/glm-5.2")
 
     def test_every_task_workspace_has_an_independent_ai_switch(self) -> None:
@@ -151,6 +157,21 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
             Path(self.window._metadata_tracker_file),
             self.data_directory / "album_enrichment_tracker.json",
         )
+
+    def test_serpapi_key_is_saved_and_applied_without_operation_parameters(self) -> None:
+        self.window.settings_serpapi_api_key.setText("serpapi-secret")
+
+        with (
+            patch.object(self.window, "_save_data_directory", return_value=False),
+            patch.object(QMessageBox, "information"),
+        ):
+            self.window._save_defaults()
+
+        self.assertEqual(
+            self.window.settings.value("defaults/serpapi_api_key"),
+            "serpapi-secret",
+        )
+        self.assertEqual(os.environ.get("SERPAPI_API_KEY"), "serpapi-secret")
 
     def test_track_reorder_clear_resets_folder_list_and_saved_value(self) -> None:
         self.window.track_reorder_folder.set_text("C:/Music/Album")
@@ -291,6 +312,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
 
         reset_data = self.data_directory / "portable" / "YouTubeMediaStudioData"
         self.window.settings_nvidia_api_key.setText("nvapi-secret")
+        self.window.settings_serpapi_api_key.setText("serpapi-secret")
         self.window.settings_nvidia_model.setText("hosted:model")
         self.window.settings_agentic_model.setCurrentText("local:model")
         self.window.settings_workers.setValue(1)
@@ -319,6 +341,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
             self.window._reset_app()
 
         self.assertEqual(self.window.settings_nvidia_api_key.text(), "")
+        self.assertEqual(self.window.settings_serpapi_api_key.text(), "")
         self.assertEqual(self.window.settings_nvidia_model.text(), "")
         self.assertEqual(self.window.settings_agentic_model.currentText(), "")
         self.assertEqual(self.window.settings_workers.value(), machine_parallel_workers())

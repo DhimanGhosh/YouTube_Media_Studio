@@ -39,3 +39,24 @@ def test_changelog_records_subject_and_abbreviated_hash() -> None:
     assert "## [2.1.0]" in section
     assert "### Added" in section
     assert "feat: useful feature (`0123456`)" in section
+
+
+def test_update_changelog_promotes_curated_unreleased_notes(tmp_path, monkeypatch) -> None:
+    changelog = tmp_path / "CHANGELOG.md"
+    changelog.write_text(
+        "# Changelog\n\nIntro.\n\n"
+        "## [Unreleased]\n\n### Added\n\n- SerpApi metadata lookup.\n\n"
+        "## [2.0.2] - 2026-08-02\n\n### Fixed\n\n- Previous fix.\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(release, "CHANGELOG", changelog)
+    monkeypatch.setattr(release, "latest_release_tag", lambda: ("v2.0.2", (2, 0, 2)))
+    monkeypatch.setattr(release, "commits_since", lambda _tag: [commit("feat: serpapi")])
+
+    release.update_changelog("2.1.0")
+
+    updated = changelog.read_text(encoding="utf-8")
+    assert "## [Unreleased]" not in updated
+    assert "## [2.1.0]" in updated
+    assert "- SerpApi metadata lookup." in updated
+    assert updated.index("## [2.1.0]") < updated.index("## [2.0.2]")

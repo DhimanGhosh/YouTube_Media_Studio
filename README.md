@@ -176,6 +176,10 @@ edit, consolidate, inspect logs, configure defaults, and play the finished libra
 The application stores settings and working data in a writable per-user directory,
 and the GUI can persist a custom location.
 
+Album Enricher uses Wikipedia and Apple's public catalog by default. Users may add
+their own optional [SerpApi](https://serpapi.com/) key under **Global Settings** to use
+Google Search as a fallback when those sources cannot identify an album or movie.
+
 ## Command line
 
 ```text

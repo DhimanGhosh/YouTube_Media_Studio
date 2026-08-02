@@ -122,12 +122,34 @@ def update_changelog(version: str) -> None:
     latest = latest_release_tag()
     commits = commits_since(latest[0] if latest else None)
     current = CHANGELOG.read_text(encoding="utf-8") if CHANGELOG.exists() else "# Changelog\n"
-    section = changelog_section(version, commits)
-    first_release = current.find("\n## [")
-    if first_release == -1:
-        updated = current.rstrip() + "\n\n" + section
+    unreleased = re.search(
+        r"(?ms)^## \[Unreleased\]\s*\n(?P<body>.*?)(?=^## \[|\Z)",
+        current,
+    )
+    if unreleased:
+        body = unreleased.group("body").strip()
+        section = f"## [{version}] - {date.today().isoformat()}"
+        if body:
+            section += f"\n\n{body}"
+        remainder = current[unreleased.end() :].lstrip()
+        updated = (
+            current[: unreleased.start()].rstrip()
+            + "\n\n"
+            + section
+            + ("\n\n" + remainder if remainder else "\n")
+        )
     else:
-        updated = current[:first_release].rstrip() + "\n\n" + section + current[first_release + 1 :]
+        section = changelog_section(version, commits)
+        first_release = current.find("\n## [")
+        if first_release == -1:
+            updated = current.rstrip() + "\n\n" + section
+        else:
+            updated = (
+                current[:first_release].rstrip()
+                + "\n\n"
+                + section
+                + current[first_release + 1 :]
+            )
     CHANGELOG.write_text(updated.rstrip() + "\n", encoding="utf-8", newline="\n")
 
 

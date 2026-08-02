@@ -46,6 +46,7 @@ def adjudicate_metadata(
     wikipedia: Mapping[str, object],
     catalog: Mapping[str, object],
     *,
+    serpapi: Mapping[str, object] | None = None,
     model: str,
     catalog_duration_matches: bool | None = None,
     timeout: float = 90.0,
@@ -57,6 +58,7 @@ def adjudicate_metadata(
         "local": _clean_source(local),
         "wikipedia": _clean_source(wikipedia),
         "catalog": _clean_source(catalog),
+        "serpapi": _clean_source(serpapi or {}),
     }
     if not selected_model:
         return MetadataAgentDecision("review", {}, 0.0, "No agentic model selected", ())
@@ -108,10 +110,16 @@ def evidence_conflicts(
     local: Mapping[str, object],
     wikipedia: Mapping[str, object],
     catalog: Mapping[str, object],
+    serpapi: Mapping[str, object] | None = None,
 ) -> bool:
     """Return whether sources disagree on a populated identity field."""
 
-    sources = (_clean_source(local), _clean_source(wikipedia), _clean_source(catalog))
+    sources = (
+        _clean_source(local),
+        _clean_source(wikipedia),
+        _clean_source(catalog),
+        _clean_source(serpapi or {}),
+    )
     for field in ("album", "year", "language"):
         values = {_key(field, source.get(field, "")) for source in sources}
         values.discard("")

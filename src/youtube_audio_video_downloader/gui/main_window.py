@@ -95,6 +95,10 @@ from youtube_audio_video_downloader.services.song_search import (
     available_ollama_models,
     routed_result_title,
 )
+from youtube_audio_video_downloader.services.serpapi_metadata import (
+    SERPAPI_API_KEY_ENV,
+    configure_serpapi_environment,
+)
 from youtube_audio_video_downloader.services.track_reorder import list_track_files
 
 
@@ -1913,6 +1917,17 @@ class MainWindow(QMainWindow):
         self.settings_nvidia_api_key.setToolTip(
             "Hosted NVIDIA NIM credential. It is never placed in operation parameters or logs."
         )
+        self.settings_serpapi_api_key = QLineEdit()
+        self.settings_serpapi_api_key.setEchoMode(QLineEdit.EchoMode.Password)
+        self.settings_serpapi_api_key.setPlaceholderText("Optional SerpApi key")
+        self.settings_serpapi_api_key.setText(
+            os.environ.get(SERPAPI_API_KEY_ENV, "").strip()
+            or str(self.settings.value("defaults/serpapi_api_key", "") or "").strip()
+        )
+        self.settings_serpapi_api_key.setToolTip(
+            "Optional SerpApi credential used only when Wikipedia and Apple cannot "
+            "identify missing album/movie metadata. It is never written to logs."
+        )
         self.settings_nvidia_model = QLineEdit()
         saved_nvidia_model = self.settings.value("defaults/nvidia_model", None)
         self.settings_nvidia_model.setText(
@@ -1984,6 +1999,7 @@ class MainWindow(QMainWindow):
         form.addRow("NVIDIA API key", self.settings_nvidia_api_key)
         form.addRow("NVIDIA model", self.settings_nvidia_model)
         form.addRow("Ollama fallback model", self.settings_agentic_model)
+        form.addRow("SerpApi key", self.settings_serpapi_api_key)
         form.addRow("Workspace state", self.settings_persist_state)
         form.addRow("Library suggestions", self.settings_search_suggestions)
         form.addRow("Application data folder", self.settings_data_directory)
@@ -2003,7 +2019,7 @@ class MainWindow(QMainWindow):
         reset = QPushButton("Reset app")
         reset.setObjectName("dangerButton")
         reset.setToolTip(
-            "Clear every tool, remove saved AI credentials/models, and restore defaults"
+            "Clear every tool, remove saved provider credentials/models, and restore defaults"
         )
         reset.clicked.connect(self._reset_app)
         save = QPushButton("Save and apply defaults")
@@ -2021,6 +2037,7 @@ class MainWindow(QMainWindow):
             "Source runs install managed FFmpeg and Deno runtimes through uv sync",
             "Network access for YouTube metadata and media downloads",
             "NVIDIA API key for lightweight hosted inference; Ollama is the automatic local fallback",
+            "Optional SerpApi key for Google metadata evidence when built-in catalogs are inconclusive",
         ])
         layout.addWidget(requirements)
         layout.addStretch(1)
@@ -2844,6 +2861,10 @@ class MainWindow(QMainWindow):
                 else str(saved_ollama_model or "").strip()
             ),
         )
+        configure_serpapi_environment(
+            os.environ.get(SERPAPI_API_KEY_ENV, "").strip()
+            or str(self.settings.value("defaults/serpapi_api_key", "") or "").strip()
+        )
 
     def _preview_crystalness(self, value: int) -> None:
         self.settings_crystalness_value.setText(f"{value}%")
@@ -2914,6 +2935,7 @@ class MainWindow(QMainWindow):
             "agentic_model": "",
             "nvidia_api_key": "",
             "nvidia_model": "",
+            "serpapi_api_key": "",
             "search_suggestions": 10,
             "crystalness": 65,
         }
@@ -2948,7 +2970,7 @@ class MainWindow(QMainWindow):
         answer = QMessageBox.question(
             self,
             "Reset YouTube Media Studio?",
-            "This will remove saved NVIDIA credentials and all AI model selections, "
+            "This will remove saved NVIDIA and SerpApi credentials and all AI model selections, "
             "restore global defaults, clear every tool form, library folder, status, "
             "and history, and return application storage to its default folder.\n\n"
             "Downloaded and edited media files will not be deleted.",
@@ -3006,6 +3028,7 @@ class MainWindow(QMainWindow):
         for checkbox in self._tool_ai_checks.values():
             checkbox.setChecked(bool(values["ai_enabled"]))
         self.settings_nvidia_api_key.clear()
+        self.settings_serpapi_api_key.clear()
         self.settings_nvidia_model.clear()
         self.settings_agentic_model.setCurrentText("")
         self.settings_search_suggestions.setValue(int(values["search_suggestions"]))
@@ -3016,6 +3039,7 @@ class MainWindow(QMainWindow):
         self.settings_persist_state.blockSignals(persist_signals)
 
         configure_ai_environment(nvidia_api_key="", nvidia_model="", ollama_model="")
+        configure_serpapi_environment("")
         self.ai_status_badge.setText("AI READY · STATIC FALLBACK · no model configured")
         self.workers_metric.set_value(values["workers"])
         self._apply_crystalness(int(values["crystalness"]), persist=True)
@@ -3116,6 +3140,7 @@ class MainWindow(QMainWindow):
             "agentic_model": self.settings_agentic_model.currentText().strip(),
             "nvidia_api_key": self.settings_nvidia_api_key.text().strip(),
             "nvidia_model": self.settings_nvidia_model.text().strip(),
+            "serpapi_api_key": self.settings_serpapi_api_key.text().strip(),
             "search_suggestions": self.settings_search_suggestions.value(),
             "crystalness": self.settings_crystalness.value(),
         }
@@ -3131,6 +3156,7 @@ class MainWindow(QMainWindow):
             nvidia_model=str(values["nvidia_model"]),
             ollama_model=str(values["agentic_model"]),
         )
+        configure_serpapi_environment(str(values["serpapi_api_key"]))
         if not bool(values["ai_enabled"]):
             provider = "DISABLED"
             ready_model = "internet/deterministic mode"

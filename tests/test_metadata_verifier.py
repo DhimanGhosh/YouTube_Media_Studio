@@ -226,3 +226,22 @@ def test_existing_album_rejects_matching_track_from_a_compilation(mock_agent):
     assert result.action == "review"
     assert any("protected existing album" in item for item in result.rejected_sources)
     assert mock_agent.call_args.args[2] == {}
+
+
+def test_deterministic_serpapi_evidence_can_fill_missing_album() -> None:
+    local = {"title": "Jonaki", "artists": "Papon"}
+    serpapi = {
+        "title": "Jonaki",
+        "album": "Lorai",
+        "artists": "Papon",
+        "year": "2014",
+    }
+
+    result = verify_metadata(
+        local, {}, {}, serpapi=serpapi, model=""
+    )
+
+    assert result.action == "apply"
+    assert result.metadata["album"] == "Lorai"
+    assert result.metadata["year"] == "2014"
+    assert result.sources == ("serpapi",)
