@@ -1,0 +1,23 @@
+{
+  "Sample 4K Video": {
+    "ytb_link": "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
+    "file_name": "Sample 4K Video",
+    "resolution": "4K"
+  },
+  "Sample Uses YouTube Title": {
+    "ytb_link": "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
+    "resolution": "1080p"
+  },
+  "Sample FHD Video Uses CLI Default": {
+    "ytb_link": "https://www.youtube.com/watch?v=aqz-KE-bpKQ"
+  },
+  "Sample Ask Every Time": {
+    "ytb_link": "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
+    "file_name": "Sample Ask Every Time",
+    "resolution": "ask"
+  },
+  "Sample MP3 Only From Video Command": {
+    "ytb_link": "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
+    "resolution": "mp3"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "Hariye Jawar Gaan": {
+    "mp3_file_path": "D:/Codes/ytb_mp3_downloader/songs/Hariye Jawar Gaan.mp3",
+    "title": "Hariye Jawar Gaan",
+    "album": "Uma",
+    "artists": "Anupam Roy",
+    "album_art": "https://i.scdn.co/image/ab67616d0000b2732f4d8ac7127a3de4d1e6b78c",
+    "release_year": "2018"
+  },
+  "Tumko Dekha Toh": {
+    "mp3_file_path": "D:/Codes/ytb_mp3_downloader/songs/Tumko Dekha Toh - Hamara Dil Aapke Paas Hai - Alka Yagnik, Kumar Sanu.mp3",
+    "title": "Tumko Dekha Toh",
+    "album": "Hamara Dil Aapke Paas Hai",
+    "artists": "Alka Yagnik, Kumar Sanu",
+    "album_art": "https://c.saavncdn.com/954/Hamara-Dil-Aapke-Paas-Hai-Hindi-2000-20240408213648-500x500.jpg",
+    "release_year": "2000"
+  },
+  "Tu Hi Yaar Mera": {
+    "mp3_file_path": "D:/Songs/Tu Hi Yaar Mera - Pati Patni Aur Woh - Arijit Singh, Neha Kakkar.mp3",
+    "album_art": "https://c.saavncdn.com/026/Pati-Patni-Aur-Woh-Hindi-2020-20200114134020-500x500.jpg",
+    "release_year": "2019"
+  }
+}

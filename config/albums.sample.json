@@ -1,0 +1,100 @@
+{
+  "Dil Hai Tumhara": {
+    "ytb_link": "https://www.youtube.com/watch?v=UxDYRjH0810",
+    "album": "Dil Hai Tumhara",
+    "release_year": "2002",
+    "track_numbering": "true",
+    "download": "true",
+    "album_art": "https://yt3.googleusercontent.com/6oi2YAFlG_llwdTS1EvDzogrExiy1xUF1TZ7v6bWzrFE4gjgkJqbWQxOp4ut592s5ac8koq5shxQnq6U=w544-h544-l90-rj",
+    "tracks": [
+      {
+        "Mohabbat Dil Ka Sakoon": {
+          "start": "00:00",
+          "stop": "05:41",
+          "artists": "Kumar Sanu, Udit Narayan, Alka Yagnik"
+        }
+      },
+      {
+        "O Sahiba O Sahiba": {
+          "start": "05:42",
+          "artists": "Kavita Krishnamurthy, Sonu Nigam",
+          "download": "false"
+        }
+      },
+      {
+        "Dil Laga Liya Maine": {
+          "start": "10:40",
+          "artists": "Udit Narayan, Alka Yagnik"
+        }
+      },
+      {
+        "Kasam Khake Kaho": {
+          "start": "15:15",
+          "artists": "Kumar Sanu, Alka Yagnik"
+        }
+      },
+      {
+        "Dil Hai Tumhaara": {
+          "start": "21:10",
+          "artists": "Kumar Sanu, Udit Narayan, Alka Yagnik"
+        }
+      },
+      {
+        "Kabhi Hasna Hai Kabhi": {
+          "start": "27:56",
+          "artists": "Tauseef Akhtar",
+          "download": "false"
+        }
+      },
+      {
+        "Chaaya Hai Jo Dil Pe": {
+          "start": "31:52",
+          "artists": "Kavita Krishnamurthy, Shaan"
+        }
+      },
+      {
+        "Chaahe Zubaan": {
+          "start": "36:33",
+          "artists": "Sonu Nigam, Alka Yagnik"
+        }
+      }
+    ]
+  }
+,
+  "Standalone Song Link Album Example": {
+    "album": "Kedarnath",
+    "release_year": "2018",
+    "track_numbering": "true",
+    "download": "true",
+    "album_art": "",
+    "tracks": [
+      {
+        "Namo Namo": {
+          "ytb_link": "https://www.youtube.com/watch?v=REPLACE_WITH_SONG_VIDEO_ID",
+          "artists": "Amit Trivedi"
+        }
+      },
+      {
+        "Qaafirana": {
+          "ytb_link": "https://www.youtube.com/watch?v=REPLACE_WITH_SONG_VIDEO_ID",
+          "artists": "Arijit Singh, Nikhita Gandhi"
+        }
+      },
+      {
+        "Sweetheart": {
+          "ytb_link": "https://www.youtube.com/watch?v=REPLACE_WITH_SONG_VIDEO_ID",
+          "artists": "Dev Negi",
+          "download": "false"
+        }
+      },
+      {
+        "Partial Song From Longer Video": {
+          "ytb_link": "https://www.youtube.com/watch?v=REPLACE_WITH_LONGER_VIDEO_ID",
+          "artists": "Artist Name",
+          "start": "00:00",
+          "end": "03:25"
+        }
+      }
+    ]
+  }
+}

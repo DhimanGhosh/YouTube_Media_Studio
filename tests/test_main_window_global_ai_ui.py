@@ -1,0 +1,335 @@
+from __future__ import annotations
+
+import gc
+import os
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PyQt6.QtCore import QSettings, Qt  # noqa: E402
+from PyQt6.QtTest import QTest  # noqa: E402
+from PyQt6.QtWidgets import (  # noqa: E402
+    QApplication,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+)
+
+from youtube_audio_video_downloader.gui.main_window import MainWindow  # noqa: E402
+from youtube_audio_video_downloader.gui.theme import APP_STYLE  # noqa: E402
+from youtube_audio_video_downloader.config.settings import machine_parallel_workers  # noqa: E402
+
+
+class MainWindowGlobalAiUiTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+
+    def setUp(self) -> None:
+        self.environment_patch = patch.dict(os.environ, {"NVIDIA_API_KEY": ""})
+        self.environment_patch.start()
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        settings = QSettings(
+            str(Path(self.temporary_directory.name) / "settings.ini"),
+            QSettings.Format.IniFormat,
+        )
+        settings.setValue("defaults/agentic_model", "global-agent:test")
+        self.settings_patch = patch(
+            "youtube_audio_video_downloader.gui.main_window.QSettings",
+            return_value=settings,
+        )
+        self.models_patch = patch(
+            "youtube_audio_video_downloader.gui.main_window.available_ollama_models",
+            return_value=["global-agent:test"],
+        )
+        self.settings_patch.start()
+        self.models_patch.start()
+        self.data_directory = Path(self.temporary_directory.name).resolve()
+        self.window = MainWindow(data_directory=self.data_directory)
+
+    def tearDown(self) -> None:
+        self.window._workspace_autosave.stop()
+        self.window.media_library.shutdown()
+        self.window.close()
+        self.window.deleteLater()
+        self.app.processEvents()
+        gc.collect()
+        self.models_patch.stop()
+        self.settings_patch.stop()
+        self.environment_patch.stop()
+        self.temporary_directory.cleanup()
+
+    def test_stop_is_enabled_only_when_a_worker_exists(self) -> None:
+        self.assertFalse(self.window.cancel_button.isEnabled())
+
+        self.window._active_worker = object()
+        self.window._sync_stop_button()
+        self.assertTrue(self.window.cancel_button.isEnabled())
+
+        self.window._active_worker = None
+        self.window._parallel_jobs = {object(): ("search_song", object())}
+        self.window._set_idle_state("Completed")
+        self.assertTrue(self.window.cancel_button.isEnabled())
+        self.assertEqual(self.window.activity_progress.minimum(), 0)
+        self.assertEqual(self.window.activity_progress.maximum(), 0)
+
+        self.window._parallel_jobs.clear()
+        self.window._sync_stop_button()
+        self.assertFalse(self.window.cancel_button.isEnabled())
+        self.assertIn("QPushButton#dangerButton:disabled", APP_STYLE)
+
+    def test_search_uses_global_model_without_a_local_model_field(self) -> None:
+        self.assertFalse(hasattr(self.window, "song_search_model"))
+        self.window.song_search_text.setText("find a song")
+
+        with patch.object(self.window, "_start_operation") as start:
+            self.window._start_song_search()
+
+        operation, params = start.call_args.args
+        self.assertEqual(operation, "search_song")
+        self.assertEqual(params["model"], "global-agent:test")
+
+        self.window._append_log("[AI-PROVIDER] NVIDIA NIM | model=z-ai/glm-5.2")
+        self.assertIn("NVIDIA NIM", self.window.ai_status_badge.text())
+        self.window._append_log("[AI-STATIC-FALLBACK] Library ranking | offline")
+        self.assertIn("STATIC FALLBACK", self.window.ai_status_badge.text())
+
+    def test_dashboard_describes_the_ai_assisted_workflow(self) -> None:
+        labels = {label.text() for label in self.window.findChildren(QLabel)}
+        self.assertIn("AI-assisted media workflows", labels)
+        self.assertNotIn("Liquid-glass batch processing", labels)
+        self.assertEqual(
+            self.window.settings_nvidia_api_key.echoMode(),
+            QLineEdit.EchoMode.Password,
+        )
+        self.assertEqual(self.window.settings_nvidia_model.text(), "z-ai/glm-5.2")
+
+    def test_every_task_workspace_has_an_independent_ai_switch(self) -> None:
+        expected = {
+            "search_song",
+            "audio",
+            "video",
+            "album",
+            "jukebox",
+            "track_reorder",
+            "edit_media",
+            "album_consolidator",
+            "utilities",
+        }
+        self.assertEqual(set(self.window._tool_ai_checks), expected)
+        for operation in expected:
+            checkbox = self.window._tool_ai_checks[operation]
+            self.assertTrue(checkbox.text().startswith("Use AI for"))
+            self.assertFalse(checkbox.isHidden())
+
+    def test_album_enricher_inherits_album_consolidator_ai_switch(self) -> None:
+        checkbox = self.window._tool_ai_checks["album_consolidator"]
+        checkbox.setChecked(False)
+
+        self.assertFalse(self.window._ai_enabled_for("album_consolidator"))
+        self.assertFalse(self.window._ai_enabled_for("album_metadata_enricher"))
+
+    def test_jukebox_ai_switch_persists_and_controls_inline_extraction(self) -> None:
+        checkbox = self.window._tool_ai_checks["jukebox"]
+        checkbox.setChecked(False)
+
+        self.assertFalse(self.window._ai_enabled_for("jukebox"))
+        self.assertFalse(
+            self.window.settings.value("ai/tools/jukebox", True, type=bool)
+        )
+
+    def test_global_settings_displays_application_data_directory(self) -> None:
+        self.assertEqual(
+            Path(self.window.settings_data_directory.text()),
+            self.data_directory,
+        )
+        self.assertEqual(
+            Path(self.window._metadata_tracker_file),
+            self.data_directory / "album_enrichment_tracker.json",
+        )
+
+    def test_track_reorder_clear_resets_folder_list_and_saved_value(self) -> None:
+        self.window.track_reorder_folder.set_text("C:/Music/Album")
+        self.window.track_reorder_list.addItem("01 Song.mp3")
+        self.window.settings.setValue("workspace/track_reorder_folder", "C:/Music/Album")
+
+        self.window._clear_track_reorder()
+
+        self.assertEqual(self.window.track_reorder_folder.text(), "")
+        self.assertEqual(self.window.track_reorder_list.count(), 0)
+        self.assertIsNone(self.window.settings.value("workspace/track_reorder_folder"))
+
+    def test_restore_silently_discards_missing_track_reorder_folder(self) -> None:
+        missing = self.data_directory / "album_tracks" / "Removed Album (2026)"
+        self.window.settings.setValue(
+            "workspace/track_reorder_folder", str(missing)
+        )
+        self.window.track_reorder_folder.set_text("")
+        self.window._track_folder_load_timer.stop()
+
+        with patch.object(self.window, "_append_log") as append_log:
+            self.window._restore_workspace_state()
+            self.window._track_folder_load_timer.stop()
+
+        self.assertEqual(self.window.track_reorder_folder.text(), "")
+        self.assertIsNone(
+            self.window.settings.value("workspace/track_reorder_folder")
+        )
+        self.assertFalse(
+            any(
+                "Could not load album folder" in str(call.args[0])
+                for call in append_log.call_args_list
+            )
+        )
+
+    def test_title_bar_displays_the_application_logo(self) -> None:
+        logo = self.window.title_bar.findChild(QLabel, "appLogo")
+        self.assertIsNotNone(logo)
+        self.assertIsNotNone(logo.pixmap())
+        self.assertFalse(logo.pixmap().isNull())
+
+    def test_blank_click_clears_highlights_across_the_application(self) -> None:
+        library = self.window.media_library
+        library.folder_list.addItem("C:/Music")
+        library.folder_list.setCurrentRow(0)
+        library.queue_list.addItem("Selected queue song")
+        library.queue_list.setCurrentRow(0)
+        self.window.track_reorder_list.addItem("Selected reorder song")
+        self.window.track_reorder_list.setCurrentRow(0)
+        self.window._set_page(12)
+        self.window.show()
+        self.app.processEvents()
+
+        QTest.mouseClick(library.now_playing, Qt.MouseButton.LeftButton)
+        self.app.processEvents()
+
+        self.assertFalse(library.folder_list.selectedItems())
+        self.assertFalse(library.queue_list.selectedItems())
+        self.assertFalse(self.window.track_reorder_list.selectedItems())
+
+    def test_clicking_an_item_keeps_that_item_and_clears_other_views(self) -> None:
+        library = self.window.media_library
+        library.folder_list.addItem("C:/Music")
+        library.folder_list.setCurrentRow(0)
+        library.queue_list.addItem("Queue song")
+        self.window._set_page(12)
+        library.queue_toggle_button.setChecked(True)
+        self.window.show()
+        self.app.processEvents()
+
+        queue_rect = library.queue_list.visualItemRect(library.queue_list.item(0))
+        QTest.mouseClick(
+            library.queue_list.viewport(),
+            Qt.MouseButton.LeftButton,
+            pos=queue_rect.center(),
+        )
+        self.app.processEvents()
+
+        self.assertEqual(len(library.queue_list.selectedItems()), 1)
+        self.assertFalse(library.folder_list.selectedItems())
+
+    def test_clicking_empty_queue_space_clears_its_selection(self) -> None:
+        library = self.window.media_library
+        library.queue_list.addItem("Queue song")
+        library.queue_list.setCurrentRow(0)
+        self.window._set_page(12)
+        library.queue_toggle_button.setChecked(True)
+        self.window.show()
+        self.app.processEvents()
+
+        QTest.mouseClick(
+            library.queue_list.viewport(),
+            Qt.MouseButton.LeftButton,
+            pos=library.queue_list.viewport().rect().bottomRight(),
+        )
+        self.app.processEvents()
+
+        self.assertFalse(library.queue_list.selectedItems())
+
+    def test_library_song_handoff_opens_edit_file_and_loads_metadata(self) -> None:
+        selected = self.data_directory / "selected.mp3"
+        selected.write_bytes(b"test media")
+        with patch.object(self.window, "_load_edit_file") as load:
+            self.window._edit_library_file(str(selected))
+
+        self.assertEqual(self.window.pages.currentIndex(), 7)
+        self.assertEqual(self.window.edit_file_input.text(), str(selected))
+        load.assert_called_once_with(str(selected))
+
+    def test_library_album_handoffs_preserve_move_destination(self) -> None:
+        album = self.data_directory / "Album (2024)"
+        album.mkdir()
+        self.window.album_consolidator_destination.set_text("D:/Do not change")
+
+        self.window._open_library_album_enricher(str(album))
+
+        self.assertEqual(self.window.pages.currentIndex(), 8)
+        self.assertEqual(self.window.album_consolidator_source.text(), str(album))
+        self.assertEqual(
+            self.window.album_consolidator_destination.text(), "D:/Do not change"
+        )
+
+        self.window._open_library_track_reorder(str(album))
+        self.assertEqual(self.window.pages.currentIndex(), 6)
+        self.assertEqual(self.window.track_reorder_folder.text(), str(album))
+
+    def test_album_enricher_name_is_used_in_the_workspace(self) -> None:
+        labels = {
+            widget.text()
+            for widget in self.window.findChildren(QLabel)
+        }
+        buttons = {
+            button.text()
+            for button in self.window.findChildren(QPushButton)
+        }
+        self.assertIn("1. Album enricher", labels)
+        self.assertIn("Run album enricher", buttons)
+
+        reset_data = self.data_directory / "portable" / "YouTubeMediaStudioData"
+        self.window.settings_nvidia_api_key.setText("nvapi-secret")
+        self.window.settings_nvidia_model.setText("hosted:model")
+        self.window.settings_agentic_model.setCurrentText("local:model")
+        self.window.settings_workers.setValue(1)
+        self.window.audio_input.add_entry("Song", {"ytb_link": "https://example.test"})
+        self.window.audio_output.set_text("C:/Music")
+        self.window.track_reorder_folder.set_text("C:/Music/Album")
+        self.window.edit_file_input.set_text("C:/Music/song.mp3")
+        self.window.album_consolidator_source.set_text("C:/Music/Source")
+        self.window.media_library.folder_list.addItem("C:/Music")
+
+        with (
+            patch.object(
+                QMessageBox,
+                "question",
+                return_value=QMessageBox.StandardButton.Yes,
+            ),
+            patch.object(QMessageBox, "information"),
+            patch(
+                "youtube_audio_video_downloader.gui.main_window.default_data_directory",
+                return_value=reset_data,
+            ),
+            patch(
+                "youtube_audio_video_downloader.gui.main_window.save_data_directory_choice"
+            ),
+        ):
+            self.window._reset_app()
+
+        self.assertEqual(self.window.settings_nvidia_api_key.text(), "")
+        self.assertEqual(self.window.settings_nvidia_model.text(), "")
+        self.assertEqual(self.window.settings_agentic_model.currentText(), "")
+        self.assertEqual(self.window.settings_workers.value(), machine_parallel_workers())
+        self.assertEqual(self.window.settings_data_directory.text(), str(reset_data))
+        self.assertEqual(self.window.audio_input.data(), {})
+        self.assertEqual(self.window.audio_output.text(), "")
+        self.assertEqual(self.window.track_reorder_folder.text(), "")
+        self.assertEqual(self.window.edit_file_input.text(), "")
+        self.assertEqual(self.window.album_consolidator_source.text(), "")
+        self.assertEqual(self.window.media_library.folder_list.count(), 0)
+        self.assertIn("STATIC FALLBACK", self.window.ai_status_badge.text())
+
+if __name__ == "__main__":
+    unittest.main()

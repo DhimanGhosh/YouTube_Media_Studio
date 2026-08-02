@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=YouTube Media Studio
+Comment=Download, organize, enrich, split, and play audio and video
+Exec=YouTubeMediaStudio
+Icon=youtube-media-studio
+Terminal=false
+Categories=AudioVideo;Audio;Video;
+StartupWMClass=YouTubeMediaStudio

@@ -1,0 +1,161 @@
+name: Test, build, and release
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version_bump:
+        description: Semantic version increment
+        required: true
+        default: auto
+        type: choice
+        options: [auto, patch, minor, major]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: main-release
+  cancel-in-progress: false
+
+jobs:
+  quality:
+    name: Tests and lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: uv sync --group dev
+      - run: uv run python tools/release.py check
+
+  prepare-version:
+    name: Select semantic version
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: quality
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: version
+        name: Calculate next version
+        shell: bash
+        env:
+          REQUESTED_BUMP: ${{ inputs.version_bump || 'auto' }}
+        run: |
+          version="$(python tools/prepare_release.py next-version --bump "$REQUESTED_BUMP")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Selected version $version"
+
+  python-and-raspi:
+    name: Python and Raspberry Pi CLI
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: [quality, prepare-version]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: uv version "${{ needs.prepare-version.outputs.version }}"
+      - run: uv run python tools/release.py build --target wheel
+      - run: uv run python tools/release.py build --target raspi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-and-raspi
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+          if-no-files-found: error
+
+  desktop:
+    name: ${{ matrix.label }} installer
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: [quality, prepare-version]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: windows
+            label: Windows x64
+          - os: ubuntu-latest
+            target: linux
+            label: Linux x64
+          - os: macos-15-intel
+            target: macos
+            label: macOS Intel
+          - os: macos-15
+            target: macos
+            label: macOS Apple silicon
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: uv version "${{ needs.prepare-version.outputs.version }}"
+      - run: uv run python tools/release.py build --target ${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.target }}-${{ runner.arch }}
+          path: |
+            dist/*-Setup.exe
+            dist/*-installer.run
+            dist/*-installer.dmg
+          if-no-files-found: error
+
+  github-release:
+    name: Changelog, tag, and GitHub Release
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: [prepare-version, python-and-raspi, desktop]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist/releases
+          merge-multiple: true
+      - name: Update project version and changelog
+        env:
+          VERSION: ${{ needs.prepare-version.outputs.version }}
+        run: |
+          uv version "$VERSION"
+          python tools/prepare_release.py changelog --version "$VERSION"
+      - name: Create release commit and tag
+        env:
+          VERSION: ${{ needs.prepare-version.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml uv.lock CHANGELOG.md
+          git commit -m "chore(release): v${VERSION} [skip ci]"
+          git tag -a "v${VERSION}" -m "YouTube Media Studio v${VERSION}"
+          git push origin HEAD:main "v${VERSION}"
+      - name: Create unified checksums
+        shell: bash
+        run: |
+          cd dist/releases
+          find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 \
+            | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.prepare-version.outputs.version }}
+        run: |
+          gh release create "v${VERSION}" dist/releases/* \
+            --title "YouTube Media Studio v${VERSION}" \
+            --generate-notes

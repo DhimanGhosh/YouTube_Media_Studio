@@ -1,0 +1,204 @@
+{
+  "Feel Good Hindi Songs": {
+    "ytb_link": "https://www.youtube.com/watch?v=RAslUOv9ID0",
+    "track_numbering": "false",
+    "download": "true",
+    "tracks": [
+      {
+        "Kuch To Hua Hai": {
+          "start": "00:00:00",
+          "end": "00:05:18",
+          "album": "Kal Ho Naa Ho",
+          "artists": "Alka Yagnik, Shaan",
+          "album_art": "https://c.saavncdn.com/792/Kal-Ho-Naa-Ho-Hindi-2003-20190424125345-500x500.jpg",
+          "release_year": "2003"
+        }
+      },
+      {
+        "Tu Hi Hai": {
+          "start": "00:05:19",
+          "end": "00:08:39",
+          "album": "Dear Zindagi",
+          "artists": "Arijit Singh",
+          "album_art": "https://c.saavncdn.com/580/Dear-Zindagi-Hindi-2016-500x500.jpg",
+          "release_year": "2016"
+        }
+      },
+      {
+        "Bahara": {
+          "start": "00:08:40",
+          "end": "00:14:05",
+          "album": "I Hate Luv Storys",
+          "artists": "Shreya Ghoshal, Sona Mohapatra",
+          "album_art": "https://c.saavncdn.com/465/I-Hate-Luv-Storys-Hindi-2010-500x500.jpg",
+          "release_year": "2010"
+        }
+      },
+      {
+        "Deewana Hai Dekho": {
+          "start": "00:14:06",
+          "end": "00:19:50",
+          "album": "Kabhi Khushi Kabhie Gham",
+          "artists": "Alka Yagnik, Sonu Nigam",
+          "album_art": "https://c.saavncdn.com/159/Kabhi-Khushi-Kabhie-Gham-Hindi-2001-20190503144136-500x500.jpg",
+          "release_year": "2001"
+        }
+      },
+      {
+        "Voh Dekhnay Mein": {
+          "start": "00:19:51",
+          "end": "00:24:23",
+          "album": "London Paris New York",
+          "artists": "Ali Zafar",
+          "download": "false",
+          "album_art": "https://c.saavncdn.com/393/London-Paris-New-York-Hindi-2012-500x500.jpg",
+          "release_year": "2012"
+        }
+      },
+      {
+        "Bheegi Si Bhaagi Si": {
+          "start": "00:24:24",
+          "end": "00:29:01",
+          "album": "Raajneeti",
+          "artists": "Mohit Chauhan, Antara Mitra",
+          "album_art": "https://c.saavncdn.com/588/Raajneeti-Hindi-2010-500x500.jpg",
+          "release_year": "2010"
+        }
+      },
+      {
+        "Mera Yaar": {
+          "start": "00:29:02",
+          "end": "00:34:52",
+          "album": "Bhaag Milkha Bhaag",
+          "artists": "Javed Bashir",
+          "album_art": "https://c.saavncdn.com/471/Bhaag-Milkha-Bhaag-Hindi-2013-500x500.jpg",
+          "release_year": "2013"
+        }
+      },
+      {
+        "Tere Bina": {
+          "start": "00:34:53",
+          "end": "00:40:02",
+          "album": "Guru",
+          "artists": "A. R. Rahman, Chinmayi Sripada, Murtuza Khan, Qadir Khan",
+          "album_art": "https://c.saavncdn.com/337/Guru-Hindi-2006-20190425121655-500x500.jpg",
+          "release_year": "2006"
+        }
+      },
+      {
+        "Hawayein": {
+          "start": "00:40:03",
+          "end": "00:44:52",
+          "album": "Jab Harry Met Sejal",
+          "artists": "Arijit Singh",
+          "album_art": "https://c.saavncdn.com/488/Jab-Harry-Met-Sejal-Hindi-2017-20170803125633-500x500.jpg",
+          "release_year": "2017"
+        }
+      },
+      {
+        "Zara Sa": {
+          "start": "00:44:53",
+          "end": "00:49:55",
+          "album": "Jannat",
+          "artists": "KK",
+          "album_art": "https://c.saavncdn.com/464/Jannat-Hindi-2008-500x500.jpg",
+          "release_year": "2008"
+        }
+      },
+      {
+        "Hosanna": {
+          "start": "00:49:56",
+          "end": "00:55:27",
+          "album": "Ekk Deewana Tha",
+          "artists": "Leon D'Souza, Suzanne D'Mello",
+          "album_art": "https://c.saavncdn.com/565/Ekk-Deewana-Tha-Hindi-2012-500x500.jpg",
+          "release_year": "2012"
+        }
+      },
+      {
+        "Mitwa": {
+          "start": "00:55:28",
+          "end": "01:01:50",
+          "album": "Kabhi Alvida Naa Kehna",
+          "artists": "Shafqat Amanat Ali, Shankar Mahadevan, Caralisa Monteiro",
+          "album_art": "https://c.saavncdn.com/838/Kabhi-Alvida-Naa-Kehna-Hindi-2006-20190424125350-500x500.jpg",
+          "release_year": "2006"
+        }
+      },
+      {
+        "Tum Mile": {
+          "start": "01:01:51",
+          "end": "01:07:33",
+          "album": "Tum Mile",
+          "artists": "Neeraj Shridhar",
+          "album_art": "https://c.saavncdn.com/424/Tum-Mile-Hindi-2009-500x500.jpg",
+          "release_year": "2009"
+        }
+      },
+      {
+        "Khulke Jeene Ka": {
+          "start": "01:07:34",
+          "end": "01:11:40",
+          "album": "Dil Bechara",
+          "artists": "Arijit Singh, Shashaa Tirupati",
+          "download": "false",
+          "album_art": "https://c.saavncdn.com/264/Dil-Bechara-Hindi-2020-20200710155700-500x500.jpg",
+          "release_year": "2020"
+        }
+      },
+      {
+        "Pretty Woman": {
+          "start": "01:11:41",
+          "end": "01:17:34",
+          "album": "Kal Ho Naa Ho",
+          "artists": "Shankar Mahadevan, Ravi 'Rags' Khote",
+          "album_art": "https://c.saavncdn.com/792/Kal-Ho-Naa-Ho-Hindi-2003-20190424125345-500x500.jpg",
+          "release_year": "2003"
+        }
+      },
+      {
+        "Accha Lagta Hai": {
+          "start": "01:17:35",
+          "end": "01:21:30",
+          "album": "Aarakshan",
+          "artists": "Mohit Chauhan, Shreya Ghoshal",
+          "album_art": "https://c.saavncdn.com/168/Aarakshan-Hindi-2011-500x500.jpg",
+          "release_year": "2011"
+        }
+      },
+      {
+        "O Jaana": {
+          "start": "01:21:31",
+          "end": "01:26:00",
+          "album": "Raaz: The Mystery Continues",
+          "artists": "KK",
+          "album_art": "https://c.saavncdn.com/624/Raaz-The-Mystery-Continues-Hindi-2008-500x500.jpg",
+          "release_year": "2008"
+        }
+      },
+      {
+        "Mere Bina": {
+          "start": "01:26:01",
+          "end": "",
+          "album": "Crook",
+          "artists": "KK"
+        }
+      }
+    ]
+  },
+  "Skipped Jukebox Example": {
+    "ytb_link": "https://www.youtube.com/watch?v=RAslUOv9ID0",
+    "track_numbering": "false",
+    "download": "false",
+    "tracks": [
+      {
+        "Example Song": {
+          "start": "00:00:00",
+          "end": "00:03:00",
+          "album": "Unknown",
+          "artists": "Unknown"
+        }
+      }
+    ]
+  }
+}
