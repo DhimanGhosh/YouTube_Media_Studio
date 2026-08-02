@@ -24,12 +24,18 @@ jobs:
   quality:
     name: Tests and lint
     runs-on: ubuntu-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Install Linux GUI runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libegl1 libpulse0
       - run: uv sync --group dev
       - run: uv run python tools/release.py check
 
@@ -103,6 +109,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Install Linux GUI runtime libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libegl1 libpulse0
       - run: uv version "${{ needs.prepare-version.outputs.version }}"
       - run: uv run python tools/release.py build --target ${{ matrix.target }}
       - uses: actions/upload-artifact@v4
