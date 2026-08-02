@@ -110,6 +110,9 @@ def test_windows_install_retries_after_locked_executable(monkeypatch, tmp_path) 
     monkeypatch.setenv("APPDATA", str(tmp_path / "appdata"))
     monkeypatch.setattr(installer, "_windows_path", lambda *_args: None)
     monkeypatch.setattr(installer, "_windows_unregister", lambda: None)
+    monkeypatch.setattr(
+        installer, "_windows_desktop_directory", lambda: tmp_path / "Desktop"
+    )
     monkeypatch.setattr(installer, "_windows_shortcut", lambda _path: None)
     monkeypatch.setattr(installer, "_windows_register_uninstaller", lambda *_args: None)
 
@@ -144,6 +147,9 @@ def test_upgrade_removes_old_install_but_preserves_application_data(monkeypatch,
     monkeypatch.setattr(installer, "stop_running_application", lambda _path: (99,))
     monkeypatch.setattr(installer, "_windows_path", lambda *_args: None)
     monkeypatch.setattr(installer, "_windows_unregister", lambda: None)
+    monkeypatch.setattr(
+        installer, "_windows_desktop_directory", lambda: tmp_path / "Desktop"
+    )
     monkeypatch.setattr(installer, "_windows_shortcut", lambda _path: None)
     monkeypatch.setattr(installer, "_windows_register_uninstaller", lambda *_args: None)
 
@@ -179,15 +185,26 @@ def test_existing_installation_opens_maintenance_choices(monkeypatch, tmp_path) 
     destination = tmp_path / "installed"
     destination.mkdir()
     (destination / "YouTubeMediaStudio.exe").touch()
+    desktop_shortcut = tmp_path / "Desktop" / "YouTube Media Studio.lnk"
+    desktop_shortcut.parent.mkdir()
+    desktop_shortcut.touch()
+    monkeypatch.setattr(installer.platform, "system", lambda: "Windows")
     monkeypatch.setattr(installer, "existing_installation_destination", lambda: destination)
     monkeypatch.setattr(installer, "existing_installation_version", lambda: "2.0.4")
     monkeypatch.setattr(installer, "app_version", lambda: "2.0.5")
+    monkeypatch.setattr(
+        installer,
+        "_windows_shortcut_path",
+        lambda *, desktop=False: desktop_shortcut if desktop else tmp_path / "Start.lnk",
+    )
 
     app = installer.QApplication.instance() or installer.QApplication([])
     window = installer.InstallerWindow()
 
     assert window.upgrade_option.isChecked()
     assert "2.0.5" in window.upgrade_option.text()
+    assert window.desktop_shortcut.isChecked()
+    assert not window.desktop_shortcut.isHidden()
     assert not window.remove_data_option.isEnabled()
     window.uninstall_option.setChecked(True)
     assert window.remove_data_option.isEnabled()
@@ -222,3 +239,60 @@ def test_windows_shortcut_uses_encoded_script_and_environment(monkeypatch, tmp_p
     assert environment["YMS_TARGET_PATH"] == str(executable)
     assert environment["YMS_SHORTCUT_PATH"].endswith("YouTube Media Studio.lnk")
     assert (appdata / "Microsoft" / "Windows" / "Start Menu" / "Programs").is_dir()
+
+
+def test_optional_windows_desktop_shortcut_uses_configured_desktop(
+    monkeypatch, tmp_path
+) -> None:
+    executable = tmp_path / "Program Files" / "YouTubeMediaStudio.exe"
+    executable.parent.mkdir(parents=True)
+    executable.touch()
+    desktop = tmp_path / "Redirected Desktop"
+    captured: dict[str, object] = {}
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        captured["environment"] = kwargs["env"]
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(installer, "_windows_desktop_directory", lambda: desktop)
+    monkeypatch.setattr(installer.subprocess, "run", fake_run)
+
+    installer._windows_shortcut(executable, desktop=True)
+
+    environment = captured["environment"]
+    assert environment["YMS_SHORTCUT_PATH"] == str(
+        desktop / "YouTube Media Studio.lnk"
+    )
+    assert desktop.is_dir()
+
+
+def test_windows_install_creates_desktop_shortcut_only_when_selected(
+    monkeypatch, tmp_path
+) -> None:
+    payload = tmp_path / "payload"
+    gui = payload / "YouTubeMediaStudio.exe"
+    uninstaller = payload / "Uninstall YouTube Media Studio.exe"
+    for item in (gui, uninstaller):
+        item.parent.mkdir(parents=True, exist_ok=True)
+        item.write_text(item.name, encoding="utf-8")
+    destination = tmp_path / "installed"
+    shortcuts: list[bool] = []
+
+    monkeypatch.setattr(installer.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(installer, "gui_payload", lambda: gui)
+    monkeypatch.setattr(installer, "cli_payload", lambda: tmp_path / "unused-cli")
+    monkeypatch.setattr(installer, "uninstaller_payload", lambda: uninstaller)
+    monkeypatch.setattr(installer, "stop_running_application", lambda _path: ())
+    monkeypatch.setattr(installer, "_windows_path", lambda *_args: None)
+    monkeypatch.setattr(installer, "_windows_unregister", lambda: None)
+    monkeypatch.setattr(installer, "_windows_register_uninstaller", lambda *_args: None)
+    monkeypatch.setattr(
+        installer,
+        "_windows_shortcut",
+        lambda _path, *, desktop=False: shortcuts.append(desktop),
+    )
+
+    installer.install(False, destination, create_desktop_shortcut=True)
+
+    assert shortcuts == [False, True]

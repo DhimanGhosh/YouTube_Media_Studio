@@ -47,6 +47,10 @@ Upgrade and Repair close that exact installed app, replace its program files wit
 binaries, and retain settings, history, and application data. Uninstall offers a
 separate option to remove that data too.
 
+On Windows, **Optional Components** also provides **Create a desktop shortcut**. The
+Start-menu shortcut is always installed; the desktop shortcut is optional. Upgrade and
+Repair preserve the existing desktop-shortcut choice unless you change the checkbox.
+
 ## How the interface works
 
 The left sidebar switches between workflows. Each workflow collects its input in one

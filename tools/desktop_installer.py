@@ -298,15 +298,8 @@ def _remove_existing_installation(gui_target: Path) -> bool:
     if system == "Windows":
         _windows_path(False, gui_target)
         _windows_unregister()
-        shortcut = (
-            Path(os.environ["APPDATA"])
-            / "Microsoft"
-            / "Windows"
-            / "Start Menu"
-            / "Programs"
-            / f"{APP_NAME}.lnk"
-        )
-        _remove_path(shortcut)
+        _remove_path(_windows_shortcut_path())
+        _remove_path(_windows_shortcut_path(desktop=True))
     elif system == "Linux":
         applications = Path.home() / ".local" / "share" / "applications"
         _remove_path(applications / f"{DESKTOP_FILE_ID}.desktop")
@@ -368,10 +361,39 @@ def _windows_path(enable: bool, install_root: Path | None = None) -> None:
         winreg.SetValueEx(key, "Path", 0, winreg.REG_EXPAND_SZ, os.pathsep.join(entries))
 
 
-def _windows_shortcut(executable: Path) -> None:
-    start_menu = Path(os.environ["APPDATA"]) / "Microsoft" / "Windows" / "Start Menu" / "Programs"
-    start_menu.mkdir(parents=True, exist_ok=True)
-    shortcut = start_menu / f"{APP_NAME}.lnk"
+def _windows_desktop_directory() -> Path:
+    """Return the user's configured Desktop folder, including redirected profiles."""
+
+    import winreg
+
+    key_path = r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders"
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path) as key:
+            desktop, _ = winreg.QueryValueEx(key, "Desktop")
+        expanded = os.path.expandvars(str(desktop).strip())
+        if expanded:
+            return Path(expanded)
+    except (FileNotFoundError, OSError):
+        pass
+    return Path(os.environ.get("USERPROFILE", Path.home())) / "Desktop"
+
+
+def _windows_shortcut_path(*, desktop: bool = False) -> Path:
+    directory = (
+        _windows_desktop_directory()
+        if desktop
+        else Path(os.environ["APPDATA"])
+        / "Microsoft"
+        / "Windows"
+        / "Start Menu"
+        / "Programs"
+    )
+    return directory / f"{APP_NAME}.lnk"
+
+
+def _windows_shortcut(executable: Path, *, desktop: bool = False) -> None:
+    shortcut = _windows_shortcut_path(desktop=desktop)
+    shortcut.parent.mkdir(parents=True, exist_ok=True)
     script = (
         "$shell = New-Object -ComObject WScript.Shell; "
         "$link = $shell.CreateShortcut($env:YMS_SHORTCUT_PATH); "
@@ -405,7 +427,8 @@ def _windows_shortcut(executable: Path) -> None:
     )
     if completed.returncode != 0:
         detail = (completed.stderr or completed.stdout).strip()
-        raise RuntimeError(f"Could not create the Start-menu shortcut: {detail}")
+        location = "desktop" if desktop else "Start-menu"
+        raise RuntimeError(f"Could not create the {location} shortcut: {detail}")
 
 
 def _windows_unregister() -> None:
@@ -470,7 +493,12 @@ def _linux_uninstaller_entry(uninstaller: Path) -> None:
     entry.chmod(0o755)
 
 
-def install(include_cli: bool, gui_destination: Path | None = None) -> tuple[Path, Path | None]:
+def install(
+    include_cli: bool,
+    gui_destination: Path | None = None,
+    *,
+    create_desktop_shortcut: bool = False,
+) -> tuple[Path, Path | None]:
     source_gui = gui_payload()
     source_cli = cli_payload()
     source_uninstaller = uninstaller_payload()
@@ -508,6 +536,8 @@ def install(include_cli: bool, gui_destination: Path | None = None) -> tuple[Pat
     if system == "Windows":
         _windows_register_uninstaller(installed_uninstaller, gui_executable)
         _windows_shortcut(gui_executable)
+        if create_desktop_shortcut:
+            _windows_shortcut(gui_executable, desktop=True)
     elif system == "Linux":
         _linux_uninstaller_entry(installed_uninstaller)
 
@@ -556,15 +586,8 @@ def uninstall(*, remove_data: bool = False) -> None:
         )
         _windows_path(False, install_root)
         _windows_unregister()
-        shortcut = (
-            Path(os.environ["APPDATA"])
-            / "Microsoft"
-            / "Windows"
-            / "Start Menu"
-            / "Programs"
-            / f"{APP_NAME}.lnk"
-        )
-        _remove_path(shortcut)
+        _remove_path(_windows_shortcut_path())
+        _remove_path(_windows_shortcut_path(desktop=True))
         _remove_windows_installation(install_root)
     else:
         _remove_path(cli_destination())
@@ -688,6 +711,7 @@ class InstallWorker(QThread):
         destination: Path,
         operation: str = "install",
         remove_data: bool = False,
+        create_desktop_shortcut: bool = False,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -695,6 +719,7 @@ class InstallWorker(QThread):
         self.destination = destination
         self.operation = operation
         self.remove_data = remove_data
+        self.create_desktop_shortcut = create_desktop_shortcut
 
     def run(self) -> None:
         try:
@@ -705,7 +730,11 @@ class InstallWorker(QThread):
                     _remove_path(application_data_directory())
                 gui_target, installed_cli = None, None
             else:
-                gui_target, installed_cli = install(self.include_cli, self.destination)
+                gui_target, installed_cli = install(
+                    self.include_cli,
+                    self.destination,
+                    create_desktop_shortcut=self.create_desktop_shortcut,
+                )
         except Exception as exc:  # noqa: BLE001 - errors must reach the installer user
             self.failed.emit(str(exc))
             return
@@ -908,6 +937,27 @@ class InstallerWindow(QWidget):
             cli_detail.setText(f"Installs {CLI_NAME} in ~/.local/bin.")
         layout.addWidget(self.cli)
         layout.addWidget(cli_detail)
+
+        self.desktop_shortcut = QCheckBox("Create a desktop shortcut")
+        existing_desktop_shortcut = bool(
+            self._existing_destination
+            and platform.system() == "Windows"
+            and _windows_shortcut_path(desktop=True).is_file()
+        )
+        self.desktop_shortcut.setChecked(
+            existing_desktop_shortcut if self._existing_destination else True
+        )
+        self.desktop_shortcut.setMinimumHeight(24)
+        self.desktop_shortcut.setVisible(platform.system() == "Windows")
+        desktop_detail = QLabel(
+            "Adds a shortcut to your Windows desktop. The Start-menu shortcut is always created."
+        )
+        desktop_detail.setObjectName("detailText")
+        desktop_detail.setWordWrap(True)
+        desktop_detail.setVisible(platform.system() == "Windows")
+        layout.addSpacing(8)
+        layout.addWidget(self.desktop_shortcut)
+        layout.addWidget(desktop_detail)
         layout.addStretch()
         page.setLayout(layout)
         return page
@@ -1074,7 +1124,14 @@ class InstallerWindow(QWidget):
             )
         self.ready_summary.setText(
             f"Destination folder:\n{self.destination_edit.text().strip()}\n\n"
-            f"Components:\n{components}{upgrade_note}"
+            f"Components:\n{components}"
+            + (
+                "\n\nDesktop shortcut:\n"
+                + ("Create" if self.desktop_shortcut.isChecked() else "Do not create")
+                if platform.system() == "Windows"
+                else ""
+            )
+            + upgrade_note
         )
 
     def run_install(self) -> None:
@@ -1097,6 +1154,7 @@ class InstallerWindow(QWidget):
             Path(self.destination_edit.text().strip()),
             operation,
             self.remove_data_option.isChecked() if self._existing_destination else False,
+            self.desktop_shortcut.isChecked() if platform.system() == "Windows" else False,
             self,
         )
         self._worker.succeeded.connect(self._installation_complete)
@@ -1126,6 +1184,8 @@ class InstallerWindow(QWidget):
             detail += f"\n\nCommand-line tools:\n{installed_cli}"
             if platform.system() != "Windows":
                 detail += "\n\nMake sure ~/.local/bin is in your PATH."
+        if platform.system() == "Windows" and self.desktop_shortcut.isChecked():
+            detail += "\n\nA desktop shortcut was created."
         self.finish_detail.setText(detail)
         self.progress.setRange(0, 100)
         self.progress.setValue(100)

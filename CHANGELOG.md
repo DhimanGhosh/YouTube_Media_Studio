@@ -4,6 +4,14 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [Unreleased]
+
+### Added
+
+- Add an optional Windows **Create a desktop shortcut** installer component while
+  retaining the standard Start-menu shortcut, preserving the choice during maintenance,
+  and removing both shortcuts during uninstall.
+
 ## [2.0.9] - 2026-08-03
 
 ### Changed
