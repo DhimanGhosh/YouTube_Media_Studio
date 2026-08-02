@@ -4,7 +4,7 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
-## [Unreleased]
+## [2.0.6] - 2026-08-02
 
 ### Changed
 
