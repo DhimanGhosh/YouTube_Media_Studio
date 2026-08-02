@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -39,6 +40,12 @@ def test_changelog_records_subject_and_abbreviated_hash() -> None:
     assert "## [2.1.0]" in section
     assert "### Added" in section
     assert "feat: useful feature (`0123456`)" in section
+
+
+def test_release_date_uses_india_timezone_across_utc_midnight() -> None:
+    github_runner_time = datetime(2026, 8, 2, 21, 53, 33, tzinfo=timezone.utc)
+
+    assert release.release_date(github_runner_time).isoformat() == "2026-08-03"
 
 
 def test_update_changelog_promotes_curated_unreleased_notes(tmp_path, monkeypatch) -> None:

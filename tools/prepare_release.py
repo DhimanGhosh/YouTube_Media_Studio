@@ -8,12 +8,14 @@ import re
 import subprocess
 import tomllib
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CHANGELOG = ROOT / "CHANGELOG.md"
 VERSION_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
+RELEASE_TIMEZONE = "Asia/Kolkata"
+RELEASE_UTC_OFFSET = timedelta(hours=5, minutes=30)
 
 
 @dataclass(frozen=True)
@@ -86,6 +88,17 @@ def next_version(requested_bump: str) -> tuple[str, list[Commit]]:
     return ".".join(map(str, version)), commits
 
 
+def release_date(now: datetime | None = None) -> date:
+    """Return the calendar date used in public releases for the project timezone."""
+    project_timezone = timezone(RELEASE_UTC_OFFSET, RELEASE_TIMEZONE)
+    current = (
+        now.astimezone(project_timezone)
+        if now is not None
+        else datetime.now(project_timezone)
+    )
+    return current.date()
+
+
 def changelog_section(version: str, commits: list[Commit]) -> str:
     groups: dict[str, list[Commit]] = {
         "Breaking": [],
@@ -107,7 +120,7 @@ def changelog_section(version: str, commits: list[Commit]) -> str:
             group = "Changed"
         groups[group].append(commit)
 
-    lines = [f"## [{version}] - {date.today().isoformat()}"]
+    lines = [f"## [{version}] - {release_date().isoformat()}"]
     for heading, items in groups.items():
         if not items:
             continue
@@ -128,7 +141,7 @@ def update_changelog(version: str) -> None:
     )
     if unreleased:
         body = unreleased.group("body").strip()
-        section = f"## [{version}] - {date.today().isoformat()}"
+        section = f"## [{version}] - {release_date().isoformat()}"
         if body:
             section += f"\n\n{body}"
         remainder = current[unreleased.end() :].lstrip()
