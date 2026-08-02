@@ -511,6 +511,11 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
                 artwork_path=None,
             )
 
+    @patch(
+        "youtube_audio_video_downloader.services.album_metadata_enricher."
+        "MAX_PARALLEL_WORKERS",
+        12,
+    )
     @patch("youtube_audio_video_downloader.services.album_metadata_enricher._enrich_one_file")
     def test_more_than_nine_workers_execute_concurrently(self, enrich_one_mock) -> None:
         barrier = threading.Barrier(12, timeout=30)
