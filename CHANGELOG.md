@@ -10,7 +10,7 @@ abbreviated hashes to the next version section.
 
 - Record automated release dates in the project timezone (`Asia/Kolkata`) rather than
   the GitHub runner's UTC calendar date.
-- Correct the 2.0.x changelog dates to match their August 3 release times in India.
+- Correct the 2.0.6 changelog date to match its August 3 release time in India.
 
 ## [2.0.6] - 2026-08-03
 
@@ -38,13 +38,13 @@ abbreviated hashes to the next version section.
 - Keep the Windows installer simulation isolated from the host operating system so the
   cross-platform release gate does not import Windows-only registry modules on Linux.
 
-## [2.0.5] - 2026-08-03
+## [2.0.5] - 2026-08-02
 
 ### Changed
 
 - Automated release with no new commit messages.
 
-## [2.0.4] - 2026-08-03
+## [2.0.4] - 2026-08-02
 
 ### Added
 
@@ -87,22 +87,22 @@ abbreviated hashes to the next version section.
 - Mask the SerpApi credential in the GUI and suppress request URLs and exception text
   that could expose the API key when a SerpApi request fails.
 
-## [2.0.3] - 2026-08-03
+## [2.0.3] - 2026-08-02
 
 ### Changed
 
 - Automated release with no new commit messages.
-## [2.0.2] - 2026-08-03
+## [2.0.2] - 2026-08-02
 
 ### Changed
 
 - Automated release with no new commit messages.
-## [2.0.1] - 2026-08-03
+## [2.0.1] - 2026-08-02
 
 ### Changed
 
 - Automated release with no new commit messages.
-## [2.0.0] - 2026-08-03
+## [2.0.0] - 2026-08-02
 
 ### Added
 
