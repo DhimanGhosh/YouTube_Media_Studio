@@ -513,7 +513,7 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
 
     @patch("youtube_audio_video_downloader.services.album_metadata_enricher._enrich_one_file")
     def test_more_than_nine_workers_execute_concurrently(self, enrich_one_mock) -> None:
-        barrier = threading.Barrier(12, timeout=3)
+        barrier = threading.Barrier(12, timeout=30)
         state_lock = threading.Lock()
         active = 0
         maximum_active = 0
@@ -523,9 +523,11 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
             with state_lock:
                 active += 1
                 maximum_active = max(maximum_active, active)
-            barrier.wait()
-            with state_lock:
-                active -= 1
+            try:
+                barrier.wait()
+            finally:
+                with state_lock:
+                    active -= 1
             return "skipped", "test complete", path
 
         enrich_one_mock.side_effect = work

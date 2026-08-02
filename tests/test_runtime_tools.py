@@ -11,7 +11,10 @@ def test_bundled_tools_are_added_to_path(monkeypatch, tmp_path) -> None:
     tools.mkdir()
     suffix = ".exe" if os.name == "nt" else ""
     for name in ("ffmpeg", "ffprobe", "deno"):
-        (tools / f"{name}{suffix}").touch()
+        tool = tools / f"{name}{suffix}"
+        tool.touch()
+        if os.name != "nt":
+            tool.chmod(0o755)
     monkeypatch.setattr(runtime_tools.sys, "_MEIPASS", str(tmp_path), raising=False)
     monkeypatch.setattr(runtime_tools.sys, "frozen", True, raising=False)
     monkeypatch.setenv("PATH", "")
