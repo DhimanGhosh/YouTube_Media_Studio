@@ -29,7 +29,9 @@ def run_git(*args: str) -> str:
     completed = subprocess.run(
         ["git", *args], cwd=ROOT, check=True, capture_output=True, text=True
     )
-    return completed.stdout.strip()
+    # Preserve Git's ASCII field/record separators (\x1f/\x1e). ``str.strip``
+    # treats them as whitespace and can erase an empty commit-body field.
+    return completed.stdout.rstrip("\r\n")
 
 
 def project_version() -> tuple[int, int, int]:
@@ -55,7 +57,7 @@ def commits_since(tag: str | None) -> list[Commit]:
     raw = run_git("log", revision, "--format=%H%x1f%s%x1f%b%x1e")
     commits: list[Commit] = []
     for record in raw.split("\x1e"):
-        fields = record.strip().split("\x1f", 2)
+        fields = record.strip("\r\n").split("\x1f", 2)
         if len(fields) == 3:
             commits.append(Commit(fields[0], fields[1].strip(), fields[2].strip()))
     return commits

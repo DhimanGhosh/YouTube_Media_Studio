@@ -12,6 +12,11 @@ abbreviated hashes to the next version section.
   retaining the standard Start-menu shortcut, preserving the choice during maintenance,
   and removing both shortcuts during uninstall.
 
+### Fixed
+
+- Preserve conventional commits with empty bodies while parsing Git history so scoped
+  `feat(...)` commits correctly trigger an automatic minor release.
+
 ## [2.0.9] - 2026-08-03
 
 ### Changed

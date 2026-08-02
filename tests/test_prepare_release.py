@@ -4,6 +4,7 @@ import importlib.util
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "tools" / "prepare_release.py"
@@ -23,6 +24,26 @@ def test_automatic_semantic_version_bump() -> None:
     assert release.automatic_bump([commit("feat(gui): add queue")]) == "minor"
     assert release.automatic_bump([commit("feat!: replace job schema")]) == "major"
     assert release.automatic_bump([commit("refactor: schema", "BREAKING CHANGE: new keys")]) == "major"
+
+
+def test_empty_body_feature_commit_survives_git_record_parsing(monkeypatch) -> None:
+    output = (
+        "0123456789abcdef\x1ffeat(installer): add shortcut\x1f\x1e\n"
+        "fedcba9876543210\x1ftest: cover shortcut\x1f\x1e\n"
+    )
+    monkeypatch.setattr(
+        release.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(stdout=output),
+    )
+
+    commits = release.commits_since("v2.0.9")
+
+    assert [item.subject for item in commits] == [
+        "feat(installer): add shortcut",
+        "test: cover shortcut",
+    ]
+    assert release.automatic_bump(commits) == "minor"
 
 
 def test_next_version_uses_requested_or_commit_driven_bump(monkeypatch) -> None:
