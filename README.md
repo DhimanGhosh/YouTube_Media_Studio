@@ -11,6 +11,7 @@
 
 <p align="center">
   <a href="#download"><b>Download</b></a> ·
+  <a href="#using-the-desktop-app"><b>User guide</b></a> ·
   <a href="#see-it-running"><b>See it running</b></a> ·
   <a href="#what-it-does"><b>Features</b></a> ·
   <a href="#command-line"><b>CLI</b></a> ·
@@ -128,6 +129,34 @@ The Pi package intentionally excludes PyQt6. FFmpeg, FFprobe, and Deno must be
 available on the Pi. Remove the package with `youtube-media-studio-uninstall`.
 
 </details>
+
+## Using the desktop app
+
+The desktop interface is organized as task-focused pages: search, download, split,
+edit, consolidate, inspect logs, configure defaults, and play the finished library.
+
+1. Open **Global Settings** once to confirm download and application-data defaults.
+2. Use **Search Song** to find a source, or open a downloader/splitter directly when
+   you already have its URL.
+3. Review metadata and output locations before starting an operation.
+4. Follow progress on **Dashboard** and inspect skipped items in **Live Logs**.
+
+**[Open the complete desktop user guide →](docs/USER_GUIDE.md)**
+
+| I want to… | Instructions |
+| --- | --- |
+| Understand every sidebar screen | [Screen reference](docs/USER_GUIDE.md#screen-reference) |
+| Find and download a song | [Song workflow](docs/USER_GUIDE.md#find-and-download-a-song) |
+| Split an album or jukebox | [Splitter workflow](docs/USER_GUIDE.md#split-an-album-or-jukebox) |
+| Repair or trim a local file | [Edit File guide](docs/USER_GUIDE.md#edit-a-local-media-file) |
+| Enrich and move an existing music folder | [Album Consolidator guide](docs/USER_GUIDE.md#enrich-and-organize-an-existing-music-folder) |
+| Browse and play my local collection | [Media Library guide](docs/USER_GUIDE.md#use-the-local-media-library) |
+| Understand a skip, review, or failure | [Live Log glossary](docs/USER_GUIDE.md#read-live-logs) |
+| Use the application safely | [File-safety rules](docs/USER_GUIDE.md#file-safety-rules) |
+
+> [!IMPORTANT]
+> Keep a backup and test file-changing workflows on a small folder first. Download only
+> media you are authorized to use.
 
 ## What it does
 
