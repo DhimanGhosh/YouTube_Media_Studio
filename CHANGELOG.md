@@ -2,6 +2,11 @@
 
 All notable changes to YouTube Media Studio are recorded here. Automated releases add commit subjects and abbreviated commit hashes to the next version section.
 
+## [2.0.2] - 2026-08-02
+
+### Changed
+
+- Automated release with no new commit messages.
 ## [2.0.1] - 2026-08-02
 
 ### Changed
