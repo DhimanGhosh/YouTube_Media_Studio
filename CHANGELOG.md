@@ -4,6 +4,23 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [Unreleased]
+
+### Changed
+
+- Switch Setup into maintenance mode when an installed desktop copy is detected, with
+  explicit Upgrade, Repair with fresh binaries, and Uninstall choices plus an optional
+  application-data removal control.
+- For upgrades and repairs, detect the registered location, close only a running process
+  with the exact installed executable path, remove old program files and operating-system
+  registration, then install and register the selected release automatically.
+- Preserve settings, history, and application data during automatic upgrades.
+
+### Fixed
+
+- Prevent Windows upgrades from failing with `WinError 5: Access is denied` when the
+  installed YouTube Media Studio executable is still running.
+
 ## [2.0.4] - 2026-08-02
 
 ### Added

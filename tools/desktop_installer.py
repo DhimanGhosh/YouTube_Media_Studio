@@ -8,10 +8,12 @@ import base64
 import os
 import platform
 import shutil
+import signal
 import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 from pathlib import Path
 
 from PyQt6.QtCore import QPointF, QRectF, QThread, Qt, pyqtSignal
@@ -28,6 +30,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QRadioButton,
     QSizePolicy,
     QStackedWidget,
     QVBoxLayout,
@@ -60,9 +63,7 @@ def payload_root() -> Path:
         archive = bundled_root / "payload.tar.gz"
         if archive.is_file():
             if _EXTRACTED_PAYLOAD_ROOT is None:
-                extraction_root = Path(
-                    tempfile.mkdtemp(prefix=f"{DESKTOP_FILE_ID}-setup-")
-                )
+                extraction_root = Path(tempfile.mkdtemp(prefix=f"{DESKTOP_FILE_ID}-setup-"))
                 try:
                     with tarfile.open(archive, "r:gz") as bundle:
                         bundle.extractall(extraction_root, filter="data")
@@ -144,6 +145,180 @@ def application_data_directory() -> Path:
     return root / ORGANIZATION_NAME / APP_NAME
 
 
+def existing_installation_destination() -> Path | None:
+    """Return the registered/current installation without inventing a new path."""
+    if platform.system() == "Windows":
+        import winreg
+
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, UNINSTALL_KEY) as key:
+                location, _ = winreg.QueryValueEx(key, "InstallLocation")
+        except (FileNotFoundError, OSError):
+            location = ""
+        if str(location).strip():
+            registered = Path(str(location)).expanduser()
+            if registered.exists():
+                return registered
+
+    default = default_gui_destination()
+    return default if default.exists() else None
+
+
+def existing_installation_version() -> str | None:
+    if platform.system() != "Windows":
+        return None
+    import winreg
+
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, UNINSTALL_KEY) as key:
+            version, _ = winreg.QueryValueEx(key, "DisplayVersion")
+    except (FileNotFoundError, OSError):
+        return None
+    return str(version).strip() or None
+
+
+def _installed_gui_executable(gui_target: Path) -> Path:
+    system = platform.system()
+    if system == "Windows":
+        return gui_target / f"{EXECUTABLE_BASENAME}.exe"
+    if system == "Darwin":
+        return gui_target / "Contents" / "MacOS" / EXECUTABLE_BASENAME
+    return gui_target / EXECUTABLE_BASENAME
+
+
+def _stop_windows_application(executable: Path) -> tuple[int, ...]:
+    """Stop only processes whose full image path is the installed GUI executable."""
+    script = (
+        "$target = [IO.Path]::GetFullPath($env:YMS_TARGET_PATH); "
+        "$matches = Get-CimInstance Win32_Process | Where-Object { "
+        "$_.Name -eq $env:YMS_TARGET_NAME -and $_.ExecutablePath -and [String]::Equals("
+        "[IO.Path]::GetFullPath($_.ExecutablePath), $target, "
+        "[StringComparison]::OrdinalIgnoreCase) }; "
+        "foreach ($process in $matches) { "
+        "$native = Get-Process -Id $process.ProcessId -ErrorAction SilentlyContinue; "
+        "if ($native -and $native.MainWindowHandle -ne 0) { "
+        "$null = $native.CloseMainWindow(); "
+        "$deadline = (Get-Date).AddSeconds(5); "
+        "while ((Get-Process -Id $process.ProcessId -ErrorAction SilentlyContinue) "
+        "-and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 100 } }; "
+        "if (Get-Process -Id $process.ProcessId -ErrorAction SilentlyContinue) { "
+        "Stop-Process -Id $process.ProcessId -Force -ErrorAction Stop; "
+        "$deadline = (Get-Date).AddSeconds(10); "
+        "while ((Get-Process -Id $process.ProcessId -ErrorAction SilentlyContinue) "
+        "-and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 100 } }; "
+        "Write-Output $process.ProcessId }"
+    )
+    encoded_script = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
+    environment = os.environ.copy()
+    environment["YMS_TARGET_PATH"] = str(executable.resolve())
+    environment["YMS_TARGET_NAME"] = executable.name
+    completed = subprocess.run(
+        ["powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded_script],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=environment,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout).strip()
+        raise RuntimeError(
+            f"Could not close the running {APP_NAME} application. "
+            f"Close it manually and try again. {detail}"
+        )
+    return tuple(int(line) for line in completed.stdout.splitlines() if line.strip().isdigit())
+
+
+def _posix_process_executable(pid: int) -> Path | None:
+    if platform.system() == "Linux":
+        try:
+            return (Path("/proc") / str(pid) / "exe").resolve(strict=True)
+        except (FileNotFoundError, PermissionError, OSError):
+            return None
+    completed = subprocess.run(
+        ["ps", "-p", str(pid), "-o", "comm="],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    command = completed.stdout.strip()
+    return Path(command).resolve() if completed.returncode == 0 and command else None
+
+
+def _stop_posix_application(executable: Path) -> tuple[int, ...]:
+    target = executable.resolve()
+    completed = subprocess.run(["ps", "-axo", "pid="], check=True, capture_output=True, text=True)
+    matches = tuple(
+        pid
+        for value in completed.stdout.splitlines()
+        if value.strip().isdigit()
+        for pid in (int(value.strip()),)
+        if pid != os.getpid() and _posix_process_executable(pid) == target
+    )
+    for pid in matches:
+        os.kill(pid, signal.SIGTERM)
+    deadline = time.monotonic() + 10
+    remaining = set(matches)
+    while remaining and time.monotonic() < deadline:
+        for pid in tuple(remaining):
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                remaining.remove(pid)
+        if remaining:
+            time.sleep(0.1)
+    for pid in remaining:
+        os.kill(pid, signal.SIGKILL)
+    return matches
+
+
+def stop_running_application(gui_target: Path) -> tuple[int, ...]:
+    """Close a running installed GUI at *gui_target*, never a name-only match."""
+    executable = _installed_gui_executable(gui_target)
+    if not executable.exists():
+        return ()
+    if platform.system() == "Windows":
+        return _stop_windows_application(executable)
+    return _stop_posix_application(executable)
+
+
+def _remove_existing_installation(gui_target: Path) -> bool:
+    """Remove an identified application install while preserving per-user data."""
+    executable = _installed_gui_executable(gui_target)
+    detected = None if executable.exists() else existing_installation_destination()
+    is_registered_target = detected is not None and os.path.normcase(
+        str(detected.resolve())
+    ) == os.path.normcase(str(gui_target.resolve()))
+    is_existing_install = executable.exists() or is_registered_target
+    stop_running_application(gui_target)
+    if not is_existing_install:
+        return False
+
+    system = platform.system()
+    if system == "Windows":
+        _windows_path(False, gui_target)
+        _windows_unregister()
+        shortcut = (
+            Path(os.environ["APPDATA"])
+            / "Microsoft"
+            / "Windows"
+            / "Start Menu"
+            / "Programs"
+            / f"{APP_NAME}.lnk"
+        )
+        _remove_path(shortcut)
+    elif system == "Linux":
+        applications = Path.home() / ".local" / "share" / "applications"
+        _remove_path(applications / f"{DESKTOP_FILE_ID}.desktop")
+        _remove_path(applications / f"{DESKTOP_FILE_ID}-uninstall.desktop")
+
+    _remove_path(gui_target)
+    if system != "Windows":
+        _remove_path(cli_destination(gui_target))
+        _remove_path(uninstaller_destination(gui_target))
+    return True
+
+
 def check_payload() -> None:
     gui = gui_payload()
     cli = cli_payload()
@@ -185,7 +360,9 @@ def _windows_path(enable: bool, install_root: Path | None = None) -> None:
         except FileNotFoundError:
             current = ""
         entries = [part for part in str(current).split(os.pathsep) if part]
-        entries = [part for part in entries if os.path.normcase(part) != os.path.normcase(install_dir)]
+        entries = [
+            part for part in entries if os.path.normcase(part) != os.path.normcase(install_dir)
+        ]
         if enable:
             entries.append(install_dir)
         winreg.SetValueEx(key, "Path", 0, winreg.REG_EXPAND_SZ, os.pathsep.join(entries))
@@ -257,6 +434,8 @@ def _windows_register_uninstaller(uninstaller: Path, executable: Path) -> None:
             winreg.SetValueEx(key, name, 0, winreg.REG_SZ, value)
         winreg.SetValueEx(key, "NoModify", 0, winreg.REG_DWORD, 1)
         winreg.SetValueEx(key, "NoRepair", 0, winreg.REG_DWORD, 1)
+
+
 def _linux_desktop_entry(executable: Path) -> None:
     applications = Path.home() / ".local" / "share" / "applications"
     applications.mkdir(parents=True, exist_ok=True)
@@ -305,9 +484,15 @@ def install(include_cli: bool, gui_destination: Path | None = None) -> tuple[Pat
     custom_destination = gui_destination is not None
     gui_target = gui_destination or default_gui_destination()
     system = platform.system()
+    _remove_existing_installation(gui_target)
     if system == "Windows":
         gui_executable = gui_target / f"{EXECUTABLE_BASENAME}.exe"
-        _replace_path(source_gui, gui_executable)
+        try:
+            _replace_path(source_gui, gui_executable)
+        except PermissionError:
+            # Cover the narrow race where the application starts after preflight.
+            stop_running_application(gui_target)
+            _replace_path(source_gui, gui_executable)
     elif system == "Darwin":
         _replace_path(source_gui, gui_target)
         gui_executable = gui_target / "Contents" / "MacOS" / EXECUTABLE_BASENAME
@@ -373,7 +558,11 @@ def uninstall(*, remove_data: bool = False) -> None:
         _windows_unregister()
         shortcut = (
             Path(os.environ["APPDATA"])
-            / "Microsoft" / "Windows" / "Start Menu" / "Programs" / f"{APP_NAME}.lnk"
+            / "Microsoft"
+            / "Windows"
+            / "Start Menu"
+            / "Programs"
+            / f"{APP_NAME}.lnk"
         )
         _remove_path(shortcut)
         _remove_windows_installation(install_root)
@@ -428,9 +617,7 @@ def apply_installer_palette(app: QApplication) -> None:
     palette.setColor(QPalette.ColorRole.Highlight, QColor("#0067c0"))
     palette.setColor(QPalette.ColorRole.HighlightedText, QColor("#ffffff"))
     palette.setColor(QPalette.ColorRole.PlaceholderText, QColor("#666666"))
-    palette.setColor(
-        QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText, QColor("#777777")
-    )
+    palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText, QColor("#777777"))
     app.setPalette(palette)
 
 
@@ -461,7 +648,9 @@ class InstallerArtwork(QWidget):
         brand.setPointSize(18)
         brand.setWeight(QFont.Weight.Bold)
         painter.setFont(brand)
-        painter.drawText(QRectF(28, 34, 190, 60), Qt.AlignmentFlag.AlignLeft, "YouTube\nMedia Studio")
+        painter.drawText(
+            QRectF(28, 34, 190, 60), Qt.AlignmentFlag.AlignLeft, "YouTube\nMedia Studio"
+        )
 
         # A media-window motif keeps the panel recognizable without shipping artwork.
         card = QRectF(29, 155, 187, 132)
@@ -497,15 +686,26 @@ class InstallWorker(QThread):
         self,
         include_cli: bool,
         destination: Path,
+        operation: str = "install",
+        remove_data: bool = False,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.include_cli = include_cli
         self.destination = destination
+        self.operation = operation
+        self.remove_data = remove_data
 
     def run(self) -> None:
         try:
-            gui_target, installed_cli = install(self.include_cli, self.destination)
+            if self.operation == "uninstall":
+                if not _remove_existing_installation(self.destination):
+                    raise RuntimeError(f"No {APP_NAME} installation was found to remove.")
+                if self.remove_data:
+                    _remove_path(application_data_directory())
+                gui_target, installed_cli = None, None
+            else:
+                gui_target, installed_cli = install(self.include_cli, self.destination)
         except Exception as exc:  # noqa: BLE001 - errors must reach the installer user
             self.failed.emit(str(exc))
             return
@@ -537,6 +737,8 @@ class InstallerWindow(QWidget):
         self.setFixedSize(780, 520)
         self._worker: InstallWorker | None = None
         self._installed_gui: Path | None = None
+        self._existing_destination = existing_installation_destination()
+        self._existing_version = existing_installation_version()
 
         self.pages = QStackedWidget()
         self.pages.addWidget(self._welcome_page())
@@ -584,6 +786,53 @@ class InstallerWindow(QWidget):
     def _welcome_page(self) -> QWidget:
         page = QWidget()
         page.setObjectName("pageContent")
+        if self._existing_destination:
+            installed_label = f" version {self._existing_version}" if self._existing_version else ""
+            layout, _ = _page_header(
+                "Maintenance",
+                f"Maintain {APP_NAME}",
+                f"Setup found{installed_label} at {self._existing_destination}. "
+                "Choose the operation you want to perform.",
+            )
+            self.upgrade_option = QRadioButton(f"Upgrade to version {app_version()} (recommended)")
+            self.upgrade_option.setChecked(True)
+            self.repair_option = QRadioButton("Repair installation (replace all program binaries)")
+            self.uninstall_option = QRadioButton("Uninstall YouTube Media Studio")
+            self.remove_data_option = QCheckBox(
+                "Also remove settings, history, and application data"
+            )
+            self.remove_data_option.setEnabled(False)
+            self.uninstall_option.toggled.connect(self.remove_data_option.setEnabled)
+
+            choices = QGroupBox("Choose a maintenance operation")
+            choices_layout = QVBoxLayout(choices)
+            choices_layout.setContentsMargins(14, 18, 14, 14)
+            choices_layout.setSpacing(6)
+            upgrade_detail = QLabel("Replace the installed release with this newer setup package.")
+            upgrade_detail.setObjectName("detailText")
+            repair_detail = QLabel(
+                "Reinstall every program file to repair missing or damaged binaries."
+            )
+            repair_detail.setObjectName("detailText")
+            uninstall_detail = QLabel(
+                "Remove the application, command-line tools, shortcuts, and registration."
+            )
+            uninstall_detail.setObjectName("detailText")
+            choices_layout.addWidget(self.upgrade_option)
+            choices_layout.addWidget(upgrade_detail)
+            choices_layout.addSpacing(4)
+            choices_layout.addWidget(self.repair_option)
+            choices_layout.addWidget(repair_detail)
+            choices_layout.addSpacing(4)
+            choices_layout.addWidget(self.uninstall_option)
+            choices_layout.addWidget(uninstall_detail)
+            choices_layout.addWidget(self.remove_data_option)
+            layout.addSpacing(8)
+            layout.addWidget(choices)
+            layout.addStretch()
+            page.setLayout(layout)
+            return page
+
         layout, _ = _page_header(
             "Welcome",
             f"Install {APP_NAME}",
@@ -617,14 +866,20 @@ class InstallerWindow(QWidget):
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(14, 18, 14, 14)
         path_row = QHBoxLayout()
-        self.destination_edit = QLineEdit(str(default_gui_destination()))
+        detected_destination = self._existing_destination
+        self.destination_edit = QLineEdit(str(detected_destination or default_gui_destination()))
         self.destination_edit.setMinimumHeight(26)
         browse_button = QPushButton("Browse...")
         browse_button.clicked.connect(self.browse_destination)
         path_row.addWidget(self.destination_edit, 1)
         path_row.addWidget(browse_button)
         card_layout.addLayout(path_row)
-        note = QLabel("A new folder will be created if it does not already exist.")
+        note_text = (
+            "Existing installation detected. Setup will upgrade it and keep your settings."
+            if detected_destination
+            else "A new folder will be created if it does not already exist."
+        )
+        note = QLabel(note_text)
         note.setObjectName("detailText")
         card_layout.addWidget(note)
         layout.addWidget(card)
@@ -665,6 +920,8 @@ class InstallerWindow(QWidget):
             "Ready to install",
             "Review your choices, then select Install to begin.",
         )
+        self.ready_title = layout.itemAt(1).widget()
+        self.ready_description = layout.itemAt(2).widget()
         self.ready_summary = QLabel()
         self.ready_summary.setObjectName("bodyText")
         self.ready_summary.setWordWrap(True)
@@ -682,6 +939,8 @@ class InstallerWindow(QWidget):
             "Installing...",
             f"Please wait while {APP_NAME} is installed.",
         )
+        self.progress_title = layout.itemAt(1).widget()
+        self.progress_description = layout.itemAt(2).widget()
         self.progress = QProgressBar()
         self.progress.setRange(0, 0)
         self.progress.setTextVisible(False)
@@ -703,6 +962,8 @@ class InstallerWindow(QWidget):
             "You're ready to go",
             f"{APP_NAME} was installed successfully.",
         )
+        self.finish_title = layout.itemAt(1).widget()
+        self.finish_description = layout.itemAt(2).widget()
         mark_row = QHBoxLayout()
         self.success_mark = QLabel("OK")
         self.success_mark.setObjectName("successMark")
@@ -726,17 +987,28 @@ class InstallerWindow(QWidget):
         self.back_button.setVisible(page in (1, 2, 3))
         self.next_button.setVisible(page != 4)
         self.cancel_button.setVisible(page != 5)
-        self.next_button.setText("Install" if page == 3 else "Finish" if page == 5 else "Next")
+        if page == 3:
+            labels = {"upgrade": "Upgrade", "repair": "Repair", "uninstall": "Uninstall"}
+            self.next_button.setText(labels.get(self._selected_operation(), "Install"))
+        else:
+            self.next_button.setText("Finish" if page == 5 else "Next")
 
     def go_back(self) -> None:
         page = self.pages.currentIndex()
         if page in (1, 2, 3):
-            self.pages.setCurrentIndex(page - 1)
+            if page == 3 and self._selected_operation() == "uninstall":
+                self.pages.setCurrentIndex(0)
+            else:
+                self.pages.setCurrentIndex(page - 1)
             self._sync_buttons()
 
     def go_next(self) -> None:
         page = self.pages.currentIndex()
-        if page in (0, 1):
+        if page == 0 and self._selected_operation() == "uninstall":
+            self._update_ready_summary()
+            self.pages.setCurrentIndex(3)
+            self._sync_buttons()
+        elif page in (0, 1):
             if page == 1 and not self.destination_edit.text().strip():
                 QMessageBox.warning(self, "Choose an install path", "Enter an installation folder.")
                 return
@@ -757,32 +1029,97 @@ class InstallerWindow(QWidget):
     def browse_destination(self) -> None:
         current = Path(self.destination_edit.text()).expanduser()
         start = current if current.is_dir() else current.parent
-        selected = QFileDialog.getExistingDirectory(
-            self, "Choose Installation Folder", str(start)
-        )
+        selected = QFileDialog.getExistingDirectory(self, "Choose Installation Folder", str(start))
         if selected:
             self.destination_edit.setText(selected)
 
     def _update_ready_summary(self) -> None:
-        components = "Desktop application and command-line tools" if self.cli.isChecked() else "Desktop application"
+        operation = self._selected_operation()
+        labels = {
+            "install": ("Ready to install", "Review your choices, then select Install to begin."),
+            "upgrade": ("Ready to upgrade", "Review your choices, then select Upgrade to begin."),
+            "repair": ("Ready to repair", "Review your choices, then select Repair to begin."),
+            "uninstall": (
+                "Ready to uninstall",
+                "Review your choices, then select Uninstall to remove the application.",
+            ),
+        }
+        title, description = labels[operation]
+        self.ready_title.setText(title)
+        self.ready_description.setText(description)
+        if operation == "uninstall":
+            data_note = (
+                "Settings, history, and application data will also be removed."
+                if self.remove_data_option.isChecked()
+                else "Settings, history, and application data will be kept."
+            )
+            self.ready_summary.setText(
+                f"Operation:\nUninstall {APP_NAME}\n\n"
+                f"Installation folder:\n{self.destination_edit.text().strip()}\n\n{data_note}"
+            )
+            return
+        components = (
+            "Desktop application and command-line tools"
+            if self.cli.isChecked()
+            else "Desktop application"
+        )
+        destination = Path(self.destination_edit.text().strip())
+        upgrade_note = ""
+        if _installed_gui_executable(destination).exists():
+            action = "upgraded" if operation == "upgrade" else "repaired"
+            upgrade_note = (
+                f"\n\n{action.title()}:\nThe existing application will be closed "
+                "automatically and replaced with fresh binaries. Settings, history, "
+                "and application data will be kept."
+            )
         self.ready_summary.setText(
             f"Destination folder:\n{self.destination_edit.text().strip()}\n\n"
-            f"Components:\n{components}"
+            f"Components:\n{components}{upgrade_note}"
         )
 
     def run_install(self) -> None:
+        operation = self._selected_operation()
+        progress_labels = {
+            "install": ("Installing...", f"Please wait while {APP_NAME} is installed."),
+            "upgrade": ("Upgrading...", f"Please wait while {APP_NAME} is upgraded."),
+            "repair": ("Repairing...", f"Please wait while {APP_NAME} is repaired."),
+            "uninstall": ("Uninstalling...", f"Please wait while {APP_NAME} is removed."),
+        }
+        progress_title, progress_description = progress_labels[operation]
+        self.progress_title.setText(progress_title)
+        self.progress_description.setText(progress_description)
         self.pages.setCurrentIndex(4)
         self._sync_buttons()
         self.cancel_button.setVisible(True)
         self.cancel_button.setEnabled(False)
         self._worker = InstallWorker(
-            self.cli.isChecked(), Path(self.destination_edit.text().strip()), self
+            self.cli.isChecked(),
+            Path(self.destination_edit.text().strip()),
+            operation,
+            self.remove_data_option.isChecked() if self._existing_destination else False,
+            self,
         )
         self._worker.succeeded.connect(self._installation_complete)
         self._worker.failed.connect(self._installation_failed)
         self._worker.start()
 
-    def _installation_complete(self, gui_target: Path, installed_cli: Path | None) -> None:
+    def _installation_complete(self, gui_target: Path | None, installed_cli: Path | None) -> None:
+        if self._selected_operation() == "uninstall":
+            self.finish_title.setText("Uninstall complete")
+            self.finish_description.setText(f"{APP_NAME} was removed successfully.")
+            detail = "Settings, history, and application data were removed."
+            if not self.remove_data_option.isChecked():
+                detail = f"Your application data was kept at:\n{application_data_directory()}"
+            self.finish_detail.setText(detail)
+            self.progress.setRange(0, 100)
+            self.progress.setValue(100)
+            self.pages.setCurrentIndex(5)
+            self.cancel_button.setEnabled(True)
+            self._sync_buttons()
+            return
+        if gui_target is None:
+            self._installation_failed("Setup did not return an installation folder.")
+            return
         self._installed_gui = gui_target
         detail = f"Installed to:\n{gui_target}"
         if installed_cli:
@@ -795,6 +1132,15 @@ class InstallerWindow(QWidget):
         self.pages.setCurrentIndex(5)
         self.cancel_button.setEnabled(True)
         self._sync_buttons()
+
+    def _selected_operation(self) -> str:
+        if not self._existing_destination:
+            return "install"
+        if self.uninstall_option.isChecked():
+            return "uninstall"
+        if self.repair_option.isChecked():
+            return "repair"
+        return "upgrade"
 
     def _installation_failed(self, detail: str) -> None:
         self.progress.setRange(0, 100)
@@ -867,7 +1213,9 @@ def main() -> int:
     if "--check" in sys.argv[1:]:
         check_payload()
         return 0
-    uninstall_mode = "--uninstall" in sys.argv[1:] or "uninstall" in Path(sys.executable).name.lower()
+    uninstall_mode = (
+        "--uninstall" in sys.argv[1:] or "uninstall" in Path(sys.executable).name.lower()
+    )
     if uninstall_mode and "--yes" in sys.argv[1:]:
         uninstall(remove_data="--remove-data" in sys.argv[1:])
         return 0

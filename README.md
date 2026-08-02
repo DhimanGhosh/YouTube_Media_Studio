@@ -72,6 +72,13 @@ The per-user installer does not request administrator access. Remove it later fr
 **Settings → Apps → Installed apps → YouTube Media Studio**. The uninstaller can
 optionally retain or remove settings, history, and application data.
 
+When a previous release is installed, Setup automatically detects its registered
+folder and offers **Upgrade**, **Repair**, and **Uninstall**. Upgrade and Repair close
+the running app if necessary, remove the old application files, and install fresh
+binaries in place while preserving settings, history, and application data. Uninstall
+can optionally remove that data. Setup matches the complete executable path, so another
+program with a similar process name is never closed.
+
 </details>
 
 <details>
@@ -101,6 +108,9 @@ chmod +x youtube-media-studio-*-installer.run
 
 Choose the optional CLI during setup if wanted. The desktop app appears in the
 application menu; the CLI is installed to `~/.local/bin`.
+
+Running a newer installer over an existing desktop installation opens the same
+Upgrade, Repair, and Uninstall maintenance choices.
 
 On a minimal distribution, standard Qt/OpenGL/XCB/audio libraries may also be
 required. The graphical uninstaller is available from the application menu, or run:

@@ -41,6 +41,10 @@ downloads, return to the [main README](../README.md#download).
 
 The installer bundles the desktop runtime and required media tools. Normal desktop use
 does not require a separate Python, FFmpeg, FFprobe, Deno, or yt-dlp installation.
+If a desktop release is already installed, Setup offers Upgrade, Repair, and Uninstall.
+Upgrade and Repair close that exact installed app, replace its program files with fresh
+binaries, and retain settings, history, and application data. Uninstall offers a
+separate option to remove that data too.
 
 ## How the interface works
 
