@@ -283,6 +283,7 @@ def test_windows_install_creates_desktop_shortcut_only_when_selected(
     monkeypatch.setattr(installer, "gui_payload", lambda: gui)
     monkeypatch.setattr(installer, "cli_payload", lambda: tmp_path / "unused-cli")
     monkeypatch.setattr(installer, "uninstaller_payload", lambda: uninstaller)
+    monkeypatch.setattr(installer, "existing_installation_destination", lambda: None)
     monkeypatch.setattr(installer, "stop_running_application", lambda _path: ())
     monkeypatch.setattr(installer, "_windows_path", lambda *_args: None)
     monkeypatch.setattr(installer, "_windows_unregister", lambda: None)
