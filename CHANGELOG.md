@@ -21,6 +21,12 @@ abbreviated hashes to the next version section.
 - Prevent Windows upgrades from failing with `WinError 5: Access is denied` when the
   installed YouTube Media Studio executable is still running.
 
+## [2.0.5] - 2026-08-02
+
+### Changed
+
+- Automated release with no new commit messages.
+
 ## [2.0.4] - 2026-08-02
 
 ### Added
