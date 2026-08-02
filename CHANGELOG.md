@@ -4,6 +4,15 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [Unreleased]
+
+### Fixed
+
+- Search SerpApi with the natural full `Title - Artist` filename context instead of an
+  over-constrained keyword query that can suppress Google's song knowledge panel.
+- Read nested album and movie cards from SerpApi knowledge-graph results and accept an
+  exact title when Google credits at least one artist from a multi-artist filename.
+
 ## [2.0.7] - 2026-08-03
 
 ### Fixed

@@ -71,15 +71,11 @@ def find_serpapi_song_metadata(
     if not title or not api_key:
         return {}
 
-    query = " ".join(
-        part
-        for part in (
-            f'"{title}"',
-            f'"{artist_text}"' if artist_text else "",
-            "song album film movie release year",
-        )
-        if part
-    )
+    # Match the natural filename-style query that produces Google's song panel.
+    # Adding several quoted terms and metadata keywords suppresses useful results
+    # for many Indian film songs even though a plain ``Title - Artist`` search
+    # identifies them immediately.
+    query = " - ".join(part for part in (title, artist_text) if part)
     params = urlencode(
         {
             "engine": "google",
@@ -254,18 +250,41 @@ def _mapping_text(value: Mapping[str, object]) -> str:
         "title", "type", "artist", "artists", "album", "film", "movie",
         "description", "snippet", "date", "release_date", "source",
     ):
-        item = value.get(key)
-        if isinstance(item, (str, int, float)) and str(item).strip():
-            parts.append(str(item).strip())
+        parts.extend(_nested_text(value.get(key)))
     return " | ".join(parts)
 
 
 def _explicit_mapping_album(value: Mapping[str, object]) -> str:
-    for key in ("album", "film", "movie"):
-        album = _clean_album(value.get(key))
-        if album:
-            return album
+    for key in ("album", "albums", "film", "films", "movie", "movies"):
+        for candidate in _nested_text(value.get(key)):
+            album = _clean_album(candidate)
+            if album:
+                return album
     return ""
+
+
+def _nested_text(value: object) -> list[str]:
+    """Flatten SerpApi scalar and carousel entities into display text."""
+
+    if isinstance(value, (str, int, float)):
+        text = _display(value)
+        return [text] if text else []
+    if isinstance(value, Mapping):
+        preferred: list[str] = []
+        for key in ("name", "title", "artist", "album", "film", "movie"):
+            preferred.extend(_nested_text(value.get(key)))
+        if preferred:
+            return preferred
+        flattened: list[str] = []
+        for item in value.values():
+            flattened.extend(_nested_text(item))
+        return flattened
+    if isinstance(value, (list, tuple)):
+        flattened = []
+        for item in value:
+            flattened.extend(_nested_text(item))
+        return flattened
+    return []
 
 
 def _album_from_text(text: str, title: str, artists: str) -> str:
@@ -311,7 +330,10 @@ def _identity_matches(context: str, title_key: str, artist_keys: tuple[str, ...]
         return False
     if not artist_keys:
         return True
-    return all(part in context_key for part in artist_keys)
+    # Collaborations and film songs are often indexed under only one credited
+    # performer. The exact title plus any requested artist is enough to establish
+    # identity; requiring every filename credit rejects valid Google panels.
+    return any(part in context_key for part in artist_keys)
 
 
 def _artist_parts(value: str) -> list[str]:

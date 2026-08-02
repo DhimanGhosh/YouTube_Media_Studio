@@ -118,8 +118,43 @@ def test_search_uses_saved_key_without_logging_it(capsys, monkeypatch) -> None:
     query = parse_qs(urlparse(captured_url).query)
     assert query["api_key"] == ["private-serp-key"]
     assert query["engine"] == ["google"]
+    assert query["q"] == ["Jonaki - Papon"]
     assert result["album"] == "Lorai"
     assert "private-serp-key" not in capsys.readouterr().out
+
+
+def test_accepts_nested_movie_card_from_google_song_panel() -> None:
+    payload = {
+        "knowledge_graph": {
+            "title": "Jonaki",
+            "type": "Song by Papon · 2014",
+            "movies": [{"name": "Lorai"}],
+        }
+    }
+
+    result = serpapi_metadata.extract_serpapi_song_metadata(
+        payload, "Jonaki", "Papon"
+    )
+
+    assert result["album"] == "Lorai"
+
+
+def test_collaboration_matches_when_google_credits_one_requested_artist() -> None:
+    payload = {
+        "knowledge_graph": {
+            "title": "O Megh",
+            "type": "Song by Papon",
+            "movie": {"name": "Aami Shudhu Cheyechi Tomay"},
+            "release_date": "2014",
+        }
+    }
+
+    result = serpapi_metadata.extract_serpapi_song_metadata(
+        payload, "O Megh", "Papon, Shantanu Moitra"
+    )
+
+    assert result["album"] == "Aami Shudhu Cheyechi Tomay"
+    assert result["year"] == "2014"
 
 
 def test_request_failure_never_prints_key(capsys, monkeypatch) -> None:
