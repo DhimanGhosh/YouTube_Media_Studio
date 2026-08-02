@@ -20,6 +20,7 @@ from PyQt6.QtCore import (
     qInstallMessageHandler,
     qVersion,
 )
+from youtube_audio_video_downloader.config.app_identity import APP_DISPLAY_NAME
 
 
 class CrashReporter:
@@ -121,7 +122,7 @@ class CrashReporter:
         self._last_heartbeat = time.monotonic()
 
     def _write_header(self) -> None:
-        self._file.write("YouTube Media Studio diagnostic report\n")
+        self._file.write(f"{APP_DISPLAY_NAME} diagnostic report\n")
         self._file.write("=" * 72 + "\n")
         self._file.write(f"Started: {datetime.now().astimezone().isoformat()}\n")
         self._file.write(f"PID: {os.getpid()}\n")

@@ -9,6 +9,7 @@ from difflib import SequenceMatcher
 from urllib.parse import quote_plus
 from urllib.request import Request, urlopen
 
+from youtube_audio_video_downloader.config.app_identity import http_user_agent
 from youtube_audio_video_downloader.services.album_names import normalize_album_name
 from youtube_audio_video_downloader.utils.artist_name_formatter import (
     format_artist_names,
@@ -44,7 +45,7 @@ def find_catalog_song_metadata(
     request = Request(
         "https://itunes.apple.com/search?country=IN&media=music&entity=song&limit=50&term="
         + quote_plus(terms),
-        headers={"User-Agent": "YouTubeMediaStudio/2.0"},
+        headers={"User-Agent": http_user_agent()},
     )
     try:
         with urlopen(request, timeout=timeout) as response:  # noqa: S310 - Apple catalog
@@ -159,7 +160,7 @@ def _lookup_catalog_collection(collection_id: object, timeout: float) -> dict[st
 
     request = Request(
         f"https://itunes.apple.com/lookup?country=IN&id={quote_plus(str(collection_id))}",
-        headers={"User-Agent": "YouTubeMediaStudio/2.0"},
+        headers={"User-Agent": http_user_agent()},
     )
     try:
         with urlopen(request, timeout=timeout) as response:  # noqa: S310 - Apple catalog
@@ -390,7 +391,7 @@ def _find_catalog_song_art(song_title: str, artists: str, timeout: float) -> str
     terms = " ".join(part for part in (song_title, artists) if part)
     request = Request(
         "https://itunes.apple.com/search?entity=song&limit=20&term=" + quote_plus(terms),
-        headers={"User-Agent": "YouTubeMediaStudio/2.0"},
+        headers={"User-Agent": http_user_agent()},
     )
     with urlopen(request, timeout=timeout) as response:  # noqa: S310 - fixed Apple host
         payload = json.load(response)
@@ -425,7 +426,7 @@ def _find_catalog_album_art(
     request = Request(
         "https://itunes.apple.com/search?entity=album&limit=10&term="
         + quote_plus(album_name),
-        headers={"User-Agent": "YouTubeMediaStudio/2.0"},
+        headers={"User-Agent": http_user_agent()},
     )
     with urlopen(request, timeout=timeout) as response:  # noqa: S310 - fixed Apple host
         payload = json.load(response)

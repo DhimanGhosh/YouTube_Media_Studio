@@ -17,6 +17,16 @@ import tomllib
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from youtube_audio_video_downloader.config.app_identity import (
+    APP_DISPLAY_NAME,
+    CLI_COMMAND,
+    CLI_UNINSTALL_COMMAND,
+    DESKTOP_FILE_ID,
+    EXECUTABLE_BASENAME,
+    ORGANIZATION_NAME,
+    PACKAGE_DISTRIBUTION,
+)
+
 ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / "dist"
 ASSETS = ROOT / "assets"
@@ -65,7 +75,7 @@ def plan(*, json_output: bool = False) -> None:
     if json_output:
         print(json.dumps(payload, indent=2))
         return
-    print(f"YouTube Media Studio {payload['version']} (host: {payload['host']})")
+    print(f"{APP_DISPLAY_NAME} {payload['version']} (host: {payload['host']})")
     for target in TARGETS.values():
         print(f"  {target.name:8} {target.status:7} {target.runner:11} {target.artifact}")
         if target.status != "ready":
@@ -170,7 +180,7 @@ def _preserve_legacy_windows_release_data(*, dry_run: bool) -> None:
     appdata = Path(
         os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming")
     )
-    destination = appdata / "DhimanTools" / "YouTube Media Studio"
+    destination = appdata / ORGANIZATION_NAME / APP_DISPLAY_NAME
     print(
         f"{'Would preserve' if dry_run else 'Preserving'} legacy application data "
         f"from {source.relative_to(ROOT)} to {destination}"
@@ -229,8 +239,8 @@ def build_raspi() -> Path:
             ". \"${HOME}/.local/share/youtube-media-tools/bin/activate\"\n"
             f"python -m pip install --upgrade pip ./{wheel.name}\n"
             "mkdir -p \"${HOME}/.local/bin\"\n"
-            "cp ./uninstall.sh \"${HOME}/.local/bin/youtube-media-studio-uninstall\"\n"
-            "chmod 755 \"${HOME}/.local/bin/youtube-media-studio-uninstall\"\n"
+            f"cp ./uninstall.sh \"${{HOME}}/.local/bin/{CLI_UNINSTALL_COMMAND}\"\n"
+            f"chmod 755 \"${{HOME}}/.local/bin/{CLI_UNINSTALL_COMMAND}\"\n"
             "echo 'Installed. Add ~/.local/share/youtube-media-tools/bin and ~/.local/bin to PATH.'\n",
             encoding="utf-8",
             newline="\n",
@@ -243,8 +253,8 @@ def build_raspi() -> Path:
             "case \"${install_root}\" in \"${HOME}/.local/share/youtube-media-tools\") ;; "
             "*) echo 'Refusing unsafe uninstall path' >&2; exit 1 ;; esac\n"
             "rm -rf -- \"${install_root}\"\n"
-            "rm -f -- \"${HOME}/.local/bin/youtube-media-studio-uninstall\"\n"
-            "echo 'YouTube Media Studio CLI was removed.'\n",
+            f"rm -f -- \"${{HOME}}/.local/bin/{CLI_UNINSTALL_COMMAND}\"\n"
+            f"echo '{APP_DISPLAY_NAME} CLI was removed.'\n",
             encoding="utf-8",
             newline="\n",
         )
@@ -305,25 +315,26 @@ def build_desktop(target: str) -> Path:
             command.extend(["--add-binary", f"{binary}{os.pathsep}runtime-tools"])
         command.extend([
             "--collect-all", "yt_dlp_ejs",
+            "--copy-metadata", PACKAGE_DISTRIBUTION,
             "--add-data", f"{ROOT / 'THIRD_PARTY_NOTICES.md'}{os.pathsep}.",
             "--add-data", f"{ASSETS}{os.pathsep}assets",
         ])
         return command
 
     run(frozen_command(
-        name="YouTubeMediaStudio", entry="run_gui.py", output=gui_output,
+        name=EXECUTABLE_BASENAME, entry="run_gui.py", output=gui_output,
         windowed=True, onefile=target == "windows",
     ))
     run(frozen_command(
-        name="youtube-media-studio", entry="run_app.py", output=cli_output,
+        name=CLI_COMMAND, entry="run_app.py", output=cli_output,
         windowed=False, onefile=True,
     ))
 
     (payload / "version.txt").write_text(project_version() + "\n", encoding="utf-8")
     uninstaller_name = (
-        "Uninstall YouTube Media Studio"
+        f"Uninstall {APP_DISPLAY_NAME}"
         if target in {"windows", "macos"}
-        else "youtube-media-studio-uninstaller"
+        else f"{CLI_COMMAND}-uninstaller"
     )
     uninstaller_command = [
         "uv", "run", "--extra", "gui", "--group", "package", "pyinstaller",
@@ -339,21 +350,21 @@ def build_desktop(target: str) -> Path:
     run(uninstaller_command)
 
     cli_executable = cli_output / (
-        "youtube-media-studio.exe" if target == "windows" else "youtube-media-studio"
+        f"{CLI_COMMAND}.exe" if target == "windows" else CLI_COMMAND
     )
     verify_packaged_application(cli_executable)
 
     if target == "linux":
-        app_dir = gui_output / "YouTubeMediaStudio"
+        app_dir = gui_output / EXECUTABLE_BASENAME
         shutil.copy2(
             ASSETS / "youtube_media_studio_512.png",
-            app_dir / "youtube-media-studio.png",
+            app_dir / f"{DESKTOP_FILE_ID}.png",
         )
 
     installer_command = [
         "uv", "run", "--extra", "gui", "--group", "package", "pyinstaller",
         "--noconfirm", "--clean", "--windowed", "--onefile" if target != "macos" else "--onedir",
-        "--name", "YouTubeMediaStudio-Setup", "tools/desktop_installer.py",
+        "--name", f"{EXECUTABLE_BASENAME}-Setup", "tools/desktop_installer.py",
         "--distpath", str(installer_output),
         "--workpath", str(work_path / "installer"),
         "--specpath", str(spec_path),
@@ -372,31 +383,31 @@ def build_desktop(target: str) -> Path:
     version = project_version()
     machine = platform.machine().lower()
     if target == "windows":
-        built = installer_output / "YouTubeMediaStudio-Setup.exe"
-        artifact = DIST / f"YouTubeMediaStudio-{version}-windows-{machine}-Setup.exe"
+        built = installer_output / f"{EXECUTABLE_BASENAME}-Setup.exe"
+        artifact = DIST / f"{EXECUTABLE_BASENAME}-{version}-windows-{machine}-Setup.exe"
         if artifact.exists():
             artifact.unlink()
         built.replace(artifact)
         verify_packaged_installer(artifact)
     elif target == "linux":
-        built = installer_output / "YouTubeMediaStudio-Setup"
-        artifact = DIST / f"youtube-media-studio-{version}-linux-{machine}-installer.run"
+        built = installer_output / f"{EXECUTABLE_BASENAME}-Setup"
+        artifact = DIST / f"{PACKAGE_DISTRIBUTION}-{version}-linux-{machine}-installer.run"
         if artifact.exists():
             artifact.unlink()
         built.replace(artifact)
         artifact.chmod(artifact.stat().st_mode | 0o111)
         verify_packaged_installer(artifact)
     else:
-        setup_app = installer_output / "YouTubeMediaStudio-Setup.app"
-        artifact = DIST / f"youtube-media-studio-{version}-macos-{machine}-installer.dmg"
+        setup_app = installer_output / f"{EXECUTABLE_BASENAME}-Setup.app"
+        artifact = DIST / f"{PACKAGE_DISTRIBUTION}-{version}-macos-{machine}-installer.dmg"
         if artifact.exists():
             artifact.unlink()
         run([
-            "hdiutil", "create", "-volname", "YouTube Media Studio",
+            "hdiutil", "create", "-volname", APP_DISPLAY_NAME,
             "-srcfolder", str(setup_app), "-ov", "-format", "UDZO", str(artifact),
         ])
         verify_packaged_installer(
-            setup_app / "Contents" / "MacOS" / "YouTubeMediaStudio-Setup"
+            setup_app / "Contents" / "MacOS" / f"{EXECUTABLE_BASENAME}-Setup"
         )
     shutil.rmtree(payload)
     shutil.rmtree(installer_output)
@@ -540,7 +551,7 @@ def write_manifest() -> None:
     generated = {"build-manifest.json", "SHA256SUMS.txt"}
     artifacts = [path for path in DIST.iterdir() if path.is_file() and path.name not in generated]
     manifest = {
-        "project": "youtube-media-studio",
+        "project": PACKAGE_DISTRIBUTION,
         "version": project_version(),
         "host": {"os": platform.system(), "architecture": platform.machine()},
         "artifacts": [],

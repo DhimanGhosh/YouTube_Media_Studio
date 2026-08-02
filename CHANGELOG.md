@@ -8,6 +8,8 @@ abbreviated hashes to the next version section.
 
 ### Added
 
+- Display the installed application version persistently beneath the desktop sidebar
+  and expose the same value through Qt application metadata and the native window title.
 - Add an optional password-masked SerpApi key field to Global Settings so each user
   can supply their own Google Search API access without placing the credential in
   operation parameters or logs.
@@ -21,6 +23,12 @@ abbreviated hashes to the next version section.
 
 ### Changed
 
+- Resolve the runtime version from installed package metadata with packaged and source
+  fallbacks, and include distribution metadata in PyInstaller desktop builds so the GUI
+  always follows the version selected by GitHub Actions.
+- Centralize production identity values—including product, organization, distribution,
+  executable, CLI, desktop, and Windows registration names—and derive every outbound
+  service user-agent from the same runtime version instead of a hard-coded `2.0` value.
 - Treat SerpApi as an optional third verification source for both deterministic and
   AI-assisted enrichment while continuing to protect populated local album metadata.
 - Use paid Google searches only as a fallback when the Apple catalog did not produce a
@@ -28,6 +36,8 @@ abbreviated hashes to the next version section.
 
 ### Fixed
 
+- Remove the Media Library's hidden 250-row display cap so every scanned song and
+  video remains visible, sortable, selectable, queueable, and playable.
 - Promote curated `Unreleased` notes into the automatically selected release version
   so detailed user-facing changes are not left behind when GitHub Actions publishes a
   successful `main` build.

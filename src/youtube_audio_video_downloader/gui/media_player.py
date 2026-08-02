@@ -498,7 +498,6 @@ class MediaLibraryPage(QWidget):
         self._artwork_cache: dict[str, QIcon] = {}
         self._album_art_generation = 0
         self._pending_album_art: list[tuple[QListWidgetItem, str]] = []
-        self._table_display_limit = 250
         self._scanner_thread: QThread | None = None
         self._scanner_worker: LibraryScanner | None = None
         self._scan_started_at = 0.0
@@ -1431,14 +1430,8 @@ class MediaLibraryPage(QWidget):
     def _apply_search_results(self, matches: list[LibraryItem]) -> None:
         self.filtered = matches
         self._applied_query = self.search.text().strip()
-        displayed = self.filtered[: self._table_display_limit]
-        self._populate_table(self.table, displayed, include_album_and_type=True)
-        if len(self.filtered) > len(displayed):
-            self.match_status.setText(
-                f"Showing {len(displayed):,} of {len(self.filtered):,} — search to narrow"
-            )
-        else:
-            self.match_status.setText(f"{len(self.filtered):,} match(es)")
+        self._populate_table(self.table, self.filtered, include_album_and_type=True)
+        self.match_status.setText(f"{len(self.filtered):,} match(es)")
         self._render_albums()
         if self.album_stack.currentIndex() == 1:
             valid_paths = {item.path for item in self.filtered}

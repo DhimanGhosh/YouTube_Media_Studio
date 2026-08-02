@@ -10,6 +10,10 @@ from youtube_audio_video_downloader.config.runtime_tools import (
     configure_runtime_tools,
     configure_windows_subprocesses,
 )
+from youtube_audio_video_downloader.config.app_identity import (
+    APP_DISPLAY_NAME,
+    EXECUTABLE_BASENAME,
+)
 
 from youtube_audio_video_downloader.cli.album_splitter_cli import main as album_main
 from youtube_audio_video_downloader.cli.artist_formatter_cli import main as artists_main
@@ -35,12 +39,12 @@ COMMANDS: dict[str, Command] = {
     "timestamps": timestamps_main,
 }
 
-HELP = """YouTube Media Studio
+HELP = f"""{APP_DISPLAY_NAME}
 
 Double-click or run without arguments to open the GUI.
 
 CLI usage:
-  YouTubeMediaStudio [--data-dir FOLDER] <command> [command options]
+  {EXECUTABLE_BASENAME} [--data-dir FOLDER] <command> [command options]
 
 Global options:
   --data-dir FOLDER  Use FOLDER for persistent application data for this run
@@ -55,7 +59,7 @@ Commands:
   timestamps  Convert timestamps to track JSON
   doctor      Verify bundled FFmpeg, FFprobe, and Deno
 
-Use `YouTubeMediaStudio <command> --help` for command-specific help.
+Use `{EXECUTABLE_BASENAME} <command> --help` for command-specific help.
 """
 
 

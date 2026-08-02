@@ -56,6 +56,11 @@ from youtube_audio_video_downloader.config.settings import (
     MAX_PARALLEL_WORKERS,
     machine_parallel_workers,
 )
+from youtube_audio_video_downloader.config.app_identity import (
+    APP_DISPLAY_NAME,
+    ORGANIZATION_NAME,
+    SETTINGS_APPLICATION_NAME,
+)
 from youtube_audio_video_downloader.config.app_storage import (
     copy_application_data,
     default_data_directory,
@@ -100,6 +105,7 @@ from youtube_audio_video_downloader.services.serpapi_metadata import (
     configure_serpapi_environment,
 )
 from youtube_audio_video_downloader.services.track_reorder import list_track_files
+from youtube_audio_video_downloader.version import application_version
 
 
 class TitleBar(QWidget):
@@ -115,7 +121,7 @@ class TitleBar(QWidget):
         brand.setObjectName("appLogo")
         brand.setFixedSize(40, 40)
         brand.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        brand.setToolTip("YouTube Media Studio")
+        brand.setToolTip(APP_DISPLAY_NAME)
         logo = QPixmap(str(application_icon_path()))
         if not logo.isNull():
             brand.setPixmap(
@@ -125,7 +131,7 @@ class TitleBar(QWidget):
                     Qt.TransformationMode.SmoothTransformation,
                 )
             )
-        title = QLabel("YouTube Media Studio")
+        title = QLabel(APP_DISPLAY_NAME)
         title.setObjectName("appTitle")
         subtitle = QLabel("Audio · Video · Album · Jukebox")
         subtitle.setObjectName("appSubtitle")
@@ -185,7 +191,7 @@ class MainWindow(QMainWindow):
         data_directory: str | Path | None = None,
     ) -> None:
         super().__init__()
-        self.setWindowTitle("YouTube Media Studio")
+        self.setWindowTitle(f"{APP_DISPLAY_NAME} {application_version()}")
         self.setMinimumSize(1120, 720)
         self.resize(1380, 860)
         self.setWindowFlags(
@@ -195,7 +201,9 @@ class MainWindow(QMainWindow):
             | Qt.WindowType.WindowMinMaxButtonsHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.settings = settings or QSettings("DhimanTools", "YouTubeMediaStudio")
+        self.settings = settings or QSettings(
+            ORGANIZATION_NAME, SETTINGS_APPLICATION_NAME
+        )
         self._data_directory = (
             Path(data_directory).resolve() if data_directory is not None else None
         )
@@ -346,6 +354,14 @@ class MainWindow(QMainWindow):
         self.music_visualizer = MusicVisualizer()
         spectrum_layout.addWidget(self.music_visualizer)
         layout.addWidget(spectrum_card)
+        self.version_label = QLabel(f"Version {application_version()}")
+        self.version_label.setObjectName("appVersionLabel")
+        self.version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.version_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        self.version_label.setToolTip(f"Installed {APP_DISPLAY_NAME} version")
+        layout.addWidget(self.version_label)
         return sidebar
 
     def _build_content(self) -> QWidget:
@@ -2969,7 +2985,7 @@ class MainWindow(QMainWindow):
             return
         answer = QMessageBox.question(
             self,
-            "Reset YouTube Media Studio?",
+            f"Reset {APP_DISPLAY_NAME}?",
             "This will remove saved NVIDIA and SerpApi credentials and all AI model selections, "
             "restore global defaults, clear every tool form, library folder, status, "
             "and history, and return application storage to its default folder.\n\n"

@@ -33,10 +33,18 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from youtube_audio_video_downloader.config.app_identity import (
+    APP_DISPLAY_NAME,
+    CLI_COMMAND,
+    DESKTOP_FILE_ID,
+    EXECUTABLE_BASENAME,
+    ORGANIZATION_NAME,
+    WINDOWS_UNINSTALL_KEY,
+)
 
-APP_NAME = "YouTube Media Studio"
-CLI_NAME = "youtube-media-studio"
-UNINSTALL_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\YouTubeMediaStudio"
+APP_NAME = APP_DISPLAY_NAME
+CLI_NAME = CLI_COMMAND
+UNINSTALL_KEY = WINDOWS_UNINSTALL_KEY
 _EXTRACTED_PAYLOAD_ROOT: Path | None = None
 
 
@@ -52,7 +60,9 @@ def payload_root() -> Path:
         archive = bundled_root / "payload.tar.gz"
         if archive.is_file():
             if _EXTRACTED_PAYLOAD_ROOT is None:
-                extraction_root = Path(tempfile.mkdtemp(prefix="youtube-media-studio-setup-"))
+                extraction_root = Path(
+                    tempfile.mkdtemp(prefix=f"{DESKTOP_FILE_ID}-setup-")
+                )
                 try:
                     with tarfile.open(archive, "r:gz") as bundle:
                         bundle.extractall(extraction_root, filter="data")
@@ -71,8 +81,8 @@ def default_gui_destination() -> Path:
         base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
         return base / "Programs" / APP_NAME
     if system == "Darwin":
-        return Path.home() / "Applications" / "YouTubeMediaStudio.app"
-    return Path.home() / ".local" / "opt" / "youtube-media-studio"
+        return Path.home() / "Applications" / f"{EXECUTABLE_BASENAME}.app"
+    return Path.home() / ".local" / "opt" / DESKTOP_FILE_ID
 
 
 def cli_destination(gui_destination: Path | None = None) -> Path:
@@ -84,9 +94,9 @@ def cli_destination(gui_destination: Path | None = None) -> Path:
 def gui_payload() -> Path:
     system = platform.system()
     name = {
-        "Windows": "YouTubeMediaStudio.exe",
-        "Darwin": "YouTubeMediaStudio.app",
-        "Linux": "YouTubeMediaStudio",
+        "Windows": f"{EXECUTABLE_BASENAME}.exe",
+        "Darwin": f"{EXECUTABLE_BASENAME}.app",
+        "Linux": EXECUTABLE_BASENAME,
     }.get(system)
     if name is None:
         raise RuntimeError(f"Unsupported operating system: {system}")
@@ -100,9 +110,9 @@ def cli_payload() -> Path:
 
 def uninstaller_payload() -> Path:
     name = {
-        "Windows": "Uninstall YouTube Media Studio.exe",
-        "Darwin": "Uninstall YouTube Media Studio.app",
-        "Linux": "youtube-media-studio-uninstaller",
+        "Windows": f"Uninstall {APP_NAME}.exe",
+        "Darwin": f"Uninstall {APP_NAME}.app",
+        "Linux": f"{CLI_NAME}-uninstaller",
     }.get(platform.system())
     if name is None:
         raise RuntimeError(f"Unsupported operating system: {platform.system()}")
@@ -117,10 +127,10 @@ def app_version() -> str:
 def uninstaller_destination(gui_destination: Path | None = None) -> Path:
     system = platform.system()
     if system == "Windows":
-        return (gui_destination or default_gui_destination()) / "Uninstall YouTube Media Studio.exe"
+        return (gui_destination or default_gui_destination()) / f"Uninstall {APP_NAME}.exe"
     if system == "Darwin":
-        return Path.home() / "Applications" / "Uninstall YouTube Media Studio.app"
-    return (gui_destination or default_gui_destination()) / "youtube-media-studio-uninstaller"
+        return Path.home() / "Applications" / f"Uninstall {APP_NAME}.app"
+    return (gui_destination or default_gui_destination()) / f"{CLI_NAME}-uninstaller"
 
 
 def application_data_directory() -> Path:
@@ -131,7 +141,7 @@ def application_data_directory() -> Path:
         root = Path.home() / "Library" / "Application Support"
     else:
         root = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
-    return root / "DhimanTools" / APP_NAME
+    return root / ORGANIZATION_NAME / APP_NAME
 
 
 def check_payload() -> None:
@@ -238,7 +248,7 @@ def _windows_register_uninstaller(uninstaller: Path, executable: Path) -> None:
             "DisplayName": APP_NAME,
             "DisplayVersion": app_version(),
             "DisplayIcon": str(executable),
-            "Publisher": "DhimanTools",
+            "Publisher": ORGANIZATION_NAME,
             "InstallLocation": str(executable.parent),
             "UninstallString": f'"{uninstaller}" --uninstall',
             "QuietUninstallString": f'"{uninstaller}" --uninstall --yes',
@@ -250,8 +260,8 @@ def _windows_register_uninstaller(uninstaller: Path, executable: Path) -> None:
 def _linux_desktop_entry(executable: Path) -> None:
     applications = Path.home() / ".local" / "share" / "applications"
     applications.mkdir(parents=True, exist_ok=True)
-    icon = executable.parent / "youtube-media-studio.png"
-    entry = applications / "youtube-media-studio.desktop"
+    icon = executable.parent / f"{DESKTOP_FILE_ID}.png"
+    entry = applications / f"{DESKTOP_FILE_ID}.desktop"
     entry.write_text(
         "[Desktop Entry]\n"
         "Type=Application\n"
@@ -268,7 +278,7 @@ def _linux_desktop_entry(executable: Path) -> None:
 def _linux_uninstaller_entry(uninstaller: Path) -> None:
     applications = Path.home() / ".local" / "share" / "applications"
     applications.mkdir(parents=True, exist_ok=True)
-    entry = applications / "youtube-media-studio-uninstall.desktop"
+    entry = applications / f"{DESKTOP_FILE_ID}-uninstall.desktop"
     entry.write_text(
         "[Desktop Entry]\n"
         "Type=Application\n"
@@ -296,14 +306,14 @@ def install(include_cli: bool, gui_destination: Path | None = None) -> tuple[Pat
     gui_target = gui_destination or default_gui_destination()
     system = platform.system()
     if system == "Windows":
-        gui_executable = gui_target / "YouTubeMediaStudio.exe"
+        gui_executable = gui_target / f"{EXECUTABLE_BASENAME}.exe"
         _replace_path(source_gui, gui_executable)
     elif system == "Darwin":
         _replace_path(source_gui, gui_target)
-        gui_executable = gui_target / "Contents" / "MacOS" / "YouTubeMediaStudio"
+        gui_executable = gui_target / "Contents" / "MacOS" / EXECUTABLE_BASENAME
     else:
         _replace_path(source_gui, gui_target)
-        gui_executable = gui_target / "YouTubeMediaStudio"
+        gui_executable = gui_target / EXECUTABLE_BASENAME
         _linux_desktop_entry(gui_executable)
 
     installed_uninstaller = (
@@ -371,8 +381,8 @@ def uninstall(*, remove_data: bool = False) -> None:
         _remove_path(cli_destination())
         if system == "Linux":
             applications = Path.home() / ".local" / "share" / "applications"
-            _remove_path(applications / "youtube-media-studio.desktop")
-            _remove_path(applications / "youtube-media-studio-uninstall.desktop")
+            _remove_path(applications / f"{DESKTOP_FILE_ID}.desktop")
+            _remove_path(applications / f"{DESKTOP_FILE_ID}-uninstall.desktop")
         _remove_path(default_gui_destination())
         _remove_path(uninstaller_destination())
     if remove_data:
@@ -638,9 +648,9 @@ class InstallerWindow(QWidget):
         cli_detail.setObjectName("detailText")
         cli_detail.setWordWrap(True)
         if platform.system() == "Windows":
-            cli_detail.setText("Adds youtube-media-studio to your user PATH.")
+            cli_detail.setText(f"Adds {CLI_NAME} to your user PATH.")
         else:
-            cli_detail.setText("Installs youtube-media-studio in ~/.local/bin.")
+            cli_detail.setText(f"Installs {CLI_NAME} in ~/.local/bin.")
         layout.addWidget(self.cli)
         layout.addWidget(cli_detail)
         layout.addStretch()
@@ -863,7 +873,7 @@ def main() -> int:
         return 0
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
-    app.setOrganizationName("DhimanTools")
+    app.setOrganizationName(ORGANIZATION_NAME)
     apply_installer_palette(app)
     app.setStyleSheet(INSTALLER_STYLE)
     window = UninstallerWindow() if uninstall_mode else InstallerWindow()

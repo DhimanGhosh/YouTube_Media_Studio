@@ -9,6 +9,12 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from youtube_audio_video_downloader.config.app_identity import (
+    APP_DISPLAY_NAME,
+    ORGANIZATION_NAME,
+    SETTINGS_APPLICATION_NAME,
+)
+
 if TYPE_CHECKING:
     from PyQt6.QtCore import QSettings
 
@@ -45,17 +51,17 @@ def platform_data_directory() -> Path:
 
     if sys.platform == "win32":
         root = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
-        return root / "DhimanTools" / "YouTube Media Studio"
+        return root / ORGANIZATION_NAME / APP_DISPLAY_NAME
     if sys.platform == "darwin":
         return (
             Path.home()
             / "Library"
             / "Application Support"
-            / "DhimanTools"
-            / "YouTube Media Studio"
+            / ORGANIZATION_NAME
+            / APP_DISPLAY_NAME
         )
     root = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
-    return root / "DhimanTools" / "YouTube Media Studio"
+    return root / ORGANIZATION_NAME / APP_DISPLAY_NAME
 
 
 def resolve_data_directory(
@@ -192,7 +198,7 @@ def migrate_legacy_data(data_directory: str | Path, settings: "QSettings") -> No
         return
 
     if not settings.allKeys():
-        legacy = QSettings("DhimanTools", "YouTubeMediaStudio")
+        legacy = QSettings(ORGANIZATION_NAME, SETTINGS_APPLICATION_NAME)
         for key in legacy.allKeys():
             settings.setValue(key, legacy.value(key))
         settings.sync()
@@ -217,8 +223,8 @@ def legacy_tracker_candidates() -> list[Path]:
     if appdata:
         candidates.append(
             Path(appdata)
-            / "DhimanTools"
-            / "YouTube Media Studio"
+            / ORGANIZATION_NAME
+            / APP_DISPLAY_NAME
             / "song_enrichment_tracker.json"
         )
     candidates.extend(
@@ -226,8 +232,8 @@ def legacy_tracker_candidates() -> list[Path]:
             Path.home()
             / "Library"
             / "Application Support"
-            / "DhimanTools"
-            / "YouTube Media Studio"
+            / ORGANIZATION_NAME
+            / APP_DISPLAY_NAME
             / "song_enrichment_tracker.json",
             Path(
                 os.environ.get(
@@ -235,8 +241,8 @@ def legacy_tracker_candidates() -> list[Path]:
                     Path.home() / ".config",
                 )
             )
-            / "DhimanTools"
-            / "YouTube Media Studio"
+            / ORGANIZATION_NAME
+            / APP_DISPLAY_NAME
             / "song_enrichment_tracker.json",
             Path.home() / ".youtube_media_studio" / "song_enrichment_tracker.json",
         ]

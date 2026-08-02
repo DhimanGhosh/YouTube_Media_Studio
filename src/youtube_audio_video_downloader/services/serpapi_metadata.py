@@ -11,6 +11,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from youtube_audio_video_downloader.config.app_identity import http_user_agent
 from youtube_audio_video_downloader.services.album_names import normalize_album_name
 from youtube_audio_video_downloader.utils.artist_name_formatter import (
     format_artist_names,
@@ -92,7 +93,7 @@ def find_serpapi_song_metadata(
     )
     request = Request(
         f"{SERPAPI_SEARCH_URL}?{params}",
-        headers={"User-Agent": "YouTubeMediaStudio/2.0"},
+        headers={"User-Agent": http_user_agent()},
     )
     try:
         with urlopen(request, timeout=timeout) as response:  # noqa: S310 - fixed SerpApi host
@@ -146,7 +147,7 @@ def find_serpapi_album_art(
     )
     request = Request(
         f"{SERPAPI_SEARCH_URL}?{params}",
-        headers={"User-Agent": "YouTubeMediaStudio/2.0"},
+        headers={"User-Agent": http_user_agent()},
     )
     try:
         with urlopen(request, timeout=timeout) as response:  # noqa: S310 - fixed SerpApi host

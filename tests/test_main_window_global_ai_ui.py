@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (  # noqa: E402
 from youtube_audio_video_downloader.gui.main_window import MainWindow  # noqa: E402
 from youtube_audio_video_downloader.gui.theme import APP_STYLE  # noqa: E402
 from youtube_audio_video_downloader.config.settings import machine_parallel_workers  # noqa: E402
+from youtube_audio_video_downloader.version import application_version  # noqa: E402
 
 
 class MainWindowGlobalAiUiTest(unittest.TestCase):
@@ -113,6 +114,10 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
             QLineEdit.EchoMode.Password,
         )
         self.assertEqual(self.window.settings_nvidia_model.text(), "z-ai/glm-5.2")
+        self.assertEqual(
+            self.window.version_label.text(), f"Version {application_version()}"
+        )
+        self.assertIn(application_version(), self.window.windowTitle())
 
     def test_every_task_workspace_has_an_independent_ai_switch(self) -> None:
         expected = {

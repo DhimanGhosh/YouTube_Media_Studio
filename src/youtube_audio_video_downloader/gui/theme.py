@@ -35,6 +35,12 @@ QLabel#appSubtitle, QLabel#mutedLabel {
     font-size: 12px;
 }
 
+QLabel#appVersionLabel {
+    color: rgba(220, 229, 248, 150);
+    font-size: 11px;
+    padding: 3px 0 0 0;
+}
+
 QPushButton#windowButton {
     background: rgba(255, 255, 255, 10);
     border: 1px solid rgba(255, 255, 255, 12);

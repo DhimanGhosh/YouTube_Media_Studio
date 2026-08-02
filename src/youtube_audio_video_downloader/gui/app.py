@@ -19,6 +19,13 @@ from youtube_audio_video_downloader.config.app_storage import (
     resolve_data_directory,
     settings_file,
 )
+from youtube_audio_video_downloader.config.app_identity import (
+    APP_DISPLAY_NAME,
+    DESKTOP_FILE_ID,
+    ORGANIZATION_NAME,
+    WINDOWS_APP_USER_MODEL_ID,
+)
+from youtube_audio_video_downloader.version import application_version
 
 
 def _enable_windows_backdrop(window: MainWindow) -> None:
@@ -56,7 +63,7 @@ def _set_windows_app_identity() -> None:
         return
     try:
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-            "DhimanTools.YouTubeMediaStudio"
+            WINDOWS_APP_USER_MODEL_ID
         )
     except Exception:
         return
@@ -83,10 +90,11 @@ def main() -> int:
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
     )
     app = QApplication(sys.argv)
-    app.setApplicationName("YouTube Media Studio")
-    app.setOrganizationName("DhimanTools")
+    app.setApplicationName(APP_DISPLAY_NAME)
+    app.setApplicationVersion(application_version())
+    app.setOrganizationName(ORGANIZATION_NAME)
     if sys.platform.startswith("linux"):
-        app.setDesktopFileName("youtube-media-studio")
+        app.setDesktopFileName(DESKTOP_FILE_ID)
     application_icon = QIcon(str(application_icon_path()))
     if not application_icon.isNull():
         app.setWindowIcon(application_icon)

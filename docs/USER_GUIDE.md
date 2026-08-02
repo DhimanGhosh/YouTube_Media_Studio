@@ -48,6 +48,10 @@ The left sidebar switches between workflows. Each workflow collects its input in
 or more cards and starts only when its main action button is selected. Tasks run in the
 background, so changing pages does not cancel an operation.
 
+The installed release is always shown as **Version x.y.z** beneath the sidebar. Include
+this value when reporting a problem so logs and behavior can be matched to the correct
+release.
+
 - **Dashboard** shows current activity, totals, and recent task results.
 - **Live Logs** retains the detailed per-file explanation.
 - **Global Settings** controls defaults shared by the other pages.
@@ -170,6 +174,10 @@ report the complete log block.
 3. Play a result, add tracks to the queue, and use shuffle or repeat as required.
 4. Use a file's context actions to open its folder or send it to **Edit File**.
 5. If a requested song is absent locally, continue the request in **Search Song**.
+
+The songs-and-videos table shows every matching scanned item; it does not truncate a
+large library. The count beside the table is the number of rows currently available
+after applying search, artist, and year filters.
 
 ## Read Live Logs
 

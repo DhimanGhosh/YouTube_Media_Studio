@@ -85,6 +85,21 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.page.table.sortItems(3, Qt.SortOrder.AscendingOrder)
         self.assertEqual(self.page.table.item(0, 0).text(), "Long")
 
+    def test_library_table_displays_every_match_beyond_previous_250_row_cap(self) -> None:
+        matches = [media(f"Song {index:04d}", 2000, 60_000) for index in range(876)]
+
+        self.page._apply_search_results(matches)
+
+        self.assertEqual(self.page.table.rowCount(), 876)
+        self.assertEqual(self.page.match_status.text(), "876 match(es)")
+        displayed_paths = {
+            str(
+                self.page.table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+            )
+            for row in range(self.page.table.rowCount())
+        }
+        self.assertEqual(displayed_paths, {item.path for item in matches})
+
     def test_table_refresh_preserves_selected_song_by_path_after_sorting(self) -> None:
         short_row = next(
             row
