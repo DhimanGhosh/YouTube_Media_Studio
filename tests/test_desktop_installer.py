@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import sys
+import tarfile
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -12,6 +14,30 @@ assert SPEC and SPEC.loader
 installer = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = installer
 SPEC.loader.exec_module(installer)
+
+
+def test_archived_payload_is_extracted_with_executable_permissions(
+    monkeypatch, tmp_path
+) -> None:
+    source = tmp_path / "source" / "payload"
+    executable = source / "cli" / "youtube-media-studio"
+    executable.parent.mkdir(parents=True)
+    executable.write_text("binary", encoding="utf-8")
+    executable.chmod(0o755)
+    frozen_root = tmp_path / "frozen"
+    frozen_root.mkdir()
+    with tarfile.open(frozen_root / "payload.tar.gz", "w:gz") as bundle:
+        bundle.add(source, arcname="payload")
+
+    monkeypatch.setattr(installer.sys, "_MEIPASS", str(frozen_root), raising=False)
+    monkeypatch.setattr(installer, "_EXTRACTED_PAYLOAD_ROOT", None)
+
+    extracted = installer.payload_root()
+
+    extracted_executable = extracted / "cli" / "youtube-media-studio"
+    assert extracted_executable.read_text(encoding="utf-8") == "binary"
+    if os.name != "nt":
+        assert extracted_executable.stat().st_mode & 0o111
 
 
 def test_windows_install_copies_gui_cli_uninstaller_and_registers(monkeypatch, tmp_path) -> None:

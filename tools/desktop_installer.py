@@ -3,12 +3,15 @@
 
 from __future__ import annotations
 
+import atexit
 import base64
 import os
 import platform
 import shutil
 import subprocess
 import sys
+import tarfile
+import tempfile
 from pathlib import Path
 
 from PyQt6.QtCore import QPointF, QRectF, QThread, Qt, pyqtSignal
@@ -34,12 +37,31 @@ from PyQt6.QtWidgets import (
 APP_NAME = "YouTube Media Studio"
 CLI_NAME = "youtube-media-studio"
 UNINSTALL_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\YouTubeMediaStudio"
+_EXTRACTED_PAYLOAD_ROOT: Path | None = None
 
 
 def payload_root() -> Path:
+    global _EXTRACTED_PAYLOAD_ROOT
+
     frozen_root = getattr(sys, "_MEIPASS", None)
     if frozen_root:
-        return Path(frozen_root) / "payload"
+        bundled_root = Path(frozen_root)
+        direct_payload = bundled_root / "payload"
+        if direct_payload.is_dir():
+            return direct_payload
+        archive = bundled_root / "payload.tar.gz"
+        if archive.is_file():
+            if _EXTRACTED_PAYLOAD_ROOT is None:
+                extraction_root = Path(tempfile.mkdtemp(prefix="youtube-media-studio-setup-"))
+                try:
+                    with tarfile.open(archive, "r:gz") as bundle:
+                        bundle.extractall(extraction_root, filter="data")
+                except Exception:
+                    shutil.rmtree(extraction_root, ignore_errors=True)
+                    raise
+                _EXTRACTED_PAYLOAD_ROOT = extraction_root / "payload"
+                atexit.register(shutil.rmtree, extraction_root, ignore_errors=True)
+            return _EXTRACTED_PAYLOAD_ROOT
     return Path(__file__).resolve().parents[1] / "dist" / "payload"
 
 

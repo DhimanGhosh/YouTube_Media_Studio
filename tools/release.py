@@ -357,8 +357,14 @@ def build_desktop(target: str) -> Path:
         "--distpath", str(installer_output),
         "--workpath", str(work_path / "installer"),
         "--specpath", str(spec_path),
-        "--add-data", f"{payload}{os.pathsep}payload",
     ]
+    if target == "macos":
+        payload_archive = work_path / "payload.tar.gz"
+        with tarfile.open(payload_archive, "w:gz") as bundle:
+            bundle.add(payload, arcname="payload")
+        installer_command.extend(["--add-data", f"{payload_archive}{os.pathsep}."])
+    else:
+        installer_command.extend(["--add-data", f"{payload}{os.pathsep}payload"])
     if target in {"windows", "macos"}:
         installer_command.extend(["--icon", str(icon_path)])
     run(installer_command)
