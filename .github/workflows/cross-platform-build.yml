@@ -96,9 +96,6 @@ jobs:
           - os: ubuntu-latest
             target: linux
             label: Linux x64
-          - os: macos-15-intel
-            target: macos
-            label: macOS Intel
           - os: macos-15
             target: macos
             label: macOS Apple silicon

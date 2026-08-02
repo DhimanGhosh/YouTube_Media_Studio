@@ -54,7 +54,6 @@ Get the newest tested build from **[GitHub Releases](https://github.com/DhimanGh
 | --- | --- | --- | --- |
 | **Windows 10/11 x64** | `YouTubeMediaStudio-*-windows-amd64-Setup.exe` | Desktop + optional CLI | Run the setup wizard |
 | **macOS Apple silicon** | `youtube-media-studio-*-macos-arm64-installer.dmg` | Desktop + optional CLI | Open DMG, launch Setup |
-| **macOS Intel** | `youtube-media-studio-*-macos-x86_64-installer.dmg` | Desktop + optional CLI | Open DMG, launch Setup |
 | **Desktop Linux x64** | `youtube-media-studio-*-linux-x86_64-installer.run` | Desktop + optional CLI | Make executable, then launch |
 | **Raspberry Pi OS 64-bit** | `youtube-media-tools-*-raspi-cli.tar.gz` | CLI only | Extract and run `install.sh` |
 
@@ -84,7 +83,7 @@ program with a similar process name is never closed.
 <details>
 <summary><b>macOS installation</b></summary>
 
-1. Download the DMG matching your Mac architecture.
+1. On an Apple-silicon Mac, download the ARM64 DMG.
 2. Open it and launch `YouTubeMediaStudio-Setup.app`.
 3. Select the optional CLI if wanted, then choose **Install**.
 4. Launch `~/Applications/YouTubeMediaStudio.app`.
@@ -222,18 +221,16 @@ Every successful push to `main` produces a complete, versioned release:
 
 ```mermaid
 flowchart LR
-    A[Push to main] --> B[348 tests and 8 subtests]
+    A[Push to main] --> B[Automated test and lint gate]
     B --> C[Select semantic version]
     C --> D1[Windows installer]
     C --> D2[Linux installer]
-    C --> D3[macOS Intel DMG]
-    C --> D4[macOS ARM64 DMG]
-    C --> D5[Python and Pi CLI]
+    C --> D3[macOS ARM64 DMG]
+    C --> D4[Python and Pi CLI]
     D1 --> E[Checksums and changelog]
     D2 --> E
     D3 --> E
     D4 --> E
-    D5 --> E
     E --> F[Tag and GitHub Release]
 ```
 

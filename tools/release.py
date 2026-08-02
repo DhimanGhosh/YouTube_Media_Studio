@@ -43,10 +43,30 @@ class Target:
 
 TARGETS = {
     "wheel": Target("wheel", "ready", "any", "wheel + source archive", "CLI/core package"),
-    "windows": Target("windows", "ready", "windows", "GUI setup EXE", "Per-user GUI installer with optional CLI checkbox"),
-    "linux": Target("linux", "ready", "linux", "GUI installer .run", "Per-user GUI installer with optional CLI checkbox"),
-    "macos": Target("macos", "ready", "macos", "installer DMG", "Per-user GUI installer with optional CLI checkbox; unsigned"),
-    "raspi": Target("raspi", "ready", "any", "CLI installer tar.gz", "Installs on Pi OS arm64; no Qt dependency"),
+    "windows": Target(
+        "windows",
+        "ready",
+        "windows",
+        "GUI setup EXE",
+        "Per-user GUI installer with optional CLI checkbox",
+    ),
+    "linux": Target(
+        "linux",
+        "ready",
+        "linux",
+        "GUI installer .run",
+        "Per-user GUI installer with optional CLI checkbox",
+    ),
+    "macos": Target(
+        "macos",
+        "ready",
+        "macos-arm64",
+        "installer DMG",
+        "Apple-silicon per-user GUI installer with optional CLI checkbox; unsigned",
+    ),
+    "raspi": Target(
+        "raspi", "ready", "any", "CLI installer tar.gz", "Installs on Pi OS arm64; no Qt dependency"
+    ),
 }
 
 
@@ -86,20 +106,11 @@ def list_build_targets() -> None:
     """Print copyable build commands and the host required for every target."""
 
     print("Available values for build --target:")
-    print(
-        f"  {'current':8} {'ready':7} {'this host':11} "
-        f"native {host_target()} desktop package"
-    )
+    print(f"  {'current':8} {'ready':7} {'this host':11} native {host_target()} desktop package")
     print("           uv run python tools/release.py build --target current")
     for target in TARGETS.values():
-        print(
-            f"  {target.name:8} {target.status:7} {target.runner:11} "
-            f"{target.artifact}"
-        )
-        print(
-            "           uv run python tools/release.py build "
-            f"--target {target.name}"
-        )
+        print(f"  {target.name:8} {target.status:7} {target.runner:11} {target.artifact}")
+        print(f"           uv run python tools/release.py build --target {target.name}")
         if target.note:
             print(f"           {target.note}")
 
@@ -177,9 +188,7 @@ def _preserve_legacy_windows_release_data(*, dry_run: bool) -> None:
     source = ROOT / "dist" / "YouTubeMediaStudioData"
     if not source.is_dir():
         return
-    appdata = Path(
-        os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming")
-    )
+    appdata = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
     destination = appdata / ORGANIZATION_NAME / APP_DISPLAY_NAME
     print(
         f"{'Would preserve' if dry_run else 'Preserving'} legacy application data "
@@ -235,12 +244,12 @@ def build_raspi() -> Path:
         installer.write_text(
             "#!/bin/sh\nset -eu\n"
             "command -v python3 >/dev/null || { echo 'Python 3.11+ is required'; exit 1; }\n"
-            "python3 -m venv \"${HOME}/.local/share/youtube-media-tools\"\n"
-            ". \"${HOME}/.local/share/youtube-media-tools/bin/activate\"\n"
+            'python3 -m venv "${HOME}/.local/share/youtube-media-tools"\n'
+            '. "${HOME}/.local/share/youtube-media-tools/bin/activate"\n'
             f"python -m pip install --upgrade pip ./{wheel.name}\n"
-            "mkdir -p \"${HOME}/.local/bin\"\n"
-            f"cp ./uninstall.sh \"${{HOME}}/.local/bin/{CLI_UNINSTALL_COMMAND}\"\n"
-            f"chmod 755 \"${{HOME}}/.local/bin/{CLI_UNINSTALL_COMMAND}\"\n"
+            'mkdir -p "${HOME}/.local/bin"\n'
+            f'cp ./uninstall.sh "${{HOME}}/.local/bin/{CLI_UNINSTALL_COMMAND}"\n'
+            f'chmod 755 "${{HOME}}/.local/bin/{CLI_UNINSTALL_COMMAND}"\n'
             "echo 'Installed. Add ~/.local/share/youtube-media-tools/bin and ~/.local/bin to PATH.'\n",
             encoding="utf-8",
             newline="\n",
@@ -249,11 +258,11 @@ def build_raspi() -> Path:
         uninstaller = staging / "uninstall.sh"
         uninstaller.write_text(
             "#!/bin/sh\nset -eu\n"
-            "install_root=\"${HOME}/.local/share/youtube-media-tools\"\n"
-            "case \"${install_root}\" in \"${HOME}/.local/share/youtube-media-tools\") ;; "
+            'install_root="${HOME}/.local/share/youtube-media-tools"\n'
+            'case "${install_root}" in "${HOME}/.local/share/youtube-media-tools") ;; '
             "*) echo 'Refusing unsafe uninstall path' >&2; exit 1 ;; esac\n"
-            "rm -rf -- \"${install_root}\"\n"
-            f"rm -f -- \"${{HOME}}/.local/bin/{CLI_UNINSTALL_COMMAND}\"\n"
+            'rm -rf -- "${install_root}"\n'
+            f'rm -f -- "${{HOME}}/.local/bin/{CLI_UNINSTALL_COMMAND}"\n'
             f"echo '{APP_DISPLAY_NAME} CLI was removed.'\n",
             encoding="utf-8",
             newline="\n",
@@ -287,6 +296,10 @@ def build_desktop(target: str) -> Path:
         raise SystemExit(
             f"{target} is a native build. Run it on a {target} runner or use 'all' to dispatch CI."
         )
+    if target == "macos" and platform.machine().lower() not in {"arm64", "aarch64"}:
+        raise SystemExit(
+            "Intel macOS builds are not supported. Build the macOS installer on Apple silicon."
+        )
     clean_build_outputs()
     build_root = ROOT / "build"
     work_path = build_root / f"pyinstaller-{target}-{os.getpid()}-{time.time_ns()}"
@@ -301,34 +314,67 @@ def build_desktop(target: str) -> Path:
     uninstaller_output = payload / "uninstaller"
     installer_output = DIST / "installer-output"
 
-    def frozen_command(*, name: str, entry: str, output: Path, windowed: bool, onefile: bool) -> list[str]:
+    def frozen_command(
+        *, name: str, entry: str, output: Path, windowed: bool, onefile: bool
+    ) -> list[str]:
         command = [
-            "uv", "run", "--extra", "gui", "--group", "package", "pyinstaller",
-            "--noconfirm", "--clean", "--windowed" if windowed else "--console",
-            "--onefile" if onefile else "--onedir", "--name", name, entry,
-            "--distpath", str(output), "--workpath", str(work_path / name),
-            "--specpath", str(spec_path),
+            "uv",
+            "run",
+            "--extra",
+            "gui",
+            "--group",
+            "package",
+            "pyinstaller",
+            "--noconfirm",
+            "--clean",
+            "--windowed" if windowed else "--console",
+            "--onefile" if onefile else "--onedir",
+            "--name",
+            name,
+            entry,
+            "--distpath",
+            str(output),
+            "--workpath",
+            str(work_path / name),
+            "--specpath",
+            str(spec_path),
         ]
         if target in {"windows", "macos"}:
             command.extend(["--icon", str(icon_path)])
         for binary in runtime_tools:
             command.extend(["--add-binary", f"{binary}{os.pathsep}runtime-tools"])
-        command.extend([
-            "--collect-all", "yt_dlp_ejs",
-            "--copy-metadata", PACKAGE_DISTRIBUTION,
-            "--add-data", f"{ROOT / 'THIRD_PARTY_NOTICES.md'}{os.pathsep}.",
-            "--add-data", f"{ASSETS}{os.pathsep}assets",
-        ])
+        command.extend(
+            [
+                "--collect-all",
+                "yt_dlp_ejs",
+                "--copy-metadata",
+                PACKAGE_DISTRIBUTION,
+                "--add-data",
+                f"{ROOT / 'THIRD_PARTY_NOTICES.md'}{os.pathsep}.",
+                "--add-data",
+                f"{ASSETS}{os.pathsep}assets",
+            ]
+        )
         return command
 
-    run(frozen_command(
-        name=EXECUTABLE_BASENAME, entry="run_gui.py", output=gui_output,
-        windowed=True, onefile=target == "windows",
-    ))
-    run(frozen_command(
-        name=CLI_COMMAND, entry="run_app.py", output=cli_output,
-        windowed=False, onefile=True,
-    ))
+    run(
+        frozen_command(
+            name=EXECUTABLE_BASENAME,
+            entry="run_gui.py",
+            output=gui_output,
+            windowed=True,
+            onefile=target == "windows",
+        )
+    )
+    run(
+        frozen_command(
+            name=CLI_COMMAND,
+            entry="run_app.py",
+            output=cli_output,
+            windowed=False,
+            onefile=True,
+        )
+    )
 
     (payload / "version.txt").write_text(project_version() + "\n", encoding="utf-8")
     uninstaller_name = (
@@ -337,21 +383,32 @@ def build_desktop(target: str) -> Path:
         else f"{CLI_COMMAND}-uninstaller"
     )
     uninstaller_command = [
-        "uv", "run", "--extra", "gui", "--group", "package", "pyinstaller",
-        "--noconfirm", "--clean", "--windowed",
+        "uv",
+        "run",
+        "--extra",
+        "gui",
+        "--group",
+        "package",
+        "pyinstaller",
+        "--noconfirm",
+        "--clean",
+        "--windowed",
         "--onefile" if target != "macos" else "--onedir",
-        "--name", uninstaller_name, "tools/desktop_installer.py",
-        "--distpath", str(uninstaller_output),
-        "--workpath", str(work_path / "uninstaller"),
-        "--specpath", str(spec_path),
+        "--name",
+        uninstaller_name,
+        "tools/desktop_installer.py",
+        "--distpath",
+        str(uninstaller_output),
+        "--workpath",
+        str(work_path / "uninstaller"),
+        "--specpath",
+        str(spec_path),
     ]
     if target in {"windows", "macos"}:
         uninstaller_command.extend(["--icon", str(icon_path)])
     run(uninstaller_command)
 
-    cli_executable = cli_output / (
-        f"{CLI_COMMAND}.exe" if target == "windows" else CLI_COMMAND
-    )
+    cli_executable = cli_output / (f"{CLI_COMMAND}.exe" if target == "windows" else CLI_COMMAND)
     verify_packaged_application(cli_executable)
 
     if target == "linux":
@@ -362,12 +419,26 @@ def build_desktop(target: str) -> Path:
         )
 
     installer_command = [
-        "uv", "run", "--extra", "gui", "--group", "package", "pyinstaller",
-        "--noconfirm", "--clean", "--windowed", "--onefile" if target != "macos" else "--onedir",
-        "--name", f"{EXECUTABLE_BASENAME}-Setup", "tools/desktop_installer.py",
-        "--distpath", str(installer_output),
-        "--workpath", str(work_path / "installer"),
-        "--specpath", str(spec_path),
+        "uv",
+        "run",
+        "--extra",
+        "gui",
+        "--group",
+        "package",
+        "pyinstaller",
+        "--noconfirm",
+        "--clean",
+        "--windowed",
+        "--onefile" if target != "macos" else "--onedir",
+        "--name",
+        f"{EXECUTABLE_BASENAME}-Setup",
+        "tools/desktop_installer.py",
+        "--distpath",
+        str(installer_output),
+        "--workpath",
+        str(work_path / "installer"),
+        "--specpath",
+        str(spec_path),
     ]
     if target == "macos":
         payload_archive = work_path / "payload.tar.gz"
@@ -402,13 +473,21 @@ def build_desktop(target: str) -> Path:
         artifact = DIST / f"{PACKAGE_DISTRIBUTION}-{version}-macos-{machine}-installer.dmg"
         if artifact.exists():
             artifact.unlink()
-        run([
-            "hdiutil", "create", "-volname", APP_DISPLAY_NAME,
-            "-srcfolder", str(setup_app), "-ov", "-format", "UDZO", str(artifact),
-        ])
-        verify_packaged_installer(
-            setup_app / "Contents" / "MacOS" / f"{EXECUTABLE_BASENAME}-Setup"
+        run(
+            [
+                "hdiutil",
+                "create",
+                "-volname",
+                APP_DISPLAY_NAME,
+                "-srcfolder",
+                str(setup_app),
+                "-ov",
+                "-format",
+                "UDZO",
+                str(artifact),
+            ]
         )
+        verify_packaged_installer(setup_app / "Contents" / "MacOS" / f"{EXECUTABLE_BASENAME}-Setup")
     shutil.rmtree(payload)
     shutil.rmtree(installer_output)
     print(f"Created {artifact}")
@@ -456,8 +535,7 @@ def prepare_runtime_tools(target: str) -> list[Path]:
     )
     if completed.returncode != 0:
         raise RuntimeError(
-            "Could not fetch packaging runtime tools:\n"
-            + (completed.stderr or completed.stdout)
+            "Could not fetch packaging runtime tools:\n" + (completed.stderr or completed.stdout)
         )
     marker = next(
         (
@@ -513,9 +591,7 @@ def verify_packaged_application(executable: Path) -> None:
     environment = os.environ.copy()
     if os.name == "nt":
         system_root = environment.get("SystemRoot", r"C:\Windows")
-        environment["PATH"] = os.pathsep.join(
-            [str(Path(system_root) / "System32"), system_root]
-        )
+        environment["PATH"] = os.pathsep.join([str(Path(system_root) / "System32"), system_root])
     else:
         environment["PATH"] = "/usr/bin:/bin"
     completed = subprocess.run(
@@ -558,12 +634,18 @@ def write_manifest() -> None:
     }
     for path in sorted(artifacts):
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
-        manifest["artifacts"].append({"file": path.name, "sha256": digest, "bytes": path.stat().st_size})
-    (DIST / "build-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+        manifest["artifacts"].append(
+            {"file": path.name, "sha256": digest, "bytes": path.stat().st_size}
+        )
+    (DIST / "build-manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
+    )
     checksum_files = sorted(
         path for path in DIST.iterdir() if path.is_file() and path.name != "SHA256SUMS.txt"
     )
-    lines = [f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}" for path in checksum_files]
+    lines = [
+        f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}" for path in checksum_files
+    ]
     (DIST / "SHA256SUMS.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -614,7 +696,11 @@ def parse_args() -> argparse.Namespace:
     )
     all_parser = subparsers.add_parser("all", help="validate and dispatch every native build")
     all_parser.add_argument("--ref", default="HEAD", help="pushed Git ref for CI")
-    all_parser.add_argument("--local-only", action="store_true", help="build host-independent and current-host artifacts only")
+    all_parser.add_argument(
+        "--local-only",
+        action="store_true",
+        help="build host-independent and current-host artifacts only",
+    )
     return parser.parse_args()
 
 

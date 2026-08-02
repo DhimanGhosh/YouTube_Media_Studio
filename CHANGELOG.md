@@ -16,6 +16,13 @@ abbreviated hashes to the next version section.
   registration, then install and register the selected release automatically.
 - Preserve settings, history, and application data during automatic upgrades.
 
+### Removed
+
+- Remove the Intel macOS installer from GitHub Actions, release artifacts, native build
+  tooling, workflow tests, download instructions, and release-pipeline documentation.
+  macOS desktop releases now target Apple silicon only, and the release tool rejects
+  accidental Intel macOS builds.
+
 ### Fixed
 
 - Prevent Windows upgrades from failing with `WinError 5: Access is denied` when the

@@ -16,7 +16,10 @@ def test_every_successful_main_push_builds_and_publishes_a_versioned_release() -
     assert 'uv version "${{ needs.prepare-version.outputs.version }}"' in workflow
     assert "target: windows" in workflow
     assert "target: linux" in workflow
-    assert workflow.count("target: macos") == 2
+    assert workflow.count("target: macos") == 1
+    assert "macos-15-intel" not in workflow
+    assert "macOS Intel" not in workflow
+    assert "macos-x86_64-installer.dmg" not in workflow
     assert "needs: [prepare-version, python-and-raspi, desktop]" in workflow
     assert 'git tag -a "v${VERSION}"' in workflow
     assert 'gh release create "v${VERSION}"' in workflow

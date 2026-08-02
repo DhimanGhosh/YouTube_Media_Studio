@@ -7,6 +7,8 @@ import tarfile
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 
 SCRIPT = Path(__file__).resolve().parents[1] / "tools" / "release.py"
 SPEC = importlib.util.spec_from_file_location("release_tool", SCRIPT)
@@ -48,6 +50,14 @@ def test_every_desktop_target_has_a_native_icon() -> None:
     assert release_tool.desktop_icon_for_target("windows").suffix == ".ico"
     assert release_tool.desktop_icon_for_target("macos").suffix == ".icns"
     assert release_tool.desktop_icon_for_target("linux").suffix == ".png"
+
+
+def test_macos_desktop_build_rejects_intel_hosts(monkeypatch) -> None:
+    monkeypatch.setattr(release_tool.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(release_tool.platform, "machine", lambda: "x86_64")
+
+    with pytest.raises(SystemExit, match="Intel macOS builds are not supported"):
+        release_tool.build_desktop("macos")
 
 
 def test_clean_removes_only_generated_paths(monkeypatch, tmp_path) -> None:
@@ -151,8 +161,12 @@ def test_raspi_bundle_installs_an_uninstall_command(monkeypatch, tmp_path) -> No
 
     with tarfile.open(archive, "r:gz") as bundle:
         names = bundle.getnames()
-        install_text = bundle.extractfile(next(name for name in names if name.endswith("install.sh")))
-        uninstall_text = bundle.extractfile(next(name for name in names if name.endswith("uninstall.sh")))
+        install_text = bundle.extractfile(
+            next(name for name in names if name.endswith("install.sh"))
+        )
+        uninstall_text = bundle.extractfile(
+            next(name for name in names if name.endswith("uninstall.sh"))
+        )
         assert install_text and uninstall_text
         assert "youtube-media-studio-uninstall" in install_text.read().decode()
         assert "youtube-media-tools" in uninstall_text.read().decode()
