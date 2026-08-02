@@ -37,6 +37,11 @@ abbreviated hashes to the next version section.
 - Mask the SerpApi credential in the GUI and suppress request URLs and exception text
   that could expose the API key when a SerpApi request fails.
 
+## [2.0.3] - 2026-08-02
+
+### Changed
+
+- Automated release with no new commit messages.
 ## [2.0.2] - 2026-08-02
 
 ### Changed
