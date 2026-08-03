@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from youtube_audio_video_downloader.services.youtube_track_extractor import (
+    _single_video_url,
     description_to_timestamp_text,
     extract_tracks_from_youtube,
     match_wikipedia_artist,
@@ -15,6 +16,14 @@ from youtube_audio_video_downloader.utils.track_timestamp_parser import parse_tr
 
 
 class YouTubeTrackExtractorTest(unittest.TestCase):
+    def test_single_video_url_drops_radio_playlist_parameters(self) -> None:
+        self.assertEqual(
+            _single_video_url(
+                "https://www.youtube.com/watch?v=rXIhvX4TFEA&list=RDrXIhvX4TFEA&start_radio=1&t=1559s"
+            ),
+            "https://www.youtube.com/watch?v=rXIhvX4TFEA",
+        )
+
     def test_combines_track_list_with_separate_singer_credits(self) -> None:
         description = """TrackList
 Ik Vaari Aa → 0:00
@@ -186,7 +195,7 @@ Singers - Farhan Saeed & Shreya Ghoshal
             ["Benche Thakar Gaan", "Amake Amar Moto Thakte Dao"],
         )
 
-    def test_non_latin_ai_failure_is_reported_instead_of_returning_source_script(self) -> None:
+    def test_ai_failure_keeps_deterministic_non_latin_tracks(self) -> None:
         downloader = MagicMock()
         downloader.__enter__.return_value = downloader
         downloader.extract_info.return_value = {
@@ -201,13 +210,30 @@ Singers - Farhan Saeed & Shreya Ghoshal
                 side_effect=RuntimeError("provider unavailable"),
             ),
         ):
-            with self.assertRaisesRegex(
-                LookupError,
-                "AI romanization failed: provider unavailable.*non-Latin titles",
-            ):
-                extract_tracks_from_youtube(
-                    "https://www.youtube.com/watch?v=example", model="agent:test"
-                )
+            _text, tracks = extract_tracks_from_youtube(
+                "https://www.youtube.com/watch?v=example", model="agent:test"
+            )
+
+        self.assertEqual([next(iter(track)) for track in tracks], ["বেঁচে থাকার গান"])
+
+    def test_skips_only_out_of_range_final_timestamp(self) -> None:
+        downloader = MagicMock()
+        downloader.__enter__.return_value = downloader
+        downloader.extract_info.return_value = {
+            "title": "Tum Mile",
+            "duration": 2348,
+            "description": (
+                "01. Tu Hi Haqeeqat ⏩ 00:00\n"
+                "02. Dil Ibadat ⏩ 04:53\n"
+                "09. Soul Of Tum Mile ⏩ 40:54"
+            ),
+        }
+        with patch("yt_dlp.YoutubeDL", return_value=downloader):
+            _text, tracks = extract_tracks_from_youtube(
+                "https://www.youtube.com/watch?v=example", use_ai=False
+            )
+
+        self.assertEqual([next(iter(track)) for track in tracks], ["Tu Hi Haqeeqat", "Dil Ibadat"])
 
     def test_ai_extractor_and_independent_reviewer_preserve_per_track_albums(self) -> None:
         downloader = MagicMock()

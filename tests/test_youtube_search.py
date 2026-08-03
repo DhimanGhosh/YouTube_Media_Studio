@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import MagicMock, patch
 
 from youtube_audio_video_downloader.services.youtube_search import (
+    _album_focus_score,
     _description_matches_album_tracks,
+    _trusted_official_jukebox,
     _youtube_video_identity,
     album_jukebox_query,
+    album_jukebox_queries,
     rank_jukebox_candidates,
+    find_album_jukebox_video,
 )
 
 
@@ -22,6 +27,12 @@ class YouTubeSearchTest(unittest.TestCase):
             album_jukebox_query("Satyameva Jayate", "2018"),
             "Satyameva Jayate 2018 full album audio jukebox",
         )
+
+    def test_album_jukebox_queries_try_natural_search_before_year_variants(self) -> None:
+        queries = album_jukebox_queries("Tum Mile", "2009")
+
+        self.assertEqual(queries[0], "Tum Mile full album audio jukebox")
+        self.assertIn("Tum Mile 2009 full album audio jukebox", queries)
 
     def test_album_name_is_required(self) -> None:
         with self.assertRaisesRegex(ValueError, "album or jukebox name"):
@@ -49,6 +60,97 @@ class YouTubeSearchTest(unittest.TestCase):
         ranked = rank_jukebox_candidates(entries, album_name="Example Album")
         self.assertEqual(ranked[0]["view_count"], 8_000_000)
         self.assertEqual(len(ranked), 2)
+
+    def test_ranks_official_audio_jukebox_over_unofficial_movie_all_songs(self) -> None:
+        entries = [
+            {
+                "title": "Tum Mile movie all songs Emraan Hashmi movie jukebox",
+                "view_count": 120_000,
+                "duration": 2348,
+                "channel": "N Music",
+            },
+            {
+                "title": "Tum Mile - Audio Jukebox | Emraan Hashmi | Soha Ali Khan",
+                "view_count": 489_000,
+                "duration": 2743,
+                "channel": "Sony Music India",
+                "channel_is_verified": True,
+            },
+        ]
+
+        ranked = rank_jukebox_candidates(entries, album_name="Tum Mile")
+
+        self.assertEqual(ranked[0]["channel"], "Sony Music India")
+
+    def test_album_focus_beats_broader_official_compilation(self) -> None:
+        focused = {
+            "title": "Tum Mile - Audio Jukebox | Emraan Hashmi",
+        }
+        compilation = {
+            "title": "Best Of Pritam Part - 2 | Audio Jukebox | Jannat | Tum Mile",
+        }
+
+        self.assertGreater(
+            _album_focus_score(focused, "Tum Mile"),
+            _album_focus_score(compilation, "Tum Mile"),
+        )
+
+    def test_trusts_verified_audio_jukebox_when_wikipedia_rows_are_noisy(self) -> None:
+        self.assertTrue(
+            _trusted_official_jukebox(
+                {
+                    "title": "Tum Mile - Audio Jukebox | Emraan Hashmi",
+                    "channel": "Sony Music India",
+                    "channel_is_verified": True,
+                }
+            )
+        )
+        self.assertFalse(
+            _trusted_official_jukebox(
+                {
+                    "title": "Tum Mile movie all songs",
+                    "channel": "N Music",
+                    "channel_is_verified": False,
+                }
+            )
+        )
+
+    @patch("youtube_audio_video_downloader.services.youtube_search.find_wikipedia_tracks")
+    @patch("yt_dlp.YoutubeDL")
+    def test_search_accepts_verified_audio_jukebox_with_youtube_chapters(
+        self, ydl_class, wikipedia_mock
+    ) -> None:
+        flat_downloader = MagicMock()
+        detail_downloader = MagicMock()
+        ydl_class.side_effect = [flat_downloader, detail_downloader]
+        flat_downloader.__enter__.return_value.extract_info.side_effect = [
+            {
+                "entries": [
+                    {
+                        "id": "rXIhvX4TFEA",
+                        "title": "Tum Mile - Audio Jukebox | Emraan Hashmi",
+                        "duration": 2743,
+                        "channel": "Sony Music India",
+                        "channel_is_verified": True,
+                        "view_count": 489_000,
+                    }
+                ]
+            },
+            *({"entries": []} for _ in range(7)),
+        ]
+        detail_downloader.__enter__.return_value.extract_info.return_value = {
+            "title": "Tum Mile - Audio Jukebox | Emraan Hashmi",
+            "description": "No timestamp text here",
+            "chapters": [
+                {"start_time": 0, "title": "Tum Mile"},
+                {"start_time": 343, "title": "Dil Ibaadat"},
+            ],
+        }
+        wikipedia_mock.return_value = [{"title": "1"}, {"title": "2"}]
+
+        result = find_album_jukebox_video("Tum Mile", "2009")
+
+        self.assertEqual(result["url"], "https://www.youtube.com/watch?v=rXIhvX4TFEA")
 
     def test_rejects_popular_unrelated_jukebox(self) -> None:
         entries = [

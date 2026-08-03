@@ -44,10 +44,10 @@ _VERSION_WORDS = {
 # YouTube descriptions frequently contain invisible/typographic characters that
 # are not represented by the older punctuation-only expressions above.
 _ROBUST_TIME_FIRST = re.compile(
-    rf"^\s*(?P<time>{_TIME})\s*(?:[-\u2013\u2014\u2192\u25ba\u2022|:)]+\s*|\s+)(?P<title>\S.+)$"
+    rf"^\s*(?P<time>{_TIME})\s*(?:[-\u2013\u2014\u2192\u23e9\u25ba\u2022|:)]+\s*|\s+)(?P<title>\S.+)$"
 )
 _ROBUST_TIME_LAST = re.compile(
-    rf"^\s*(?P<title>\S.*?)\s*(?:[-\u2013\u2014\u2192\u25ba\u2022|]+\s*|\s+)(?P<time>{_TIME})\s*$"
+    rf"^\s*(?P<title>\S.*?)\s*(?:[-\u2013\u2014\u2192\u23e9\u25ba\u2022|]+\s*|\s+)(?P<time>{_TIME})\s*$"
 )
 
 _AGENT_TRACK_FIELDS = {
@@ -144,6 +144,8 @@ def _split_inline_artists(title: str) -> tuple[str, str]:
     if not match:
         return title, ""
     possible_artists = match.group(2).strip()
+    if not any(character.isalpha() for character in possible_artists):
+        return title, ""
     words = set(re.findall(r"[a-z]+", possible_artists.lower()))
     if words & _VERSION_WORDS:
         return title, ""
@@ -257,7 +259,13 @@ def extract_tracks_from_youtube(
         raise ValueError("Find or enter a valid YouTube link before extracting tracks.")
     import yt_dlp
 
-    options: dict[str, Any] = {"quiet": True, "no_warnings": True, "skip_download": True}
+    url = _single_video_url(url)
+    options: dict[str, Any] = {
+        "quiet": True,
+        "no_warnings": True,
+        "skip_download": True,
+        "noplaylist": True,
+    }
     with yt_dlp.YoutubeDL(options) as downloader:
         info = downloader.extract_info(url.strip(), download=False)
     if not isinstance(info, dict):
@@ -298,14 +306,12 @@ def extract_tracks_from_youtube(
         except Exception as exc:
             print(f"[AI-FALLBACK] Jukebox extraction used deterministic evidence | {exc}")
             ai_error = str(exc)
-            # Returning source-script titles after the user explicitly requested
-            # AI romanization would falsely look like a successful AI result.
             requires_romanization = _tracks_require_romanization(deterministic_tracks)
-            tracks = [] if requires_romanization else deterministic_tracks
+            tracks = deterministic_tracks
             if requires_romanization:
                 deterministic_error = (
-                    "Source timestamps are valid, but their non-Latin titles require "
-                    "successful AI romanization."
+                    "Source timestamps were extracted without AI romanization because "
+                    "the selected model was unavailable."
                 )
     else:
         tracks = deterministic_tracks
@@ -334,6 +340,16 @@ def extract_tracks_from_youtube(
                 values["artists"] = wiki_artist
     _normalize_track_artist_fields(tracks)
     return timestamp_text, tracks
+
+
+def _single_video_url(url: str) -> str:
+    """Drop playlist/radio parameters so yt-dlp inspects only the selected video."""
+
+    match = re.search(
+        r"(?:[?&]v=|youtu\.be/|youtube\.com/shorts/)([A-Za-z0-9_-]{11})",
+        str(url or ""),
+    )
+    return f"https://www.youtube.com/watch?v={match.group(1)}" if match else url.strip()
 
 
 def _normalize_track_artist_fields(tracks: list[dict]) -> None:
@@ -426,6 +442,8 @@ def _parse_and_validate_tracks(timestamp_text: str, duration: int) -> list[dict]
         raise LookupError("The timestamp parser could not create tracks from the evidence.")
     previous = -1
     names: set[str] = set()
+    validated: list[dict] = []
+    skipped_out_of_range: list[str] = []
     for index, track in enumerate(tracks, start=1):
         if not isinstance(track, dict) or not track:
             raise ValueError(f"Track #{index} is malformed.")
@@ -436,13 +454,22 @@ def _parse_and_validate_tracks(timestamp_text: str, duration: int) -> list[dict]
         if start <= previous:
             raise ValueError("Track timestamps must be strictly increasing.")
         if duration > 0 and start >= duration:
-            raise ValueError(f"Track {title!r} starts after the video ends.")
+            skipped_out_of_range.append(str(title))
+            continue
         key = _key(str(title))
         if not key or key in names:
             raise ValueError(f"Track title {title!r} is empty or duplicated.")
         names.add(key)
         previous = start
-    return tracks
+        validated.append(track)
+    if not validated:
+        raise ValueError("Every extracted track starts after the video ends.")
+    if skipped_out_of_range:
+        print(
+            "[TIMESTAMP-WARNING] Skipped out-of-range track starts after the "
+            "video duration: " + ", ".join(skipped_out_of_range[:5])
+        )
+    return validated
 
 
 def _agentic_track_extraction(

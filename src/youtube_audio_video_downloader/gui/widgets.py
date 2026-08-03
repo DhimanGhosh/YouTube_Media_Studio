@@ -775,6 +775,7 @@ class JsonBatchEditor(QWidget):
         self._scanners: set[VideoQualityScanner] = set()
         self._album_art_searchers: set[AlbumArtSearcher] = set()
         self._cover_loaders: set[CoverImageLoader] = set()
+        self._cover_preview_dialogs: set[CoverPreviewDialog] = set()
         self._youtube_searchers: set[YouTubeAlbumSearcher] = set()
         self._track_extractors: set[YouTubeTrackExtractor] = set()
         self._release_year_searchers: set[ReleaseYearSearcher] = set()
@@ -1584,6 +1585,10 @@ class JsonBatchEditor(QWidget):
             if ai_enabled
             else "Internet metadata + deterministic parsing"
         )
+        self.log_requested.emit(
+            f'[TRACK-EXTRACT] Extracting timestamped tracks for "{self._field_value(album_edit)}" '
+            f"from {url}."
+        )
         extractor = YouTubeTrackExtractor(
             url,
             self._field_value(album_edit),
@@ -1611,6 +1616,9 @@ class JsonBatchEditor(QWidget):
                     )
             button.setToolTip(timestamp_text)
             section.set_status(f"{len(parsed_tracks)} tracks found")
+            self.log_requested.emit(
+                f"[TRACK-EXTRACT] Extracted {len(parsed_tracks)} timestamped tracks from {extracted_url}."
+            )
             self._warn_nonzero_first_track(parsed_tracks, section)
             if self.kind == "jukebox":
                 for track_record in added_tracks:
@@ -1623,6 +1631,9 @@ class JsonBatchEditor(QWidget):
             if self._field_value(link_edit) == extracted_url:
                 button.setToolTip(message)
                 section.set_status(f"Extraction failed: {message[:160]}")
+                self.log_requested.emit(
+                    f"[TRACK-EXTRACT] Extraction failed for {extracted_url}: {message}"
+                )
                 QMessageBox.warning(self, "Track extraction failed", message)
 
         extractor.extracted.connect(apply_result)
@@ -1881,6 +1892,7 @@ class JsonBatchEditor(QWidget):
         button.setEnabled(False)
         button.setText("Loading…")
         section.set_status("Loading preview")
+        self.log_requested.emit(f"[COVER-PREVIEW] Loading album art preview: {url}")
         loader = CoverImageLoader(
             url, self, retry_attempts=self.retry_attempts
         )
@@ -1893,14 +1905,26 @@ class JsonBatchEditor(QWidget):
             if not pixmap.loadFromData(data):
                 art_edit.setToolTip("The URL did not return a supported image.")
                 section.set_status("Invalid image")
+                self.log_requested.emit(
+                    f"[COVER-PREVIEW] Preview failed for {loaded_url}: unsupported image data."
+                )
                 return
             section.set_status("Preview ready")
-            CoverPreviewDialog(pixmap, self).exec()
+            dialog = CoverPreviewDialog(pixmap, self)
+            self._cover_preview_dialogs.add(dialog)
+            dialog.finished.connect(lambda _result=0, item=dialog: self._cover_preview_dialogs.discard(item))
+            dialog.show()
+            dialog.raise_()
+            dialog.activateWindow()
+            self.log_requested.emit(f"[COVER-PREVIEW] Opened album art preview: {loaded_url}")
 
         def show_error(loaded_url: str, message: str) -> None:
             if art_edit.text().strip() == loaded_url:
                 art_edit.setToolTip(f"Could not load preview: {message}")
                 section.set_status("Preview failed")
+                self.log_requested.emit(
+                    f"[COVER-PREVIEW] Preview failed for {loaded_url}: {message}"
+                )
 
         loader.loaded.connect(show_preview)
         loader.failed.connect(show_error)

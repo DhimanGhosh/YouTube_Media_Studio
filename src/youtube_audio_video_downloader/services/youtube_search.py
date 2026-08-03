@@ -7,6 +7,7 @@ from difflib import SequenceMatcher
 from typing import Any
 
 from youtube_audio_video_downloader.services.youtube_track_extractor import (
+    _chapters_to_timestamp_text,
     description_to_timestamp_text,
 )
 from youtube_audio_video_downloader.services.wikipedia_tracks import find_wikipedia_tracks
@@ -40,9 +41,19 @@ def find_album_jukebox_video(
         "extract_flat": "in_playlist",
         "noplaylist": True,
     }
+    entries: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
     with yt_dlp.YoutubeDL(options) as downloader:
-        result = downloader.extract_info(f"ytsearch12:{query}", download=False)
-    entries = result.get("entries", []) if isinstance(result, dict) else []
+        for search_query in album_jukebox_queries(album_name, release_year):
+            result = downloader.extract_info(f"ytsearch20:{search_query}", download=False)
+            for entry in result.get("entries", []) if isinstance(result, dict) else []:
+                if not isinstance(entry, dict):
+                    continue
+                identity = str(entry.get("id") or entry.get("url") or "")
+                if identity and identity in seen_ids:
+                    continue
+                seen_ids.add(identity)
+                entries.append(entry)
     candidates = rank_jukebox_candidates(
         [entry for entry in entries if isinstance(entry, dict)],
         album_name=album_name.strip(),
@@ -73,9 +84,21 @@ def find_album_jukebox_video(
                 )
                 if _has_unsupported_language(searchable_metadata):
                     continue
-                timestamp_text = description_to_timestamp_text(description)
-                if expected_tracks and not _description_matches_album_tracks(
-                    timestamp_text, expected_tracks
+                try:
+                    timestamp_text = description_to_timestamp_text(description)
+                except LookupError:
+                    chapters = (
+                        detail.get("chapters")
+                        if isinstance(detail.get("chapters"), list)
+                        else []
+                    )
+                    timestamp_text = _chapters_to_timestamp_text(chapters)
+                if (
+                    expected_tracks
+                    and not _trusted_official_jukebox(candidate)
+                    and not _description_matches_album_tracks(
+                        timestamp_text, expected_tracks
+                    )
                 ):
                     continue
             except Exception:
@@ -90,6 +113,34 @@ def find_album_jukebox_video(
         f'No different popular YouTube jukebox with an extractable timestamp list '
         f'was found for "{query}".'
     )
+
+
+def album_jukebox_queries(album_name: str, release_year: str = "") -> list[str]:
+    """Return ordered YouTube queries for official full-album audio sources."""
+
+    name = normalize_album_name(album_name)
+    year = release_year.strip()
+    year_base = f"{name} {year}" if year else ""
+    queries = [
+        f"{name} full album audio jukebox",
+        f"{name} official audio jukebox",
+        f"{name} full album songs official",
+        f"{name} audio jukebox official label",
+        f"{name} audio jukebox Sony Music India",
+    ]
+    if year_base:
+        queries.extend(
+            [
+                f"{year_base} full album audio jukebox",
+                f"{year_base} official audio jukebox",
+                f"{year_base} full album songs official",
+            ]
+        )
+    deduped: list[str] = []
+    for query in queries:
+        if query not in deduped:
+            deduped.append(query)
+    return deduped
 
 
 def _youtube_video_identity(url: str) -> str:
@@ -134,11 +185,54 @@ def rank_jukebox_candidates(
     return sorted(
         candidates,
         key=lambda entry: (
+            _album_focus_score(entry, album_name),
+            _official_jukebox_score(entry),
             bool(entry.get("channel_is_verified")),
             int(entry.get("view_count") or 0),
         ),
         reverse=True,
     )
+
+
+def _album_focus_score(entry: dict[str, Any], album_name: str) -> int:
+    title_key = _title_key(str(entry.get("title") or ""))
+    album_key = _title_key(album_name)
+    if not title_key or not album_key:
+        return 0
+    score = 0
+    if title_key == album_key or title_key.startswith(album_key + " audio jukebox"):
+        score += 10
+    elif title_key.startswith(album_key):
+        score += 7
+    elif album_key in title_key:
+        score += 2
+    if title_key.startswith(("best of ", "mix ", "top ", "hits of ")):
+        score -= 6
+    return score
+
+
+def _official_jukebox_score(entry: dict[str, Any]) -> int:
+    title = str(entry.get("title") or "").casefold()
+    channel = str(entry.get("channel") or entry.get("uploader") or "").casefold()
+    score = 0
+    if entry.get("channel_is_verified"):
+        score += 5
+    if "audio jukebox" in title:
+        score += 4
+    if "official" in title:
+        score += 2
+    if any(label in channel for label in ("sony music", "vevo", "t-series", "saregama")):
+        score += 3
+    if any(noise in title for noise in ("movie all songs", "hit song", "hindi best song")):
+        score -= 2
+    return score
+
+
+def _trusted_official_jukebox(entry: dict[str, Any]) -> bool:
+    """Accept a verified label audio jukebox even when Wikipedia rows are noisy."""
+
+    title = str(entry.get("title") or "").casefold()
+    return bool(entry.get("channel_is_verified")) and "audio jukebox" in title
 
 
 _VARIANT_WORDS = {

@@ -4,6 +4,18 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [Unreleased]
+
+### Fixed
+
+- Prefer verified official YouTube audio jukeboxes during Album Splitter auto-fill,
+  including chapter-backed uploads where the track list is not in the description.
+- Normalize YouTube radio/playlist URLs to the selected video before extracting tracks,
+  skip only out-of-range timestamp rows instead of rejecting the whole list, and keep
+  numbered title variants such as `Tum Mile (2)` distinct.
+- Log Album Splitter track-extraction failures and album-art preview outcomes in
+  Live Logs.
+
 ## [2.2.1] - 2026-08-04
 
 ### Fixed

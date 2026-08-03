@@ -13,6 +13,10 @@ _RELEASE_SUFFIXES = (
         re.I,
     ),
     re.compile(
+        r"\s*(?:original\s+)?(?:motion\s+picture\s+)?soundtrack\s*$",
+        re.I,
+    ),
+    re.compile(
         r"\s*\(\s*\d{4}\s+(?:film|soundtrack(?:\s+album)?|album)\s*\)\s*$",
         re.I,
     ),
