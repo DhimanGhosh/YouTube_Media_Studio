@@ -857,7 +857,7 @@ wheels = [
 
 [[package]]
 name = "youtube-media-studio"
-version = "2.1.1"
+version = "2.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "mutagen" },
