@@ -88,9 +88,27 @@ program with a similar process name is never closed.
 2. Open it and drag `YouTubeMediaStudio.app` to **Applications**.
 3. Launch `YouTubeMediaStudio.app` from Applications.
 
-Unsigned releases may require **System Settings → Privacy & Security → Open
-Anyway** on first launch. Releases built with the signing secrets documented below
-are Developer ID signed and notarized for normal Gatekeeper launch.
+Unsigned releases can be installed, but macOS Gatekeeper may block the first launch
+because Apple cannot verify the app with its notarization service. After dragging the
+app to Applications, run this once on that Mac:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/YouTubeMediaStudio.app
+open /Applications/YouTubeMediaStudio.app
+```
+
+If macOS still refuses to open it, apply a local ad-hoc signature and remove the
+quarantine flag again:
+
+```sh
+codesign --force --deep --sign - /Applications/YouTubeMediaStudio.app
+xattr -dr com.apple.quarantine /Applications/YouTubeMediaStudio.app
+open /Applications/YouTubeMediaStudio.app
+```
+
+This local workaround must be repeated by each Mac user who installs an unsigned
+build. Releases built with the signing secrets documented below are Developer ID
+signed and notarized for normal Gatekeeper launch.
 
 </details>
 

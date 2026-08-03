@@ -4,6 +4,18 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [Unreleased]
+
+### Fixed
+
+- Report Album Splitter auto-fill outcomes in Live Logs and show **No new data** when
+  metadata lookup does not update any visible album fields or track rows.
+
+### Documentation
+
+- Document the per-Mac quarantine removal and optional ad-hoc signing commands needed
+  to launch unsigned macOS DMG builds without an Apple Developer Program membership.
+
 ## [2.2.0] - 2026-08-04
 
 ### Added

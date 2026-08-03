@@ -9,6 +9,7 @@ from unittest.mock import patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtWidgets import QApplication  # noqa: E402
+from PyQt6.QtWidgets import QPushButton  # noqa: E402
 
 from youtube_audio_video_downloader.gui.widgets import JsonBatchEditor  # noqa: E402
 
@@ -252,6 +253,51 @@ class BatchEditorCompletionTest(unittest.TestCase):
         payload = editor.data()["Compilation"]["tracks"][0]["Song"]
 
         self.assertEqual(payload["artists"], "Singer One, Singer Two")
+
+    def test_album_auto_fill_reports_no_new_data_when_result_changes_nothing(self) -> None:
+        editor = JsonBatchEditor("album")
+        entry = editor.add_entry("Bhoot Bangla")
+        logs: list[str] = []
+        editor.log_requested.connect(logs.append)
+
+        editor._apply_album_auto_fill_result(
+            "Bhoot Bangla",
+            {"errors": ["year: not found", "cover: not found"]},
+            entry["fields"],
+            entry["section"],
+            QPushButton(),
+        )
+
+        self.assertEqual(entry["section"].status_label.text(), "NO NEW DATA")
+        self.assertTrue(
+            any("No usable metadata found" in line for line in logs),
+            logs,
+        )
+        self.assertFalse(entry["fields"]["release_year"].text())
+        self.assertFalse(entry["fields"]["album_art"].text())
+        self.assertFalse(entry["fields"]["ytb_link"].text())
+
+    def test_album_auto_fill_logs_visible_field_updates(self) -> None:
+        editor = JsonBatchEditor("album")
+        entry = editor.add_entry("Album")
+        logs: list[str] = []
+        editor.log_requested.connect(logs.append)
+
+        editor._apply_album_auto_fill_result(
+            "Album",
+            {"year": "1999", "album_art": "https://example.test/cover.jpg"},
+            entry["fields"],
+            entry["section"],
+            QPushButton(),
+        )
+
+        self.assertEqual(entry["section"].status_label.text(), "METADATA FOUND")
+        self.assertEqual(entry["fields"]["release_year"].text(), "1999")
+        self.assertEqual(
+            entry["fields"]["album_art"].text(),
+            "https://example.test/cover.jpg",
+        )
+        self.assertTrue(any("release year, album art" in line for line in logs), logs)
 
 
 if __name__ == "__main__":

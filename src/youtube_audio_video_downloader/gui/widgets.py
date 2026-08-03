@@ -743,6 +743,8 @@ class TimestampImportDialog(QDialog):
 class JsonBatchEditor(QWidget):
     """Form-based editor that emits the same dictionaries as the CLI JSON files."""
 
+    log_requested = pyqtSignal(str)
+
     FLAT_FIELDS = {
         "audio": ["ytb_link", "mp3_file_path", "title", "album", "artists", "album_art", "release_year", "track_number"],
         "video": ["ytb_link"],
@@ -1086,6 +1088,9 @@ class JsonBatchEditor(QWidget):
         button.setEnabled(False)
         button.setText("Auto filling…")
         section.set_status("Finding metadata")
+        self.log_requested.emit(
+            f'[ALBUM-AUTO-FILL] Searching metadata for "{album_name}".'
+        )
         year_edit = fields.get("release_year")
         supplied_year = self._field_value(year_edit) if year_edit is not None else ""
         filler = AlbumMetadataAutoFiller(
@@ -1101,18 +1106,59 @@ class JsonBatchEditor(QWidget):
                 return
             if name_edit.text().strip() != searched_name:
                 return
+            self._apply_album_auto_fill_result(searched_name, result, fields, section, button)
+
+        filler.completed.connect(apply_result)
+        filler.finished.connect(lambda: _finish_async_button(button, "Auto fill album"))
+        filler.finished.connect(lambda: self._album_auto_fillers.discard(filler))
+        filler.finished.connect(filler.deleteLater)
+        filler.start()
+
+    def _apply_album_auto_fill_result(
+        self,
+        searched_name: str,
+        result: dict,
+        fields: dict,
+        section: CollapsibleSection,
+        button: QPushButton,
+    ) -> None:
+        if self.kind != "album":
+            return
+        try:
             year_edit = fields.get("release_year")
             art_edit = fields.get("album_art")
             link_edit = fields.get("ytb_link")
-            if isinstance(year_edit, QLineEdit) and result.get("year"):
+            changed: list[str] = []
+            if (
+                isinstance(year_edit, QLineEdit)
+                and result.get("year")
+                and year_edit.text().strip() != str(result["year"]).strip()
+            ):
                 year_edit.setText(str(result["year"]))
-                year_edit.setToolTip(f"Found on Wikipedia: {result.get('page_title', '')}")
-            if isinstance(art_edit, QLineEdit) and result.get("album_art"):
+                year_edit.setToolTip(
+                    f"Found on Wikipedia: {result.get('page_title', '')}"
+                )
+                changed.append("release year")
+            if (
+                isinstance(art_edit, QLineEdit)
+                and result.get("album_art")
+                and art_edit.text().strip() != str(result["album_art"]).strip()
+            ):
                 art_edit.setText(str(result["album_art"]))
+                changed.append("album art")
             youtube = result.get("youtube")
-            if isinstance(link_edit, QLineEdit) and isinstance(youtube, dict):
-                link_edit.setText(str(youtube.get("url") or ""))
-                link_edit.setToolTip(str(youtube.get("title") or "YouTube jukebox found"))
+            if (
+                isinstance(link_edit, QLineEdit)
+                and isinstance(youtube, dict)
+                and youtube.get("url")
+            ):
+                youtube_url = str(youtube["url"])
+                if link_edit.text().strip() != youtube_url:
+                    link_edit.setText(youtube_url)
+                    changed.append("YouTube link")
+                link_edit.setToolTip(
+                    str(youtube.get("title") or "YouTube jukebox found")
+                )
                 tracks_layout = fields.get("__tracks_layout__")
                 tracks = fields.get("__tracks__")
                 extract_button = fields.get("__extract_button__")
@@ -1125,7 +1171,7 @@ class JsonBatchEditor(QWidget):
                         0,
                         lambda: self._extract_youtube_tracks(
                             link_edit,
-                            name_edit,
+                            fields["__name__"],
                             year_edit,
                             tracks_layout,
                             tracks,
@@ -1134,10 +1180,16 @@ class JsonBatchEditor(QWidget):
                         ),
                     )
                     section.set_status("Extracting tracks")
+                    self.log_requested.emit(
+                        "[ALBUM-AUTO-FILL] Found a YouTube jukebox for "
+                        f'"{searched_name}" and started track extraction.'
+                    )
                     return
             individual_tracks = result.get("individual_tracks")
-            if isinstance(individual_tracks, list):
+            if isinstance(individual_tracks, list) and individual_tracks:
                 if isinstance(link_edit, QLineEdit):
+                    if link_edit.text().strip():
+                        changed.append("cleared YouTube link")
                     link_edit.clear()
                     link_edit.setToolTip(
                         "No suitable audio jukebox was found; using individual track links."
@@ -1145,12 +1197,15 @@ class JsonBatchEditor(QWidget):
                 tracks_layout = fields.get("__tracks_layout__")
                 tracks = fields.get("__tracks__")
                 if isinstance(tracks_layout, QVBoxLayout) and isinstance(tracks, list):
+                    existing_count = len(tracks)
                     for record in list(tracks):
                         self._remove_track(tracks_layout, tracks, record)
                     for track in individual_tracks:
                         if isinstance(track, dict) and track:
                             track_name, values = next(iter(track.items()))
                             self._add_track(tracks_layout, tracks, str(track_name), values)
+                    if len(tracks) != existing_count or tracks:
+                        changed.append(f"{len(tracks)} track rows")
                     matched_count = sum(
                         1
                         for track in individual_tracks
@@ -1165,17 +1220,37 @@ class JsonBatchEditor(QWidget):
                         "No suitable audio jukebox was found. Wikipedia tracks were matched "
                         "to close-duration YouTube audio/lyrical videos."
                     )
+                    self.log_requested.emit(
+                        "[ALBUM-AUTO-FILL] Filled "
+                        f"{len(individual_tracks)} individual tracks for "
+                        f'"{searched_name}" ({matched_count} with links).'
+                    )
                     return
             errors = result.get("errors", [])
-            section.set_status("Partially filled" if errors else "Metadata found")
+            if changed:
+                section.set_status("Partially filled" if errors else "Metadata found")
+                self.log_requested.emit(
+                    f'[ALBUM-AUTO-FILL] Updated "{searched_name}": '
+                    + ", ".join(changed)
+                    + "."
+                )
+            else:
+                section.set_status("No new data")
+                self.log_requested.emit(
+                    f'[ALBUM-AUTO-FILL] No usable metadata found for "{searched_name}".'
+                )
             if errors:
-                button.setToolTip("\n".join(str(error) for error in errors))
-
-        filler.completed.connect(apply_result)
-        filler.finished.connect(lambda: _finish_async_button(button, "Auto fill album"))
-        filler.finished.connect(lambda: self._album_auto_fillers.discard(filler))
-        filler.finished.connect(filler.deleteLater)
-        filler.start()
+                message = "\n".join(str(error) for error in errors)
+                button.setToolTip(message)
+                self.log_requested.emit(
+                    "[ALBUM-AUTO-FILL] Lookup warnings for "
+                    f'"{searched_name}": {message}'
+                )
+        except Exception as exc:
+            section.set_status("Auto fill failed")
+            self.log_requested.emit(
+                f'[ALBUM-AUTO-FILL] Failed to apply metadata for "{searched_name}": {exc}'
+            )
 
     def _scan_video_link(
         self,

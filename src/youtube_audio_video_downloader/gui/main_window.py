@@ -1032,6 +1032,7 @@ class MainWindow(QMainWindow):
         self.audio_input = JsonBatchEditor(
             "audio", retry_attempts=self._default_value("retries", 3)
         )
+        self.audio_input.log_requested.connect(self._append_log)
         self.audio_mode = QComboBox()
         self.audio_mode.addItem("Download MP3 files", "download")
         self.audio_mode.addItem("Tag existing MP3 files", "tag-existing")
@@ -1074,6 +1075,7 @@ class MainWindow(QMainWindow):
         self.video_input = JsonBatchEditor(
             "video", retry_attempts=self._default_value("retries", 3)
         )
+        self.video_input.log_requested.connect(self._append_log)
         self.video_mp3_mode = QComboBox()
         self.video_mp3_mode.addItem("MP3 only when selected", "audio-only")
         self.video_mp3_mode.addItem("Selected video and MP3", "both")
@@ -1122,6 +1124,7 @@ class MainWindow(QMainWindow):
             "album",
             retry_attempts=self._default_value("retries", 3),
         )
+        self.album_input.log_requested.connect(self._append_log)
         self.album_output = PathPicker(placeholder="Optional output folder", mode="folder")
         self.album_threshold = self._double_spin(-90.0, -1.0, -35.0, 1.0, " dB")
         self.album_silence = self._double_spin(0.1, 30.0, 1.5, 0.1, " s")
@@ -1173,6 +1176,7 @@ class MainWindow(QMainWindow):
             "jukebox",
             retry_attempts=self._default_value("retries", 3),
         )
+        self.jukebox_input.log_requested.connect(self._append_log)
         self.jukebox_output = PathPicker(placeholder="Optional output folder", mode="folder")
         self.jukebox_keep_temp = self._check("Keep temporary source audio")
         self.jukebox_report = self._check("Write result report", True)

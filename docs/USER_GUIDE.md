@@ -51,6 +51,28 @@ On Windows, **Optional Components** also provides **Create a desktop shortcut**.
 Start-menu shortcut is always installed; the desktop shortcut is optional. Upgrade and
 Repair preserve the existing desktop-shortcut choice unless you change the checkbox.
 
+### macOS unsigned builds
+
+Public DMGs that are not Apple-notarized can still run, but macOS may block the first
+launch with an Apple verification warning. After dragging the app to Applications, run:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/YouTubeMediaStudio.app
+open /Applications/YouTubeMediaStudio.app
+```
+
+If the app is still blocked, apply a local ad-hoc signature and remove quarantine again:
+
+```sh
+codesign --force --deep --sign - /Applications/YouTubeMediaStudio.app
+xattr -dr com.apple.quarantine /Applications/YouTubeMediaStudio.app
+open /Applications/YouTubeMediaStudio.app
+```
+
+This is a per-Mac trust action for unsigned builds. A paid Apple Developer Program
+membership is needed only when the project should publish Developer ID signed and
+notarized releases that open normally for every macOS user.
+
 ## How the interface works
 
 The left sidebar switches between workflows. Each workflow collects its input in one
