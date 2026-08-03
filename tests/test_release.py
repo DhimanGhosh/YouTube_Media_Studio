@@ -169,6 +169,69 @@ def test_macos_dmg_contains_app_and_applications_alias(monkeypatch, tmp_path) ->
     assert captured["command"][-1] == str(artifact)
 
 
+def test_macos_signing_skips_without_identity(monkeypatch, tmp_path) -> None:
+    app = tmp_path / "YouTubeMediaStudio.app"
+    app.mkdir()
+    calls: list[list[str]] = []
+
+    monkeypatch.delenv("MACOS_CODESIGN_IDENTITY", raising=False)
+    monkeypatch.setattr(
+        release_tool,
+        "run",
+        lambda command, *, cwd=release_tool.ROOT: calls.append(command),
+    )
+
+    notarized = release_tool.sign_and_notarize_macos_app(app, tmp_path)
+
+    assert notarized is False
+    assert calls == []
+
+
+def test_macos_signing_requires_notarization_credentials(monkeypatch, tmp_path) -> None:
+    app = tmp_path / "YouTubeMediaStudio.app"
+    app.mkdir()
+
+    monkeypatch.setenv("MACOS_CODESIGN_IDENTITY", "Developer ID Application: Example")
+    monkeypatch.delenv("APPLE_ID", raising=False)
+    monkeypatch.delenv("APPLE_TEAM_ID", raising=False)
+    monkeypatch.delenv("APPLE_APP_SPECIFIC_PASSWORD", raising=False)
+    monkeypatch.setattr(
+        release_tool,
+        "run",
+        lambda command, *, cwd=release_tool.ROOT: None,
+    )
+
+    with pytest.raises(RuntimeError, match="notarization credentials are missing"):
+        release_tool.sign_and_notarize_macos_app(app, tmp_path)
+
+
+def test_macos_signing_notarizes_app_and_dmg(monkeypatch, tmp_path) -> None:
+    app = tmp_path / "YouTubeMediaStudio.app"
+    app.mkdir()
+    dmg = tmp_path / "youtube-media-studio-2.0.0-macos-arm64-installer.dmg"
+    commands: list[list[str]] = []
+
+    monkeypatch.setenv("MACOS_CODESIGN_IDENTITY", "Developer ID Application: Example")
+    monkeypatch.setenv("APPLE_ID", "developer@example.com")
+    monkeypatch.setenv("APPLE_TEAM_ID", "ABCDE12345")
+    monkeypatch.setenv("APPLE_APP_SPECIFIC_PASSWORD", "app-specific-password")
+    monkeypatch.setattr(
+        release_tool,
+        "run",
+        lambda command, *, cwd=release_tool.ROOT: commands.append(command),
+    )
+
+    assert release_tool.sign_and_notarize_macos_app(app, tmp_path) is True
+    release_tool.sign_and_notarize_macos_dmg(dmg)
+
+    command_names = [" ".join(command[:3]) for command in commands]
+    assert "codesign --force --deep" in command_names
+    assert "ditto -c -k" in command_names
+    assert command_names.count("xcrun notarytool submit") == 2
+    assert command_names.count("xcrun stapler staple") == 2
+    assert command_names.count("xcrun stapler validate") == 2
+
+
 def test_raspi_bundle_installs_an_uninstall_command(monkeypatch, tmp_path) -> None:
     root = tmp_path / "project"
     dist = root / "dist"

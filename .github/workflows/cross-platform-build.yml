@@ -111,8 +111,38 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes libegl1 libpulse0
+      - name: Import macOS signing certificate
+        if: runner.os == 'macOS'
+        env:
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+        run: |
+          if [ -z "${MACOS_CERTIFICATE_P12_BASE64:-}" ]; then
+            echo "Skipping macOS signing certificate import: MACOS_CERTIFICATE_P12_BASE64 is not set."
+            exit 0
+          fi
+          if [ -z "${MACOS_CERTIFICATE_PASSWORD:-}" ] || [ -z "${KEYCHAIN_PASSWORD:-}" ]; then
+            echo "MACOS_CERTIFICATE_PASSWORD and MACOS_KEYCHAIN_PASSWORD are required when MACOS_CERTIFICATE_P12_BASE64 is set."
+            exit 1
+          fi
+          certificate_path="$RUNNER_TEMP/macos-signing-certificate.p12"
+          keychain_path="$RUNNER_TEMP/macos-signing.keychain-db"
+          echo "$MACOS_CERTIFICATE_P12_BASE64" | base64 --decode > "$certificate_path"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security import "$certificate_path" -P "$MACOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain_path"
+          security list-keychains -d user -s "$keychain_path" login.keychain-db
+          security default-keychain -s "$keychain_path"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$keychain_path"
       - run: uv version "${{ needs.prepare-version.outputs.version }}"
       - run: uv run python tools/release.py build --target ${{ matrix.target }}
+        env:
+          MACOS_CODESIGN_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-${{ matrix.target }}-${{ runner.arch }}

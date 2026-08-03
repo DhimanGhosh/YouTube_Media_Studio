@@ -62,7 +62,7 @@ TARGETS = {
         "ready",
         "macos-arm64",
         "drag-and-drop DMG",
-        "Apple-silicon app bundle DMG; unsigned",
+        "Apple-silicon app bundle DMG; signs and notarizes when configured",
     ),
     "raspi": Target(
         "raspi", "ready", "any", "CLI installer tar.gz", "Installs on Pi OS arm64; no Qt dependency"
@@ -388,7 +388,10 @@ def build_desktop(target: str) -> Path:
         if artifact.exists():
             artifact.unlink()
         verify_packaged_application(app_bundle / "Contents" / "MacOS" / EXECUTABLE_BASENAME)
+        notarized = sign_and_notarize_macos_app(app_bundle, work_path)
         create_macos_drag_drop_dmg(app_bundle, artifact)
+        if notarized:
+            sign_and_notarize_macos_dmg(artifact)
         shutil.rmtree(payload)
         print(f"Created {artifact}")
         return artifact
@@ -501,6 +504,110 @@ def create_macos_drag_drop_dmg(app_bundle: Path, artifact: Path) -> None:
                 str(artifact),
             ]
         )
+
+
+def sign_and_notarize_macos_app(app_bundle: Path, work_path: Path) -> bool:
+    """Sign and notarize a macOS app bundle when release credentials are configured."""
+
+    identity = os.environ.get("MACOS_CODESIGN_IDENTITY", "").strip()
+    if not identity:
+        print("Skipping macOS signing: MACOS_CODESIGN_IDENTITY is not set.")
+        return False
+    run(
+        [
+            "codesign",
+            "--force",
+            "--deep",
+            "--options",
+            "runtime",
+            "--timestamp",
+            "--sign",
+            identity,
+            str(app_bundle),
+        ]
+    )
+    run(["codesign", "--verify", "--deep", "--strict", "--verbose=2", str(app_bundle)])
+    if not macos_notarization_configured():
+        missing = ", ".join(missing_macos_notarization_variables())
+        raise RuntimeError(
+            "MACOS_CODESIGN_IDENTITY is set, but Apple notarization credentials are missing: "
+            + missing
+        )
+    archive = work_path / f"{app_bundle.name}.zip"
+    if archive.exists():
+        archive.unlink()
+    run(
+        [
+            "ditto",
+            "-c",
+            "-k",
+            "--keepParent",
+            str(app_bundle),
+            str(archive),
+        ],
+        cwd=app_bundle.parent,
+    )
+    notarize_macos_artifact(archive)
+    run(["xcrun", "stapler", "staple", str(app_bundle)])
+    run(["xcrun", "stapler", "validate", str(app_bundle)])
+    return True
+
+
+def sign_and_notarize_macos_dmg(artifact: Path) -> None:
+    """Sign, notarize, and staple a macOS DMG."""
+
+    identity = os.environ["MACOS_CODESIGN_IDENTITY"].strip()
+    run(
+        [
+            "codesign",
+            "--force",
+            "--timestamp",
+            "--sign",
+            identity,
+            str(artifact),
+        ]
+    )
+    run(["codesign", "--verify", "--verbose=2", str(artifact)])
+    notarize_macos_artifact(artifact)
+    run(["xcrun", "stapler", "staple", str(artifact)])
+    run(["xcrun", "stapler", "validate", str(artifact)])
+
+
+def macos_notarization_configured() -> bool:
+    """Return whether all Apple notarization environment variables are present."""
+
+    return not missing_macos_notarization_variables()
+
+
+def missing_macos_notarization_variables() -> list[str]:
+    """Return Apple notarization environment variable names that are not configured."""
+
+    required = (
+        "APPLE_ID",
+        "APPLE_TEAM_ID",
+        "APPLE_APP_SPECIFIC_PASSWORD",
+    )
+    return [name for name in required if not os.environ.get(name, "").strip()]
+
+
+def notarize_macos_artifact(artifact: Path) -> None:
+    """Submit a signed macOS artifact to Apple's notary service and wait for approval."""
+
+    run(
+        [
+            "xcrun",
+            "notarytool",
+            "submit",
+            str(artifact),
+            "--apple-id",
+            os.environ["APPLE_ID"],
+            "--team-id",
+            os.environ["APPLE_TEAM_ID"],
+            "--password",
+            os.environ["APPLE_APP_SPECIFIC_PASSWORD"],
+            "--wait",
+        ]
+    )
 
 
 def prepare_runtime_tools(target: str) -> list[Path]:

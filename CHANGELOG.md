@@ -4,6 +4,13 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [Unreleased]
+
+### Added
+
+- Add optional macOS Developer ID signing and Apple notarization for release builds so
+  CI can publish Gatekeeper-trusted drag-and-drop DMGs when signing secrets are present.
+
 ## [2.1.1] - 2026-08-04
 
 ### Fixed

@@ -88,8 +88,31 @@ program with a similar process name is never closed.
 2. Open it and drag `YouTubeMediaStudio.app` to **Applications**.
 3. Launch `YouTubeMediaStudio.app` from Applications.
 
-Current releases are unsigned. macOS may require **System Settings → Privacy &
-Security → Open Anyway** on first launch.
+Unsigned releases may require **System Settings → Privacy & Security → Open
+Anyway** on first launch. Releases built with the signing secrets documented below
+are Developer ID signed and notarized for normal Gatekeeper launch.
+
+</details>
+
+<details>
+<summary><b>macOS release signing</b></summary>
+
+To avoid Gatekeeper warnings for public macOS downloads, configure these GitHub
+Actions repository secrets before publishing a release:
+
+| Secret | Value |
+| --- | --- |
+| `MACOS_CERTIFICATE_P12_BASE64` | Base64-encoded Developer ID Application `.p12` certificate |
+| `MACOS_CERTIFICATE_PASSWORD` | Password used when exporting the `.p12` |
+| `MACOS_KEYCHAIN_PASSWORD` | Temporary CI keychain password |
+| `MACOS_CODESIGN_IDENTITY` | Certificate name, such as `Developer ID Application: Your Name (TEAMID)` |
+| `APPLE_ID` | Apple Developer account email |
+| `APPLE_TEAM_ID` | Apple Developer Team ID |
+| `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password for notarization |
+
+When these secrets are present, the macOS release job signs the app with hardened
+runtime, notarizes and staples the app, builds the drag-and-drop DMG, then signs,
+notarizes, and staples the DMG. Without them, CI still creates an unsigned DMG.
 
 </details>
 
