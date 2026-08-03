@@ -54,7 +54,7 @@ Get the newest tested build from **[GitHub Releases](https://github.com/DhimanGh
 | Your system | What to download | Interface | Installation |
 | --- | --- | --- | --- |
 | **Windows 10/11 x64** | `YouTubeMediaStudio-*-windows-amd64-Setup.exe` | Desktop + optional CLI | Run the setup wizard |
-| **macOS Apple silicon** | `youtube-media-studio-*-macos-arm64-installer.dmg` | Desktop + optional CLI | Open DMG, launch Setup |
+| **macOS Apple silicon** | `youtube-media-studio-*-macos-arm64-installer.dmg` | Desktop app | Open DMG, drag app to Applications |
 | **Desktop Linux x64** | `youtube-media-studio-*-linux-x86_64-installer.run` | Desktop + optional CLI | Make executable, then launch |
 | **Raspberry Pi OS 64-bit** | `youtube-media-tools-*-raspi-cli.tar.gz` | CLI only | Extract and run `install.sh` |
 
@@ -85,16 +85,11 @@ program with a similar process name is never closed.
 <summary><b>macOS installation</b></summary>
 
 1. On an Apple-silicon Mac, download the ARM64 DMG.
-2. Open it and launch `YouTubeMediaStudio-Setup.app`.
-3. Select the optional CLI if wanted, then choose **Install**.
-4. Launch `~/Applications/YouTubeMediaStudio.app`.
+2. Open it and drag `YouTubeMediaStudio.app` to **Applications**.
+3. Launch `YouTubeMediaStudio.app` from Applications.
 
 Current releases are unsigned. macOS may require **System Settings → Privacy &
-Security → Open Anyway**. If the CLI is installed, add this to `~/.zprofile`:
-
-```sh
-export PATH="$HOME/.local/bin:$PATH"
-```
+Security → Open Anyway** on first launch.
 
 </details>
 

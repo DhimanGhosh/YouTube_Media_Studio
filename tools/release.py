@@ -61,8 +61,8 @@ TARGETS = {
         "macos",
         "ready",
         "macos-arm64",
-        "installer DMG",
-        "Apple-silicon per-user GUI installer with optional CLI checkbox; unsigned",
+        "drag-and-drop DMG",
+        "Apple-silicon app bundle DMG; unsigned",
     ),
     "raspi": Target(
         "raspi", "ready", "any", "CLI installer tar.gz", "Installs on Pi OS arm64; no Qt dependency"
@@ -377,10 +377,24 @@ def build_desktop(target: str) -> Path:
     )
 
     (payload / "version.txt").write_text(project_version() + "\n", encoding="utf-8")
+    cli_executable = cli_output / (f"{CLI_COMMAND}.exe" if target == "windows" else CLI_COMMAND)
+    verify_packaged_application(cli_executable)
+
+    version = project_version()
+    machine = platform.machine().lower()
+    if target == "macos":
+        app_bundle = gui_output / f"{EXECUTABLE_BASENAME}.app"
+        artifact = DIST / f"{PACKAGE_DISTRIBUTION}-{version}-macos-{machine}-installer.dmg"
+        if artifact.exists():
+            artifact.unlink()
+        verify_packaged_application(app_bundle / "Contents" / "MacOS" / EXECUTABLE_BASENAME)
+        create_macos_drag_drop_dmg(app_bundle, artifact)
+        shutil.rmtree(payload)
+        print(f"Created {artifact}")
+        return artifact
+
     uninstaller_name = (
-        f"Uninstall {APP_DISPLAY_NAME}"
-        if target in {"windows", "macos"}
-        else f"{CLI_COMMAND}-uninstaller"
+        f"Uninstall {APP_DISPLAY_NAME}" if target == "windows" else f"{CLI_COMMAND}-uninstaller"
     )
     uninstaller_command = [
         "uv",
@@ -393,7 +407,7 @@ def build_desktop(target: str) -> Path:
         "--noconfirm",
         "--clean",
         "--windowed",
-        "--onefile" if target != "macos" else "--onedir",
+        "--onefile",
         "--name",
         uninstaller_name,
         "tools/desktop_installer.py",
@@ -404,12 +418,9 @@ def build_desktop(target: str) -> Path:
         "--specpath",
         str(spec_path),
     ]
-    if target in {"windows", "macos"}:
+    if target == "windows":
         uninstaller_command.extend(["--icon", str(icon_path)])
     run(uninstaller_command)
-
-    cli_executable = cli_output / (f"{CLI_COMMAND}.exe" if target == "windows" else CLI_COMMAND)
-    verify_packaged_application(cli_executable)
 
     if target == "linux":
         app_dir = gui_output / EXECUTABLE_BASENAME
@@ -429,7 +440,7 @@ def build_desktop(target: str) -> Path:
         "--noconfirm",
         "--clean",
         "--windowed",
-        "--onefile" if target != "macos" else "--onedir",
+        "--onefile",
         "--name",
         f"{EXECUTABLE_BASENAME}-Setup",
         "tools/desktop_installer.py",
@@ -440,19 +451,11 @@ def build_desktop(target: str) -> Path:
         "--specpath",
         str(spec_path),
     ]
-    if target == "macos":
-        payload_archive = work_path / "payload.tar.gz"
-        with tarfile.open(payload_archive, "w:gz") as bundle:
-            bundle.add(payload, arcname="payload")
-        installer_command.extend(["--add-data", f"{payload_archive}{os.pathsep}."])
-    else:
-        installer_command.extend(["--add-data", f"{payload}{os.pathsep}payload"])
-    if target in {"windows", "macos"}:
+    installer_command.extend(["--add-data", f"{payload}{os.pathsep}payload"])
+    if target == "windows":
         installer_command.extend(["--icon", str(icon_path)])
     run(installer_command)
 
-    version = project_version()
-    machine = platform.machine().lower()
     if target == "windows":
         built = installer_output / f"{EXECUTABLE_BASENAME}-Setup.exe"
         artifact = DIST / f"{EXECUTABLE_BASENAME}-{version}-windows-{machine}-Setup.exe"
@@ -468,11 +471,22 @@ def build_desktop(target: str) -> Path:
         built.replace(artifact)
         artifact.chmod(artifact.stat().st_mode | 0o111)
         verify_packaged_installer(artifact)
-    else:
-        setup_app = installer_output / f"{EXECUTABLE_BASENAME}-Setup.app"
-        artifact = DIST / f"{PACKAGE_DISTRIBUTION}-{version}-macos-{machine}-installer.dmg"
-        if artifact.exists():
-            artifact.unlink()
+    shutil.rmtree(payload)
+    shutil.rmtree(installer_output)
+    print(f"Created {artifact}")
+    return artifact
+
+
+def create_macos_drag_drop_dmg(app_bundle: Path, artifact: Path) -> None:
+    """Create a Finder-friendly DMG containing the app and an Applications alias."""
+
+    if not app_bundle.is_dir():
+        raise RuntimeError(f"macOS app bundle was not found: {app_bundle}")
+    with tempfile.TemporaryDirectory() as temporary:
+        staging = Path(temporary) / APP_DISPLAY_NAME
+        staging.mkdir()
+        shutil.copytree(app_bundle, staging / app_bundle.name, symlinks=True)
+        (staging / "Applications").symlink_to("/Applications", target_is_directory=True)
         run(
             [
                 "hdiutil",
@@ -480,18 +494,13 @@ def build_desktop(target: str) -> Path:
                 "-volname",
                 APP_DISPLAY_NAME,
                 "-srcfolder",
-                str(setup_app),
+                str(staging),
                 "-ov",
                 "-format",
                 "UDZO",
                 str(artifact),
             ]
         )
-        verify_packaged_installer(setup_app / "Contents" / "MacOS" / f"{EXECUTABLE_BASENAME}-Setup")
-    shutil.rmtree(payload)
-    shutil.rmtree(installer_output)
-    print(f"Created {artifact}")
-    return artifact
 
 
 def prepare_runtime_tools(target: str) -> list[Path]:

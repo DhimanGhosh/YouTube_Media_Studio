@@ -23,7 +23,7 @@ def test_every_requested_platform_has_an_explicit_capability() -> None:
     assert release_tool.TARGETS["raspi"].artifact == "CLI installer tar.gz"
     assert release_tool.TARGETS["windows"].artifact == "GUI setup EXE"
     assert release_tool.TARGETS["linux"].artifact == "GUI installer .run"
-    assert release_tool.TARGETS["macos"].artifact == "installer DMG"
+    assert release_tool.TARGETS["macos"].artifact == "drag-and-drop DMG"
 
 
 def test_plan_json_is_machine_readable(capsys) -> None:
@@ -143,6 +143,30 @@ def test_packaged_installer_runs_payload_self_check(monkeypatch, tmp_path) -> No
     release_tool.verify_packaged_installer(installer)
 
     assert captured["command"] == [str(installer), "--check"]
+
+
+def test_macos_dmg_contains_app_and_applications_alias(monkeypatch, tmp_path) -> None:
+    app = tmp_path / "YouTubeMediaStudio.app"
+    executable = app / "Contents" / "MacOS"
+    executable.mkdir(parents=True)
+    (executable / "YouTubeMediaStudio").write_text("binary", encoding="utf-8")
+    artifact = tmp_path / "youtube-media-studio-2.0.0-macos-arm64-installer.dmg"
+    captured: dict[str, object] = {}
+
+    def fake_run(command, *, cwd=release_tool.ROOT):
+        source_folder = Path(command[command.index("-srcfolder") + 1])
+        captured["command"] = command
+        captured["cwd"] = cwd
+        captured["entries"] = sorted(item.name for item in source_folder.iterdir())
+        captured["applications_target"] = (source_folder / "Applications").readlink()
+
+    monkeypatch.setattr(release_tool, "run", fake_run)
+
+    release_tool.create_macos_drag_drop_dmg(app, artifact)
+
+    assert captured["entries"] == ["Applications", "YouTubeMediaStudio.app"]
+    assert captured["applications_target"] == Path("/Applications")
+    assert captured["command"][-1] == str(artifact)
 
 
 def test_raspi_bundle_installs_an_uninstall_command(monkeypatch, tmp_path) -> None:
