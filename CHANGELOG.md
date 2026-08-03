@@ -4,6 +4,11 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [2.1.1] - 2026-08-04
+
+### Fixed
+
+- fix: make macOS DMG drag-and-drop install (`d89b967`)
 ## [2.1.0] - 2026-08-03
 
 ### Added
