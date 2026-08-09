@@ -33,6 +33,11 @@ abbreviated hashes to the next version section.
 - Cap application Ollama requests at a 16K context window so models do not allocate an
   unused 262K KV cache and spill inference onto CPU on common GPUs.
 
+## [2.3.0] - 2026-08-10
+
+### Added
+
+- feat: add agentic library curation and album workflows (#3) (`5462026`)
 ## [2.2.4] - 2026-08-10
 
 ### Changed
