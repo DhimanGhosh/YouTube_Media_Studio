@@ -94,7 +94,8 @@ def test_update_changelog_promotes_unbracketed_project_heading(tmp_path, monkeyp
     changelog = tmp_path / "CHANGELOG.md"
     changelog.write_text(
         "# Changelog\n\nIntro.\n\n"
-        "## Unreleased\n\n### Fixed\n\n- Correct release notes.\n\n"
+        "## Unreleased\n\n### Added\n\n- New behavior.\n\n"
+        "### Fixed\n\n- Correct release notes.\n\n"
         "## [2.3.0] - 2026-08-10\n\n### Added\n\n- Previous feature.\n",
         encoding="utf-8",
     )
@@ -107,5 +108,9 @@ def test_update_changelog_promotes_unbracketed_project_heading(tmp_path, monkeyp
     updated = changelog.read_text(encoding="utf-8")
     assert "## Unreleased" not in updated
     assert "## [2.3.1]" in updated
+    assert "- New behavior." in updated
     assert "- Correct release notes." in updated
+    assert updated.count("- Previous feature.") == 1
     assert updated.index("## [2.3.1]") < updated.index("## [2.3.0]")
+    previous_section = updated[updated.index("## [2.3.0]") :]
+    assert "- Previous feature." in previous_section

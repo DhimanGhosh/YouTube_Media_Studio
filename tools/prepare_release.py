@@ -138,7 +138,7 @@ def update_changelog(version: str) -> None:
     commits = commits_since(latest[0] if latest else None)
     current = CHANGELOG.read_text(encoding="utf-8") if CHANGELOG.exists() else "# Changelog\n"
     unreleased = re.search(
-        r"(?ms)^## (?:\[Unreleased\]|Unreleased)\s*\n(?P<body>.*?)(?=^## \[|\Z)",
+        r"(?ms)^## (?:\[Unreleased\]|Unreleased)\s*\n(?P<body>.*?)(?=^## |\Z)",
         current,
     )
     if unreleased:
