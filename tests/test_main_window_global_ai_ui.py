@@ -186,7 +186,6 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
                 "ai_providers",
                 "behavior_privacy",
                 "storage_appearance",
-                "runtime_requirements",
             },
         )
         self.assertFalse(self.window.settings_sections["batch_network"].body.isHidden())
@@ -281,6 +280,20 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         os.environ["NVIDIA_API_KEY"] = "nvapi-restored-by-launch-environment"
         self.window._configure_ai_from_settings()
         self.assertNotIn("NVIDIA_API_KEY", os.environ)
+
+    def test_active_ai_identity_refreshes_saved_groq_settings(self) -> None:
+        self.window.settings.setValue("defaults/ai_provider", "groq")
+        self.window.settings.setValue(
+            "defaults/ai_providers/groq/api_key", "groq-secret"
+        )
+        self.window.settings.setValue(
+            "defaults/ai_providers/groq/model", "openai/gpt-oss-120b"
+        )
+
+        self.assertEqual(
+            self.window._active_ai_identity(),
+            ("Groq", "openai/gpt-oss-120b"),
+        )
 
     def test_track_reorder_clear_resets_folder_list_and_saved_value(self) -> None:
         self.window.track_reorder_folder.set_text("C:/Music/Album")
@@ -430,7 +443,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         self.window.edit_album_folder.set_text(str(album))
         self.window.edit_album_name.setText("New Album")
         self.window.edit_album_year.setText("2026")
-        self.window.edit_album_artist.setText("New Album Artist")
+        self.window.edit_album_artist.setText("New Artist, Guest Artist")
         with (
             patch(
                 "youtube_audio_video_downloader.gui.main_window.inspect_album_folder",
@@ -453,7 +466,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
             {
                 "album": "New Album",
                 "year": "2026",
-                "album_artist": "New Album Artist",
+                "artists": "New Artist, Guest Artist",
             },
         )
         self.assertFalse(params["ai_enabled"])

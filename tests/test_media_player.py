@@ -515,10 +515,43 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.assertEqual(
             recommendation_mock.call_args.kwargs["model"], "library-agent:test"
         )
+        self.assertEqual(recommendation_mock.call_args.kwargs["limit"], 10)
         self.assertTrue(self.page.recommendations.isVisibleTo(self.page))
         self.assertIn("[LOCAL] Calm Song", self.page.recommendations.item(0).text())
         self.assertTrue(self.page.recommendation_button.isEnabled())
         self.assertEqual(self.page.recommendation_button.text(), "Find in my library")
+
+    def test_prompt_result_count_overrides_visible_recommendation_limit(self) -> None:
+        self.page.recommendation_limit.setValue(5)
+        self.page.recommendation_request.setText("slow bengali songs, return 12 results")
+        with patch(
+            "youtube_audio_video_downloader.gui.media_player.recommend_library_tracks",
+            return_value=[],
+        ) as recommendation_mock:
+            self.page.request_ai_recommendations()
+            QTest.qWait(100)
+
+        self.assertEqual(recommendation_mock.call_args.kwargs["limit"], 12)
+
+    def test_mix_appends_verified_continuation_without_duplicates(self) -> None:
+        exact = self.page.items[0]
+        continuation = self.page.items[1]
+        self.page._replace_queue([exact])
+        self.page._last_recommendations = [
+            LibraryRecommendation(exact, "Matches Bengali, slow", True)
+        ]
+        self.page._recommendation_mix_pending = True
+
+        self.page._finish_recommendation_mix(
+            [
+                LibraryRecommendation(exact, "Matches Bengali", True),
+                LibraryRecommendation(continuation, "Matches Bengali", True),
+            ],
+            "",
+        )
+
+        self.assertEqual(self.page.queue, [exact, continuation])
+        self.assertIn("related track(s) queued", self.page.recommendation_status.text())
 
     def test_ai_suggestions_can_be_cleared_and_routed_to_youtube(self) -> None:
         self.page.recommendation_request.setText("Atif songs")

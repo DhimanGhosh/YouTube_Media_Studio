@@ -215,7 +215,7 @@ edit, consolidate, inspect logs, configure defaults, and play the finished libra
 | **Jukebox Splitter** | Split compilation videos and organize the resulting songs |
 | **Search Song** | Find tracks, albums, release years, performers, and cover artwork |
 | **Metadata tools** | Inspect, repair, reorder, retag, trim, rename, and consolidate local media |
-| **Edit Album** | Change album name, year, or album artist across every supported file in a folder |
+| **Edit Album** | Change album name, year, and the track artist(s) across every supported file in a folder |
 | **Media Library** | Browse, play, manage, and semantically curate local audio and video |
 | **Utilities** | Detect duplicate links, normalize artist names, and convert timestamps to JSON |
 | **Live Logs** | Follow background operations and diagnose failures without leaving the app |
@@ -234,7 +234,7 @@ splitting, playback, and deterministic catalog matching continue to work with AI
 
 | Mode | Setup | What happens |
 | --- | --- | --- |
-| **Local AI with Ollama** | Install and run Ollama separately, download a compatible model, then select **Ollama (local)** and the model under **Global Settings → AI providers & online evidence**. No API key is required. | Prompts and model responses stay on the user's computer. Internet evidence is still contacted when the selected workflow requires it. |
+| **Local AI with Ollama** | Install and run Ollama separately, download a compatible model, then select **Ollama (local)** and the model under **Global Settings → AI providers and online evidence**. No API key is required. | Prompts and model responses stay on the user's computer. Internet evidence is still contacted when the selected workflow requires it. |
 | **Hosted AI with an API key** | Select NVIDIA NIM, OpenAI, Anthropic, Google Gemini, Groq, Hugging Face Inference, OpenRouter, or OpenCode Zen; then save that provider's key and model. | The selected provider runs through Agno. Its password-masked key/model draft is retained independently, and Ollama is the local fallback. |
 | **Compatible endpoint** | Select **Custom OpenAI-compatible**, enter its `/v1` base URL and model, and add a key only if the endpoint requires one. | Self-hosted and other compatible services can participate without provider-specific application code. |
 | **No AI** | Leave **Use AI for this task** off. | Wikipedia, catalog, web evidence, SerpApi (when separately configured), and deterministic rules perform the work without model calls. |
@@ -243,6 +243,12 @@ AI does not invent missing tags or override conflicting evidence. If the availab
 cannot establish a safe identity, the file remains unchanged and Live Logs reports a
 review outcome. A SerpApi key is separate from an AI-provider key: it enables authenticated
 Google Search and Google Images evidence, not language-model inference.
+
+Smart Library Curator exposes a 1–20 result control and also understands explicit counts
+such as `return 10 results`. **Start mix** queues the exact mood/style matches first, then
+uses a second evidence-grounded pass to continue with other local tracks in the requested
+language. Language, mood, style, activity, energy, and tempo labels must agree with catalog
+or web evidence; a model assertion alone cannot admit a track or invent extra result traits.
 
 Provider keys are stored separately: switching providers does not copy one provider's
 credential into another, and clearing a key remains cleared after **Save and apply
