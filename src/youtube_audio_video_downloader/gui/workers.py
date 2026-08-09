@@ -33,6 +33,7 @@ _SAFE_OPERATION_RETRIES = frozenset(
         "audio_trimmer",
         "redownload",
         "edit_media",
+        "edit_album",
         "duplicate_links",
         "format_artists",
         "parse_tracks",

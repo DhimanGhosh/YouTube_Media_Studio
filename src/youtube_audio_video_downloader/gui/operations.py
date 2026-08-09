@@ -27,6 +27,7 @@ from youtube_audio_video_downloader.services.album_folders import (
     normalize_album_folders,
     resolve_album_folder_successor,
 )
+from youtube_audio_video_downloader.services.album_editor import edit_album_folder
 from youtube_audio_video_downloader.services.album_names import split_album_folder_name
 from youtube_audio_video_downloader.services.album_consolidator import (
     _reorder_album_from_wikipedia,
@@ -91,6 +92,7 @@ def execute_operation(
         "audio_trimmer": _run_audio_trimmer,
         "redownload": _run_redownload,
         "edit_media": _run_edit_media,
+        "edit_album": _run_edit_album,
         "album_consolidator": _run_album_consolidator,
         "album_metadata_enricher": _run_album_metadata_enricher,
         "duplicate_links": _run_duplicate_links,
@@ -143,9 +145,10 @@ def _run_album_consolidator(
     )
     retries = int(params.get("retries", 3) or 3)
     agentic_model = str(params.get("agentic_model", "") or "").strip()
+    perform_enrichment = bool(params.get("perform_enrichment", True))
     pre_move_enrichment = None
     verified_audio_paths = None
-    if agentic_model:
+    if agentic_model and perform_enrichment:
         print("[AGENT-PRE-MOVE] Verifying audio identity before folder routing")
         pre_move_enrichment = enrich_folder_metadata(
             source,
@@ -166,7 +169,12 @@ def _run_album_consolidator(
         cancellation_token=token,
     )
     destination = Path(str(params.get("destination_folder", "") or "")).expanduser().resolve()
-    if bool(params.get("enrich_all_destination", False)):
+    enrichment_updated: tuple[Path, ...] = ()
+    enrichment_skipped: tuple[str, ...] = ()
+    enrichment_failed: tuple[str, ...] = ()
+    enrichment_repaired_folders: tuple[Path, ...] = ()
+    enrichment_tracked = 0
+    if perform_enrichment and bool(params.get("enrich_all_destination", False)):
         enrichment = enrich_folder_metadata(
             destination,
             workers=workers,
@@ -176,9 +184,9 @@ def _run_album_consolidator(
             cancellation_token=token,
             agentic_model=agentic_model,
         )
-    elif pre_move_enrichment is not None:
+    elif perform_enrichment and pre_move_enrichment is not None:
         enrichment = pre_move_enrichment
-    else:
+    elif perform_enrichment:
         enrichment = enrich_media_files(
             list(report.moved),
             workers=workers,
@@ -187,10 +195,22 @@ def _run_album_consolidator(
             cancellation_token=token,
             agentic_model=agentic_model,
         )
+    else:
+        enrichment = None
+        print(
+            "[ENRICH-SKIPPED] Album enrichment disabled; "
+            "moving by existing metadata and applying track ordering"
+        )
+    if enrichment is not None:
+        enrichment_updated = enrichment.updated
+        enrichment_skipped = enrichment.skipped
+        enrichment_failed = enrichment.failed
+        enrichment_repaired_folders = enrichment.repaired_folders
+        enrichment_tracked = enrichment.tracked
     repaired_folders = tuple(
         dict.fromkeys(
             report.repaired_folders
-            + enrichment.repaired_folders
+            + enrichment_repaired_folders
             + normalize_album_folders(destination)
         )
     )
@@ -211,17 +231,17 @@ def _run_album_consolidator(
         total=report.scanned,
         moved=len(report.moved),
         deleted=len(report.deleted),
-        tagged=report.tagged + len(enrichment.updated),
+        tagged=report.tagged + len(enrichment_updated),
         reordered=report.reordered + reordered_after_merge,
-        skipped=len(report.skipped) + len(enrichment.skipped),
-        tracked=enrichment.tracked,
-        failed=len(enrichment.failed),
+        skipped=len(report.skipped) + len(enrichment_skipped),
+        tracked=enrichment_tracked,
+        failed=len(enrichment_failed),
         output_path=str(destination),
         completed_items=(
             tuple(path.name for path in report.moved)
             + tuple(f"Deleted duplicate: {path.name}" for path in report.deleted)
         ),
-        failed_items=report.skipped + enrichment.skipped + enrichment.failed,
+        failed_items=report.skipped + enrichment_skipped + enrichment_failed,
     )
 
 
@@ -618,6 +638,26 @@ def _run_edit_media(params: dict[str, Any], token: CancellationToken) -> Operati
         tagged=len(output_paths),
         output_path=str(output_paths[0]) if output_paths else "",
         completed_items=tuple(path.name for path in output_paths),
+    )
+
+
+def _run_edit_album(params: dict[str, Any], token: CancellationToken) -> OperationSummary:
+    metadata = params.get("metadata", {})
+    if not isinstance(metadata, dict):
+        raise ValueError("Album metadata must be an object")
+    result = edit_album_folder(
+        str(params.get("folder", "") or ""),
+        metadata,
+        cancellation_token=token,
+    )
+    return OperationSummary(
+        operation="edit_album",
+        total=len(result.updated) + len(result.failed),
+        tagged=len(result.updated),
+        failed=len(result.failed),
+        output_path=str(Path(str(params.get("folder", "") or "")).resolve()),
+        completed_items=tuple(path.name for path in result.updated),
+        failed_items=tuple(path.name for path, _error in result.failed),
     )
 
 

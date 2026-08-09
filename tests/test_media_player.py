@@ -518,7 +518,7 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.assertTrue(self.page.recommendations.isVisibleTo(self.page))
         self.assertIn("[LOCAL] Calm Song", self.page.recommendations.item(0).text())
         self.assertTrue(self.page.recommendation_button.isEnabled())
-        self.assertEqual(self.page.recommendation_button.text(), "Get AI suggestions")
+        self.assertEqual(self.page.recommendation_button.text(), "Find in my library")
 
     def test_ai_suggestions_can_be_cleared_and_routed_to_youtube(self) -> None:
         self.page.recommendation_request.setText("Atif songs")
@@ -536,14 +536,15 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.assertFalse(self.page.recommendations.isVisible())
         self.assertEqual(self.page.recommendation_status.text(), "AI idle")
 
-    def test_no_local_ai_match_automatically_opens_youtube_search(self) -> None:
+    def test_no_local_ai_match_stays_in_library_until_online_search_is_requested(self) -> None:
         self.page.recommendation_request.setText("Atif songs")
         self.page._last_recommendation_request = "Atif songs"
         online_spy = QSignalSpy(self.page.request_search_song)
         self.page._recommendations_finished([], "")
         QTest.qWait(10)
-        self.assertEqual(len(online_spy), 1)
-        self.assertEqual(online_spy[0][0], "Atif songs")
+        self.assertEqual(len(online_spy), 0)
+        self.assertEqual(self.page.recommendation_status.text(), "No matching local tracks")
+        self.assertIn("Search YouTube too", self.page.recommendations.item(0).text())
 
     def test_clicking_seekbar_animates_to_clicked_position_without_blocking(self) -> None:
         slider = self.page.position

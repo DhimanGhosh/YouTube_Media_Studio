@@ -100,16 +100,25 @@ rules: ambiguous files remain unchanged for manual review.
 
 The provider order is:
 
-1. **NVIDIA NIM (hosted):** save your own NVIDIA API key and model in **Global
-   Settings**. The app sends the verification context to the hosted provider. The key is
-   password-masked and is not printed in operation logs.
-2. **Ollama (local fallback):** install and run Ollama separately, make the selected
-   model available locally, and choose it under **Ollama fallback model**. No model API
-   key is required, and inference stays on the local computer. Catalog or web lookups
-   used by the workflow can still access the internet.
-3. **Static fallback:** if neither model is available, the app uses deterministic rules
-   and internet/catalog evidence only. You can select this behavior directly by leaving
-   **Use AI for this task** off.
+1. **Selected primary:** choose Ollama, NVIDIA NIM, OpenAI, Anthropic, Google Gemini,
+   Groq, Hugging Face Inference, OpenRouter, OpenCode Zen, or a custom
+   OpenAI-compatible endpoint under **Global Settings → AI providers & online
+   evidence**. Hosted keys are password-masked and never printed in operation logs.
+   Each provider keeps its own key, model, and base-URL draft when you switch entries.
+2. **Ollama local fallback:** when a hosted provider cannot complete a request, Agno
+   retries with the configured local Ollama model. Ollama itself needs no API key and
+   inference stays on this computer. Catalog or web lookups used by a workflow can
+   still access the internet. The app requests a 16K context window instead of inheriting
+   very large model defaults, allowing common 9B models to remain GPU-resident on a
+   12 GB card when Ollama and the display workload leave sufficient VRAM.
+3. **Static fallback:** if neither model is available, the app continues with
+   deterministic rules and internet/catalog evidence where that workflow supports it.
+   Leave **Use AI for this task** off to select deterministic behavior directly.
+
+Use **Custom OpenAI-compatible** for another hosted or self-hosted service that exposes
+the OpenAI chat-completions protocol. Enter its `/v1` endpoint and model; the key may be
+left empty for a trusted local endpoint. Select **Save and apply defaults** after editing
+or clearing credentials so the saved value is authoritative after restart.
 
 The **SerpApi key** is independent of both AI options. It authorizes Google Search and
 Google Images requests for missing album, movie, year, and artwork evidence; it does not
@@ -133,6 +142,7 @@ item unchanged.
 | **Jukebox Splitter** | Splits a compilation containing tracks from different albums or artists. | Add the source, review each timestamped track and its individual metadata, then split and organize. |
 | **Track Reorder** | Applies a verified album order to existing local tracks. | Select an album folder, preview the proposed sequence, and apply it only after checking the matches. |
 | **Edit File** | Trims a local file and repairs its filename, tags, track number, or artwork. | Select a file, load its current values, change only the required fields or trim range, then save. |
+| **Edit Album** | Applies one album name, year, and album artist to every supported media file in a folder. | Browse an album folder, inspect the file count/current values, confirm the shared values, then apply them. Other tags and filenames are preserved. |
 | **Album Consolidator** | Enriches local metadata and routes verified files into album folders. | Select the source, run the enricher, inspect review items, select a destination, then move verified tracks. |
 | **Utilities** | Checks duplicate source links, formats artist names, and converts timestamp text. | Choose the relevant tab, paste or load input, run the tool, then copy or save its result. |
 | **Live Logs** | Explains what an operation changed, skipped, or could not verify. | Filter or copy the relevant block when troubleshooting or reporting a bug. |
@@ -178,6 +188,19 @@ Splitter**, or **Jukebox Splitter**.
 The Media Library can send a selected local track directly to this page with its
 metadata already loaded.
 
+## Edit an album folder
+
+1. Open **Edit Album**, browse to one album folder, and select **Load album**.
+2. Review the detected file count and existing album, year, and album-artist values.
+   Mixed values are shown as such instead of being silently chosen.
+3. Enter the three shared values. Album is required; year must be four digits or blank.
+4. Select **Apply to all files** and confirm the folder-level change.
+5. Review **Live Logs**. Successfully written files remain in place with their title,
+   performers, track number, artwork, and filename preserved; any failed file is listed.
+
+From an album in **Media Library**, right-click and choose **Edit album metadata**.
+The same menu also retains **Consolidate / Album enricher** and **Track reorder**.
+
 ## Enrich and organize an existing music folder
 
 The Album Consolidator has two separate stages. **Album enricher** repairs metadata but
@@ -201,13 +224,18 @@ to read the settings file, so do not share it and revoke the key if it is expose
    better catalog evidence is available.
 3. Under **2. Move into album folders**, select the destination library. The source is
    still the folder selected in stage 1.
-4. Leave **Include all destination files in enrichment** off to process the incoming
-   scope only. Enable it only when the complete destination tree should also be
-   enriched.
-5. Select **Move into album folders**. Approved files are routed into an
+4. Leave **Perform album enrichment before and after moving** enabled when the move
+   stage should verify/enrich metadata. Disable it after you have just completed stage
+   1 and want to route by the existing tags without repeating enrichment. Track
+   indexing still runs after the move.
+5. Leave **Include all destination files in enrichment** off to process the incoming
+   scope only. Enable it only when enrichment is enabled and the complete destination
+   tree should also be enriched.
+6. Select **Move into album folders**. Approved files are routed into an
    `Album (Year)` folder. Unresolved files remain in the source for manual review.
 
-When AI is enabled, the move action performs an additional pre-move identity check.
+When AI and move-stage enrichment are both enabled, the move action performs an
+additional pre-move identity check.
 Only paths reported as fully complete are admitted to the mover. `[AI-VERIFIED]` means
 the model found supporting evidence; it does **not** by itself guarantee that all
 required tags and artwork are complete. `[AGENT-REVIEW]` is the final indication that
@@ -233,9 +261,16 @@ report the complete log block.
 1. Open **Media Library** and add or scan the folders containing audio/video.
 2. Search by title, performer, or album; use artist and album views to narrow a large
    collection.
-3. Play a result, add tracks to the queue, and use shuffle or repeat as required.
-4. Use a file's context actions to open its folder or send it to **Edit File**.
-5. If a requested song is absent locally, continue the request in **Search Song**.
+3. For a natural-language request such as `latest Arijit Singh Hindi dance songs` or
+   `old Bengali songs`, enable **Smart Library Curator** and select **Find in my
+   library**. Agno plans the constraints, filters local artist/language/time metadata,
+   gathers bounded public evidence when a semantic quality such as dance energy needs
+   verification, and ranks only IDs in the scanned library.
+4. Play a result, add tracks to the queue, and use shuffle or repeat as required.
+5. Use file and album context actions to edit metadata, enrich an album, reorder tracks,
+   or open the containing folder.
+6. The curator never redirects automatically. If the local result is empty, select the
+   explicit **Search YouTube too** action only when you want an online search.
 
 The songs-and-videos table shows every matching scanned item; it does not truncate a
 large library. The count beside the table is the number of rows currently available
@@ -253,6 +288,7 @@ after applying search, artist, and year filters.
 | `[AI-REVIEW]` / `[METADATA-REVIEW]` | Evidence was ambiguous or incomplete and needs review. |
 | `[AGENT-REVIEW]` | An AI-enabled safety gate did not approve the file, so it remains in the source. |
 | `[AI-PROVIDER-FALLBACK]` | The selected provider was unavailable and a configured fallback was used. |
+| `[AI-AGENT]` / `[AI-AGENT-PROVIDER]` | An Agno planning, verification, or curator agent completed and identifies the effective model provider. |
 | `[SERPAPI-MATCH]` | Exact Google evidence supplied a missing album/movie identity. |
 | `[SERPAPI-NO-MATCH]` | Google results did not satisfy the exact title/artist and evidence-agreement rules. |
 | `[SERPAPI-UNAVAILABLE]` | The optional SerpApi request failed or was rejected; the API key is never printed. |

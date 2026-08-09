@@ -1,4 +1,4 @@
-"""Shared NVIDIA NIM, Ollama, and deterministic-fallback AI gateway."""
+"""Shared hosted-provider, Ollama, and deterministic-fallback AI gateway."""
 
 from __future__ import annotations
 
@@ -12,11 +12,17 @@ from typing import Any, Mapping, Sequence
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from youtube_audio_video_downloader.services.ai_provider_registry import (
+    AI_PROVIDER_ENV,
+    AI_PROVIDER_MODEL_ENV,
+)
+
 
 NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 NVIDIA_API_KEY_ENV = "NVIDIA_API_KEY"
 NVIDIA_MODEL_ENV = "YOUTUBE_MEDIA_STUDIO_NVIDIA_MODEL"
 OLLAMA_MODEL_ENV = "YOUTUBE_MEDIA_STUDIO_OLLAMA_MODEL"
+OLLAMA_CONTEXT_WINDOW = 16_384
 DEFAULT_NVIDIA_MODEL = "z-ai/glm-5.2"
 DEFAULT_OLLAMA_MODEL = "qwen2.5:7b"
 NVIDIA_ATTEMPT_TIMEOUT_SECONDS = 6.0
@@ -99,8 +105,11 @@ def _finish_nvidia_probe(*, available: bool) -> None:
 
 
 def configured_primary_model(requested_model: str = "") -> str:
-    """Return the effective NVIDIA model, otherwise the Ollama fallback model."""
+    """Return the selected provider model, otherwise the Ollama fallback model."""
 
+    provider = os.environ.get(AI_PROVIDER_ENV, "").strip().casefold()
+    if provider and provider not in {"ollama", "nvidia"}:
+        return os.environ.get(AI_PROVIDER_MODEL_ENV, "").strip() or requested_model.strip()
     if os.environ.get(NVIDIA_API_KEY_ENV, "").strip():
         return os.environ.get(NVIDIA_MODEL_ENV, "").strip() or requested_model.strip()
     return os.environ.get(OLLAMA_MODEL_ENV, "").strip() or requested_model.strip()
@@ -115,7 +124,37 @@ def chat_json(
     temperature: float = 0.0,
     max_tokens: int = 4096,
 ) -> AIResponse:
-    """Use NVIDIA first, then Ollama, and report failure for deterministic fallback."""
+    """Use the selected provider, then Ollama, or report deterministic fallback."""
+
+    selected_provider = os.environ.get(AI_PROVIDER_ENV, "").strip().casefold()
+    if selected_provider and selected_provider not in {"ollama", "nvidia"}:
+        try:
+            from youtube_audio_video_downloader.services.agno_provider import (
+                run_structured_json_agent,
+            )
+
+            instructions = "\n\n".join(
+                str(message.get("content", ""))
+                for message in messages
+                if str(message.get("role", "")) == "system"
+            )
+            input_text = json.dumps(list(messages), ensure_ascii=False)
+            data, provider_name, used_model = run_structured_json_agent(
+                name="Application structured task",
+                instructions=instructions,
+                input_text=input_text,
+                output_schema=dict(schema),
+                requested_model=model,
+                timeout=timeout,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+            print(f"[AI-PROVIDER] {provider_name} | model={used_model}")
+            return AIResponse(data, provider_name, used_model)
+        except Exception as exc:
+            safe_error = _safe_error(exc)
+            print(f"[AI-PROVIDER-FALLBACK] {selected_provider} unavailable | {safe_error}")
+            raise AIUnavailableError(f"{selected_provider}: {safe_error}") from exc
 
     errors: list[str] = []
     api_key = os.environ.get(NVIDIA_API_KEY_ENV, "").strip()
@@ -255,6 +294,10 @@ def _call_ollama(
         "options": {
             "temperature": temperature,
             "num_predict": max_tokens,
+            # Ollama otherwise inherits models such as Qwen 3.5's 262K context.
+            # That oversized KV cache spills a 9B model across CPU and GPU on
+            # common 12 GB cards even though application requests are much smaller.
+            "num_ctx": OLLAMA_CONTEXT_WINDOW,
         },
         "keep_alive": "5m",
     }

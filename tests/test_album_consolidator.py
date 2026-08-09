@@ -378,6 +378,36 @@ class AlbumConsolidatorTest(unittest.TestCase):
     @patch("youtube_audio_video_downloader.gui.operations.enrich_folder_metadata")
     @patch("youtube_audio_video_downloader.gui.operations.enrich_media_files")
     @patch("youtube_audio_video_downloader.gui.operations.consolidate_albums")
+    def test_gui_operation_can_skip_repeated_enrichment(
+        self, consolidate_mock, enrich_files_mock, enrich_folder_mock
+    ) -> None:
+        consolidate_mock.return_value = ConsolidationReport(
+            scanned=2,
+            moved=(Path("library/Album/one.mp3"),),
+            skipped=("missing.mp3: Album metadata is empty",),
+            reordered=1,
+        )
+
+        summary = execute_operation(
+            "album_consolidator",
+            {
+                "source_folder": "incoming",
+                "destination_folder": "library",
+                "perform_enrichment": False,
+                "agentic_model": "qwen3.5:9b",
+            },
+            CancellationToken(),
+        )
+
+        self.assertEqual(summary.moved, 1)
+        self.assertEqual(summary.reordered, 1)
+        self.assertEqual(summary.skipped, 1)
+        enrich_files_mock.assert_not_called()
+        enrich_folder_mock.assert_not_called()
+
+    @patch("youtube_audio_video_downloader.gui.operations.enrich_folder_metadata")
+    @patch("youtube_audio_video_downloader.gui.operations.enrich_media_files")
+    @patch("youtube_audio_video_downloader.gui.operations.consolidate_albums")
     def test_gui_operation_can_enrich_the_complete_destination(
         self, consolidate_mock, enrich_files_mock, enrich_folder_mock
     ) -> None:

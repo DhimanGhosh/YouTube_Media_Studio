@@ -1,18 +1,26 @@
-"""AI recommendations grounded exclusively in the indexed local media library."""
+"""Agentic recommendations grounded in the indexed local media library."""
 
 from __future__ import annotations
 
-import json
 import re
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Iterable, Literal
 
-from youtube_audio_video_downloader.services.ai_provider import chat_json
+from pydantic import BaseModel, ConfigDict, Field
+
+from youtube_audio_video_downloader.services.agno_provider import run_structured_agent
+from youtube_audio_video_downloader.services.album_art_finder import find_catalog_song_metadata
 from youtube_audio_video_downloader.services.media_library import LibraryItem, split_artists
+from youtube_audio_video_downloader.services.music_web_evidence import (
+    find_music_web_evidence,
+)
 
 
 MAX_LIBRARY_CANDIDATES = 750
+MAX_SEMANTIC_CANDIDATES = 120
+MAX_EVIDENCE_LOOKUPS = 16
 MAX_RECOMMENDATIONS = 12
 
 
@@ -23,26 +31,48 @@ class LibraryRecommendation:
     exists_locally: bool
 
 
-_RECOMMENDATION_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "recommendations": {
-            "type": "array",
-            "maxItems": MAX_RECOMMENDATIONS,
-            "items": {
-                "type": "object",
-                "properties": {
-                    "id": {"type": "integer"},
-                    "reason": {"type": "string"},
-                },
-                "required": ["id", "reason"],
-                "additionalProperties": False,
-            },
-        }
-    },
-    "required": ["recommendations"],
-    "additionalProperties": False,
-}
+@dataclass(frozen=True, slots=True)
+class _QueryPlan:
+    artists: tuple[str, ...] = ()
+    languages: tuple[str, ...] = ()
+    semantic_filters: tuple[str, ...] = ()
+    time_preference: str = "any"
+    use_web_evidence: bool = False
+
+
+class _PlanOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    artists: list[str] = Field(max_length=8)
+    languages: list[str] = Field(max_length=8)
+    genres: list[str] = Field(max_length=8)
+    moods: list[str] = Field(max_length=8)
+    activities: list[str] = Field(max_length=8)
+    energy_or_tempo: list[str] = Field(max_length=8)
+    other_constraints: list[str] = Field(max_length=8)
+    time_preference: Literal["any", "older", "oldest", "newer", "latest"]
+    use_web_evidence: bool
+
+
+class _SemanticMatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    matches: bool
+    confidence: float = Field(ge=0, le=1)
+    matched_filters: list[str] = Field(max_length=12)
+
+
+class _SemanticOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    matches: list[_SemanticMatch] = Field(max_length=MAX_SEMANTIC_CANDIDATES)
+
+
+class _CuratorOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ids: list[int] = Field(max_length=MAX_RECOMMENDATIONS)
 
 
 def recommend_library_tracks(
@@ -53,7 +83,7 @@ def recommend_library_tracks(
     limit: int = 8,
     timeout: float = 90,
 ) -> list[LibraryRecommendation]:
-    """Ask the AI provider chain to select tracks, rejecting non-indexed responses."""
+    """Plan, filter, verify, and rank a natural-language local-library request."""
 
     request_text = request_text.strip()
     if not request_text:
@@ -63,85 +93,295 @@ def recommend_library_tracks(
         raise ValueError("Configure an agentic model in Global Settings first.")
     bounded_limit = max(1, min(int(limit), MAX_RECOMMENDATIONS))
     all_items = list(items)
-    artist_intent = _requested_artists(request_text, all_items)
-    candidates = _bounded_candidates(all_items, request_text, artist_intent=artist_intent)
-    if not candidates:
-        if artist_intent:
-            return []
+    if not all_items:
         raise ValueError("The indexed library has no tracks to recommend.")
 
+    literal_artists = _requested_artists(request_text, all_items)
+    plan = _plan_request(
+        request_text, all_items, literal_artists=literal_artists,
+        model=selected_model, timeout=timeout,
+    )
+    print(
+        "[AI-AGENT] Library query planner | "
+        f"artists={list(plan.artists)} languages={list(plan.languages)} "
+        f"semantic={list(plan.semantic_filters)} time={plan.time_preference}"
+    )
+
+    artist_matches, unresolved_artist = _resolve_plan_artists(plan.artists, all_items)
+    if unresolved_artist:
+        print("[AI-AGENT] Local catalog filter | requested artist is not indexed")
+        return []
+    candidates = _bounded_candidates(
+        all_items, request_text, artist_intent=artist_matches
+    )
+    candidates = _apply_time_preference(candidates, plan.time_preference)
+    if not candidates:
+        return []
+    print(f"[AI-AGENT] Local catalog filter | candidates={len(candidates)}")
+
+    semantic_filters = (*plan.languages, *plan.semantic_filters)
+    reasons: dict[int, tuple[str, ...]] = {}
+    semantic_candidates = candidates[:MAX_SEMANTIC_CANDIDATES]
+    evidence = (
+        _collect_catalog_evidence(semantic_candidates, semantic_filters)
+        if plan.use_web_evidence or semantic_filters else {}
+    )
+    print(
+        "[AI-AGENT] Evidence scout | "
+        f"internet_matches={len(evidence)} requested={plan.use_web_evidence}"
+    )
+    verified = _verify_semantics(
+        request_text, semantic_candidates, semantic_filters, evidence,
+        model=selected_model, timeout=timeout,
+    )
+    if verified is not None:
+        candidates, reasons = verified
+    print(f"[AI-AGENT] Semantic verifier | matches={len(candidates)}")
+    if not candidates:
+        return []
+
+    ranked = _curate_candidates(
+        request_text, candidates, reasons, plan, model=selected_model,
+        limit=bounded_limit, timeout=timeout,
+    )
+    print(f"[AI-AGENT] Smart Library Curator | recommendations={len(ranked)}")
+    return [
+        LibraryRecommendation(
+            item,
+            _recommendation_reason(item, reasons.get(id(item), ()), plan, artist_matches),
+            Path(item.path).is_file(),
+        )
+        for item in ranked
+    ]
+
+
+def _plan_request(
+    request_text: str,
+    items: list[LibraryItem],
+    *,
+    literal_artists: tuple[str, ...],
+    model: str,
+    timeout: float,
+) -> _QueryPlan:
+    artists = sorted(
+        {artist for item in items for artist in split_artists(item.artists) if artist},
+        key=str.casefold,
+    )
+    years = [item.year for item in items if item.year]
+    context = {
+        "request": request_text,
+        "literal_local_artist_matches": list(literal_artists),
+        "available_artists": artists[:500],
+        "library_year_range": [min(years), max(years)] if years else [],
+    }
+    try:
+        payload = run_structured_agent(
+            name="Library query planner",
+            role="Turn a listening request into independent local-library filters.",
+            instructions=(
+                "Convert the request into independent filters without choosing songs. Copy "
+                "artist names from available_artists when they match. Put requested spoken "
+                "languages in languages, preserving the user's language name rather than a "
+                "code. Classify every explicitly requested musical descriptor into genres, "
+                "moods, activities, energy_or_tempo, or other_constraints; never infer traits "
+                "the user did not request. Map "
+                "relative release-age intent to "
+                "time_preference; never invent numeric year cutoffs. Set use_web_evidence when "
+                "language or musical traits cannot be proven from title/artist/album/year. "
+                "The five descriptor arrays together MUST retain every explicit non-artist, "
+                "non-language, non-time constraint: how the music should sound or feel, its "
+                "genre, tempo, energy, mood, occasion, or an activity it should suit. Do not "
+                "silently drop such a descriptor. Empty arrays mean that dimension was not "
+                "requested. Never "
+                "turn descriptive words into an artist merely because the request ends in "
+                "'songs'."
+            ),
+            input_data=context,
+            output_schema=_PlanOutput,
+            requested_model=model,
+            timeout=timeout,
+            temperature=0,
+            max_tokens=700,
+        )
+    except Exception as exc:
+        print(f"[AI-STATIC-FALLBACK] Library query planner | {exc}")
+        return _QueryPlan(artists=literal_artists)
+    return _QueryPlan(
+        artists=_clean_strings(payload.artists) or literal_artists,
+        languages=_clean_strings(payload.languages),
+        semantic_filters=_clean_strings(
+            [
+                *payload.genres,
+                *payload.moods,
+                *payload.activities,
+                *payload.energy_or_tempo,
+                *payload.other_constraints,
+            ]
+        ),
+        time_preference=payload.time_preference,
+        use_web_evidence=payload.use_web_evidence,
+    )
+
+
+def _verify_semantics(
+    request_text: str,
+    candidates: list[LibraryItem],
+    filters: tuple[str, ...],
+    evidence: dict[int, dict[str, str]],
+    *,
+    model: str,
+    timeout: float,
+) -> tuple[list[LibraryItem], dict[int, tuple[str, ...]]] | None:
     catalog = [
-        {
-            "id": index,
-            "title": item.title,
-            "artists": item.artists,
-            "album": item.album,
-            "year": item.year,
-            "type": item.media_type,
-        }
+        _catalog_row(index, item, evidence.get(index))
         for index, item in enumerate(candidates)
     ]
-    messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You are a local media-library DJ. Select only IDs from the supplied "
-                    "catalog. Use only its title, artist, album, year, and media type; do not "
-                    "claim web knowledge or invent tracks, genres, facts, or IDs. Interpret "
-                    "artist, genre, and mood requests conservatively. Return diverse, relevant "
-                    f"choices, at most {bounded_limit}. Give one short reason grounded in the "
-                    "supplied metadata for each choice. If evidence is insufficient, return fewer."
-                ),
-            },
-            {
-                "role": "user",
-                "content": json.dumps(
-                    {"request": request_text, "catalog": catalog},
-                    ensure_ascii=False,
-                    separators=(",", ":"),
-                ),
-            },
-        ]
     try:
-        payload = chat_json(
-            messages,
-            _RECOMMENDATION_SCHEMA,
-            model=selected_model,
+        payload = run_structured_agent(
+            name="Library semantic verifier",
+            role="Verify language, style, mood, activity, tempo, and energy constraints.",
+            instructions=(
+                "Treat the original request as authoritative and independently identify every "
+                "explicit musical constraint in it. Evaluate every catalog item against all of "
+                "those constraints, including any descriptor the planning agent omitted from "
+                "filters. Use indexed metadata, supplied internet catalog evidence, and reliable "
+                "general musical knowledge. matches may be true only when the item satisfies the "
+                "whole original request. Be conservative when identity is ambiguous; never "
+                "invent IDs. Judge activity, energy, and tempo from the music itself—not video "
+                "choreography, actors dancing, search-result SEO, or the presence of a word in "
+                "a title. matched_filters must list every provided filter plus every explicit "
+                "request descriptor that the item meets."
+            ),
+            input_data={"request": request_text, "filters": filters, "catalog": catalog},
+            output_schema=_SemanticOutput,
+            requested_model=model,
             timeout=timeout,
-            temperature=0.2,
-            max_tokens=1200,
-        ).data
+            temperature=0,
+            max_tokens=4000,
+        )
     except Exception as exc:
-        print(f"[AI-STATIC-FALLBACK] Library ranking | {exc}")
-        payload = {
-            "recommendations": [
-                {"id": index, "reason": "Deterministic metadata ranking"}
-                for index in range(min(bounded_limit, len(candidates)))
-            ]
-        }
-    rows = payload.get("recommendations", []) if isinstance(payload, dict) else []
+        print(f"[AI-STATIC-FALLBACK] Library semantic verifier | {exc}")
+        return None
 
-    recommendations: list[LibraryRecommendation] = []
+    selected: list[LibraryItem] = []
+    reasons: dict[int, tuple[str, ...]] = {}
     seen: set[int] = set()
-    for row in rows if isinstance(rows, list) else []:
-        if not isinstance(row, dict) or isinstance(row.get("id"), bool):
+    for row in payload.matches:
+        candidate_id = row.id
+        confidence = row.confidence
+        if (
+            candidate_id in seen
+            or not 0 <= candidate_id < len(candidates)
+            or not row.matches
+            or confidence < 0.45
+        ):
             continue
-        candidate_id = row.get("id")
-        if not isinstance(candidate_id, int) or candidate_id in seen:
-            continue
-        if not 0 <= candidate_id < len(candidates):
+        matched = _clean_strings(row.matched_filters)
+        if not _covers_filters(matched, filters):
             continue
         seen.add(candidate_id)
         item = candidates[candidate_id]
-        if artist_intent and not _item_matches_artists(item, artist_intent):
-            continue
-        reason = _grounded_reason(item, request_text, artist_intent)
-        recommendations.append(
-            LibraryRecommendation(item, reason, Path(item.path).is_file())
+        selected.append(item)
+        reasons[id(item)] = matched
+    return selected, reasons
+
+
+def _curate_candidates(
+    request_text: str,
+    candidates: list[LibraryItem],
+    reasons: dict[int, tuple[str, ...]],
+    plan: _QueryPlan,
+    *,
+    model: str,
+    limit: int,
+    timeout: float,
+) -> list[LibraryItem]:
+    catalog = [
+        {**_catalog_row(index, item), "verified_filters": list(reasons.get(id(item), ()))}
+        for index, item in enumerate(candidates)
+    ]
+    try:
+        payload = run_structured_agent(
+            name="Smart Library Curator",
+            role="Produce the final diverse, ranked local-library selection.",
+            instructions=(
+                "Rank only supplied IDs. Preserve all verified filters, follow the requested "
+                "release-time preference, prefer strong metadata identity, and provide a "
+                f"diverse useful set of at most {limit} IDs. Never invent IDs."
+            ),
+            input_data={
+                "request": request_text,
+                "time_preference": plan.time_preference,
+                "catalog": catalog,
+            },
+            output_schema=_CuratorOutput,
+            requested_model=model,
+            timeout=timeout,
+            temperature=0.15,
+            max_tokens=500,
         )
-        if len(recommendations) >= bounded_limit:
+    except Exception as exc:
+        print(f"[AI-STATIC-FALLBACK] Smart Library Curator | {exc}")
+        return candidates[:limit]
+    selected: list[LibraryItem] = []
+    seen: set[int] = set()
+    for candidate_id in payload.ids:
+        if (
+            isinstance(candidate_id, bool) or not isinstance(candidate_id, int)
+            or candidate_id in seen or not 0 <= candidate_id < len(candidates)
+        ):
+            continue
+        seen.add(candidate_id)
+        selected.append(candidates[candidate_id])
+        if len(selected) >= limit:
             break
-    return recommendations
+    return selected
+
+
+def _collect_catalog_evidence(
+    candidates: list[LibraryItem], filters: tuple[str, ...]
+) -> dict[int, dict[str, str]]:
+    """Fetch bounded public catalog facts in parallel for semantic verification."""
+
+    selected = list(enumerate(candidates[:MAX_EVIDENCE_LOOKUPS]))
+
+    def lookup(row: tuple[int, LibraryItem]) -> tuple[int, dict[str, str]]:
+        index, item = row
+        try:
+            result = find_catalog_song_metadata(item.title, item.artists, timeout=6)
+        except Exception:
+            result = {}
+        useful = {
+            key: str(result.get(key) or "").strip()
+            for key in ("title", "artists", "album", "year", "language", "genre")
+            if str(result.get(key) or "").strip()
+        }
+        web_evidence = find_music_web_evidence(
+            item.title,
+            item.artists,
+            filters,
+            timeout=6,
+        )
+        if web_evidence:
+            useful["web_search_excerpts"] = web_evidence
+        return index, useful
+
+    if not selected or not filters:
+        return {}
+    with ThreadPoolExecutor(max_workers=min(4, len(selected))) as pool:
+        return {index: result for index, result in pool.map(lookup, selected) if result}
+
+
+def _catalog_row(
+    index: int, item: LibraryItem, evidence: dict[str, str] | None = None
+) -> dict[str, object]:
+    row: dict[str, object] = {
+        "id": index, "title": item.title, "artists": item.artists,
+        "album": item.album, "year": item.year, "type": item.media_type,
+    }
+    if evidence:
+        row["internet_catalog_evidence"] = evidence
+    return row
 
 
 def _bounded_candidates(
@@ -155,65 +395,88 @@ def _bounded_candidates(
     unique = {item.path.casefold(): item for item in items}
     if artist_intent:
         unique = {
-            path: item
-            for path, item in unique.items()
+            path: item for path, item in unique.items()
             if _item_matches_artists(item, artist_intent)
         }
-    tokens = {token.casefold() for token in request_text.split() if len(token) > 2}
+    tokens = {token for token in _text_key(request_text).split() if len(token) > 2}
 
     def rank(item: LibraryItem) -> tuple[int, str, str]:
-        metadata = f"{item.title} {item.artists} {item.album}".casefold()
+        metadata = _text_key(f"{item.title} {item.artists} {item.album}")
         matches = sum(token in metadata for token in tokens)
         return (-matches, item.artists.casefold(), item.title.casefold())
 
     return sorted(unique.values(), key=rank)[:MAX_LIBRARY_CANDIDATES]
 
 
-def _requested_artists(
-    request_text: str, items: Iterable[LibraryItem]
-) -> tuple[str, ...]:
-    """Resolve explicit artist words against indexed artists without model guessing."""
+def _apply_time_preference(items: list[LibraryItem], preference: str) -> list[LibraryItem]:
+    """Prioritize relative age without discarding semantic matches prematurely."""
+
+    if preference == "any":
+        return items
+    if preference in {"oldest", "older"}:
+        return sorted(
+            items,
+            key=lambda item: (
+                item.year is None,
+                item.year if item.year is not None else 9999,
+                item.title.casefold(),
+            ),
+        )
+    return sorted(
+        items,
+        key=lambda item: (
+            item.year is None,
+            -(item.year or 0),
+            item.title.casefold(),
+        ),
+    )
+
+
+def _requested_artists(request_text: str, items: Iterable[LibraryItem]) -> tuple[str, ...]:
+    """Resolve literal request phrases against indexed artists without guessing."""
 
     request_key = _text_key(request_text)
     request_tokens = set(request_key.split())
     artists = sorted(
-        {
-            artist.strip()
-            for item in items
-            for artist in split_artists(item.artists)
-            if artist.strip()
-        },
+        {artist.strip() for item in items for artist in split_artists(item.artists)
+         if artist.strip()},
         key=str.casefold,
     )
     exact = [artist for artist in artists if _phrase_in(_text_key(artist), request_key)]
     if exact:
         return tuple(exact)
-
-    generic = {"song", "songs", "music", "artist", "singer", "playlist", "play"}
     token_owners: dict[str, set[str]] = {}
     for artist in artists:
         for token in _text_key(artist).split():
-            if len(token) >= 3 and token not in generic:
+            if len(token) >= 3:
                 token_owners.setdefault(token, set()).add(artist)
     resolved = {
-        next(iter(token_owners[token]))
-        for token in request_tokens
+        next(iter(token_owners[token])) for token in request_tokens
         if token in token_owners and len(token_owners[token]) == 1
     }
-    if resolved:
-        return tuple(sorted(resolved, key=str.casefold))
+    return tuple(sorted(resolved, key=str.casefold))
 
-    words = request_key.split()
-    if words and words[-1] in {"song", "songs"}:
-        filler = {"play", "recommend", "suggest", "some", "me", "please"}
-        descriptors = {
-            "calm", "happy", "sad", "romantic", "party", "workout", "focus",
-            "relaxing", "sleep", "mood", "road", "trip", "rainy", "morning",
-        }
-        hint_words = [word for word in words[:-1] if word not in filler]
-        if hint_words and not set(hint_words) & descriptors:
-            return (" ".join(hint_words).title(),)
-    return ()
+
+def _resolve_plan_artists(
+    requested: tuple[str, ...], items: Iterable[LibraryItem]
+) -> tuple[tuple[str, ...], bool]:
+    if not requested:
+        return (), False
+    available = sorted(
+        {artist for item in items for artist in split_artists(item.artists) if artist},
+        key=str.casefold,
+    )
+    resolved: set[str] = set()
+    for query in requested:
+        key = _text_key(query)
+        matches = [
+            artist for artist in available
+            if _phrase_in(key, _text_key(artist)) or _phrase_in(_text_key(artist), key)
+        ]
+        if not matches:
+            return (), True
+        resolved.update(matches)
+    return tuple(sorted(resolved, key=str.casefold)), False
 
 
 def _item_matches_artists(item: LibraryItem, requested: tuple[str, ...]) -> bool:
@@ -221,26 +484,37 @@ def _item_matches_artists(item: LibraryItem, requested: tuple[str, ...]) -> bool
     return any(_text_key(artist) in item_artists for artist in requested)
 
 
-def _grounded_reason(
-    item: LibraryItem, request_text: str, artist_intent: tuple[str, ...]
+def _recommendation_reason(
+    item: LibraryItem,
+    matched_filters: tuple[str, ...],
+    plan: _QueryPlan,
+    artists: tuple[str, ...],
 ) -> str:
-    """Create display text only from literal indexed metadata, never model prose."""
+    parts: list[str] = []
+    if artists:
+        parts.append("artist")
+    parts.extend(matched_filters)
+    if plan.time_preference != "any" and item.year:
+        parts.append(f"{plan.time_preference} release ({item.year})")
+    if not parts:
+        return "Selected from indexed library metadata"
+    return "Matches " + ", ".join(dict.fromkeys(parts))
 
-    if artist_intent:
-        matched = [
-            artist for artist in artist_intent
-            if _item_matches_artists(item, (artist,))
-        ]
-        return "Artist matches " + ", ".join(matched)
-    request_tokens = {
-        token for token in _text_key(request_text).split()
-        if len(token) > 2 and token not in {"song", "songs", "music", "playlist"}
-    }
-    metadata = _text_key(f"{item.title} {item.artists} {item.album}")
-    matched_tokens = sorted(token for token in request_tokens if token in metadata)
-    if matched_tokens:
-        return "Metadata matches: " + ", ".join(matched_tokens[:4])
-    return "Selected from indexed library metadata"
+
+def _covers_filters(matched: tuple[str, ...], requested: tuple[str, ...]) -> bool:
+    matched_keys = {_text_key(value) for value in matched}
+    return all(
+        any(key == candidate or key in candidate or candidate in key for candidate in matched_keys)
+        for key in (_text_key(value) for value in requested) if key
+    )
+
+
+def _clean_strings(value: object) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        return ()
+    return tuple(dict.fromkeys(
+        text for item in value if (text := str(item or "").strip())
+    ))
 
 
 def _text_key(value: str) -> str:

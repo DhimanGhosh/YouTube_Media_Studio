@@ -471,6 +471,7 @@ class MediaLibraryPage(QWidget):
 
     request_search_song = pyqtSignal(str)
     request_edit_file = pyqtSignal(str)
+    request_edit_album = pyqtSignal(str)
     request_album_enricher = pyqtSignal(str)
     request_track_reorder = pyqtSignal(str)
     spectrum_ready = pyqtSignal(object)
@@ -625,7 +626,7 @@ class MediaLibraryPage(QWidget):
         layout.setContentsMargins(12, 8, 12, 8)
         layout.setSpacing(6)
         row = QHBoxLayout()
-        heading = QLabel("AI library DJ")
+        heading = QLabel("Smart Library Curator")
         heading.setObjectName("sectionTitle")
         heading.setToolTip(
             "Uses the Global Settings agentic model and only indexed library metadata."
@@ -647,14 +648,14 @@ class MediaLibraryPage(QWidget):
         row.addWidget(self.recommendation_ai_enabled)
         self.recommendation_request = QLineEdit()
         self.recommendation_request.setPlaceholderText(
-            "Recommend by artist, genre, mood, or occasion from my library..."
+            "Describe a mix by artist, language, era, genre, mood, energy, or occasion..."
         )
         self.recommendation_request.returnPressed.connect(
             self.request_ai_recommendations
         )
         row.addWidget(self.recommendation_request, 1)
         self.recommendation_button = QPushButton(
-            "Get AI suggestions"
+            "Find in my library"
             if self.recommendation_ai_enabled.isChecked()
             else "Search internet"
         )
@@ -743,7 +744,7 @@ class MediaLibraryPage(QWidget):
         self.settings.setValue("ai/tools/media_library", bool(enabled))
         self.settings.sync()
         self.recommendation_button.setText(
-            "Get AI suggestions" if enabled else "Search internet"
+            "Find in my library" if enabled else "Search internet"
         )
 
     def _recommendations_finished(self, result: object, error: str) -> None:
@@ -758,12 +759,12 @@ class MediaLibraryPage(QWidget):
             self.recommendations.addItem(f"Could not create suggestions: {error}")
             log_diagnostic("AI-FALLBACK", f"Library recommendations failed | {error}")
         elif not recommendations:
-            self.recommendation_status.setText("No local match · opening YouTube search")
+            self.recommendation_status.setText("No matching local tracks")
             self.recommendations.addItem(
-                "No verified local match. Searching YouTube for the same request…"
+                "No indexed tracks satisfied every requested filter. "
+                "Use 'Search YouTube too' for external discovery."
             )
             log_diagnostic("AI-REVIEW", "Library recommendations returned no tracks")
-            QTimer.singleShot(0, self.search_recommendation_online)
         else:
             self.recommendation_status.setText(
                 f"AI suggested {len(recommendations)} local track(s)"
@@ -1819,6 +1820,12 @@ class MediaLibraryPage(QWidget):
             return
         menu = QMenu(self)
         menu.setTitle(album)
+        self._add_album_folder_actions(
+            menu,
+            "Edit album metadata",
+            folders,
+            self.request_edit_album,
+        )
         self._add_album_folder_actions(
             menu,
             "Consolidate / Album enricher",

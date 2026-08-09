@@ -9,6 +9,11 @@ dependencies = [
     "numpy>=2.0.0",
     "yt-dlp[default,deno]>=2026.3.17",
     "portable-ffmpeg>=0.2.0",
+    "agno>=2.8.7,<3",
+    "ollama>=0.6.2,<1",
+    "openai>=2.53,<3",
+    "ddgs>=9.11,<10",
+    "anthropic>=0.75,<1",
 ]
 
 [project.optional-dependencies]

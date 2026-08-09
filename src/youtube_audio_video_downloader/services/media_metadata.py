@@ -22,6 +22,7 @@ from mutagen.id3 import (
     TDRC,
     TIT2,
     TPE1,
+    TPE2,
     TRCK,
 )
 from mutagen.mp4 import MP4Cover
@@ -36,6 +37,7 @@ class EditableMediaMetadata:
     title: str = ""
     album: str = ""
     artists: str = ""
+    album_artist: str = ""
     year: str = ""
     track_number: str = ""
     track_total: str = ""
@@ -60,6 +62,7 @@ def read_media_metadata(path: str | Path) -> EditableMediaMetadata:
         result.title = _id3_text(tags, "TIT2")
         result.album = _id3_text(tags, "TALB")
         result.artists = ", ".join(_id3_values(tags, "TPE1"))
+        result.album_artist = ", ".join(_id3_values(tags, "TPE2"))
         result.year = _id3_text(tags, "TDRC")
         result.track_number, result.track_total = _split_number(_id3_text(tags, "TRCK"))
         result.artwork_present = bool(tags.getall("APIC"))
@@ -69,6 +72,7 @@ def read_media_metadata(path: str | Path) -> EditableMediaMetadata:
         result.title = _first(tags, "\xa9nam")
         result.album = _first(tags, "\xa9alb")
         result.artists = ", ".join(_values(tags, "\xa9ART"))
+        result.album_artist = ", ".join(_values(tags, "aART"))
         result.year = _first(tags, "\xa9day")
         result.track_number, result.track_total = _mp4_pair(tags, "trkn")
         result.artwork_present = bool(tags and tags.get("covr"))
@@ -77,6 +81,7 @@ def read_media_metadata(path: str | Path) -> EditableMediaMetadata:
     result.title = _first(tags, "title")
     result.album = _first(tags, "album")
     result.artists = ", ".join(_values(tags, "artist"))
+    result.album_artist = ", ".join(_values(tags, "albumartist"))
     result.year = _first(tags, "date") or _first(tags, "year")
     result.track_number, result.track_total = _split_number(_first(tags, "tracknumber"))
     pictures = getattr(media, "pictures", None)
@@ -163,6 +168,11 @@ def _write_id3(tags: ID3, values: dict[str, Any]) -> None:
         artists = _artists(values.get("artists"))
         if artists:
             tags.add(TPE1(encoding=3, text=artists))
+    if "album_artist" in values:
+        tags.delall("TPE2")
+        album_artists = _artists(values.get("album_artist"))
+        if album_artists:
+            tags.add(TPE2(encoding=3, text=album_artists))
     if "track_number" in values or "track_total" in values:
         tags.delall("TRCK")
         number = _number_pair(values, "track")
@@ -188,6 +198,12 @@ def _write_mp4(tags: Any, values: dict[str, Any]) -> None:
             tags["\xa9ART"] = artists
         else:
             tags.pop("\xa9ART", None)
+    if "album_artist" in values:
+        album_artists = _artists(values.get("album_artist"))
+        if album_artists:
+            tags["aART"] = album_artists
+        else:
+            tags.pop("aART", None)
     if "track_number" in values or "track_total" in values:
         number = _integer(values.get("track_number"))
         total = _integer(values.get("track_total"))
@@ -215,6 +231,12 @@ def _write_mapping_tags(tags: Any, values: dict[str, Any]) -> None:
             tags["artist"] = artists
         else:
             tags.pop("artist", None)
+    if "album_artist" in values:
+        album_artists = _artists(values.get("album_artist"))
+        if album_artists:
+            tags["albumartist"] = album_artists
+        else:
+            tags.pop("albumartist", None)
     if "track_number" in values or "track_total" in values:
         number = _number_pair(values, "track")
         if number:
