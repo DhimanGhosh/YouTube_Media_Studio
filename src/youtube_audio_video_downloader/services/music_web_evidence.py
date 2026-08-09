@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from ddgs import DDGS
+import json
+import re
+
+from agno.tools.duckduckgo import DuckDuckGoTools
 
 
 def find_music_web_evidence(
@@ -15,25 +18,49 @@ def find_music_web_evidence(
 ) -> str:
     """Return compact search-result excerpts without exposing local paths or credentials."""
 
-    identity = " ".join(part for part in (title.strip(), artists.strip()) if part)
+    clean_title = title.strip()
     constraints = " ".join(value.strip() for value in filters if value.strip())
-    query = f'"{identity}" {constraints} music'.strip()
+    queries = (
+        f'"{clean_title}" {artists.strip()} {constraints} music'.strip(),
+        f'"{clean_title}" {constraints} language'.strip(),
+    )
     try:
-        rows = DDGS(timeout=timeout).text(query, max_results=max_results)
+        tool = DuckDuckGoTools(
+            fixed_max_results=max_results,
+            timeout=max(1, round(timeout)),
+            backend="bing",
+        )
     except Exception:
         return ""
+    title_key = _text_key(clean_title)
+    for query in queries:
+        try:
+            raw_evidence = tool.duckduckgo_search(query, max_results=max_results)
+            rows = json.loads(raw_evidence)
+        except Exception:
+            continue
+        excerpts = _identity_matched_excerpts(rows, title_key)
+        if excerpts:
+            return " | ".join(excerpts)[:1800]
+    return ""
+
+
+def _identity_matched_excerpts(rows: object, title_key: str) -> list[str]:
+    """Discard unrelated search hits before their words can corroborate a constraint."""
+
+    if not isinstance(rows, list) or not title_key:
+        return []
     excerpts: list[str] = []
-    for row in rows if isinstance(rows, list) else []:
+    for row in rows:
         if not isinstance(row, dict):
             continue
-        text = " — ".join(
-            value
-            for value in (
-                str(row.get("title") or "").strip(),
-                str(row.get("body") or "").strip(),
-            )
-            if value
-        )
-        if text:
+        title = str(row.get("title") or "").strip()
+        body = str(row.get("body") or "").strip()
+        text = " — ".join(value for value in (title, body) if value)
+        if title_key in _text_key(text):
             excerpts.append(text[:600])
-    return " | ".join(excerpts)[:1800]
+    return excerpts
+
+
+def _text_key(value: str) -> str:
+    return " ".join(re.findall(r"[a-z0-9]+", value.casefold()))

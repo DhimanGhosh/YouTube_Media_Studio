@@ -155,6 +155,8 @@ def recommend_library_tracks(
         "[AI-AGENT] Evidence scout | "
         f"internet_matches={len(evidence)} requested={plan.use_web_evidence}"
     )
+    plan = _promote_evidence_languages(plan, evidence)
+    semantic_filters = (*plan.languages, *plan.semantic_filters)
     verified = _verify_semantics(
         request_text, semantic_candidates, semantic_filters, evidence,
         languages=plan.languages,
@@ -286,6 +288,37 @@ def _recover_omitted_constraints(request_text: str, plan: _QueryPlan) -> _QueryP
         artists=plan.artists,
         languages=plan.languages,
         semantic_filters=(*plan.semantic_filters, *recovered),
+        time_preference=plan.time_preference,
+        use_web_evidence=True,
+    )
+
+
+def _promote_evidence_languages(
+    plan: _QueryPlan, evidence: dict[int, dict[str, str]]
+) -> _QueryPlan:
+    """Move recovered filters into the strict language lane when catalogs identify them."""
+
+    catalog_languages = tuple(
+        language
+        for facts in evidence.values()
+        if (language := _text_key(facts.get("language", "")))
+    )
+    if not catalog_languages:
+        return plan
+    promoted: list[str] = []
+    remaining: list[str] = []
+    for value in plan.semantic_filters:
+        key = _text_key(value)
+        target = promoted if any(
+            _values_overlap(key, language) for language in catalog_languages
+        ) else remaining
+        target.append(value)
+    if not promoted:
+        return plan
+    return _QueryPlan(
+        artists=plan.artists,
+        languages=tuple(dict.fromkeys((*plan.languages, *promoted))),
+        semantic_filters=tuple(remaining),
         time_preference=plan.time_preference,
         use_web_evidence=True,
     )
@@ -495,10 +528,12 @@ def _bounded_candidates(
 ) -> list[LibraryItem]:
     """Keep requests bounded while favoring literal artist/title/album matches."""
 
-    unique = {item.path.casefold(): item for item in items}
+    unique: dict[tuple[str, tuple[str, ...]], LibraryItem] = {}
+    for item in items:
+        unique.setdefault(_song_identity(item), item)
     if artist_intent:
         unique = {
-            path: item for path, item in unique.items()
+            identity: item for identity, item in unique.items()
             if _item_matches_artists(item, artist_intent)
         }
     tokens = {token for token in _text_key(request_text).split() if len(token) > 2}
@@ -509,6 +544,15 @@ def _bounded_candidates(
         return (-matches, item.artists.casefold(), item.title.casefold())
 
     return sorted(unique.values(), key=rank)[:MAX_LIBRARY_CANDIDATES]
+
+
+def _song_identity(item: LibraryItem) -> tuple[str, tuple[str, ...]]:
+    """Identify the same recording across duplicate indexed file paths."""
+
+    artists = tuple(sorted(
+        {_text_key(artist) for artist in split_artists(item.artists) if _text_key(artist)}
+    ))
+    return _text_key(item.title), artists
 
 
 def _apply_time_preference(items: list[LibraryItem], preference: str) -> list[LibraryItem]:

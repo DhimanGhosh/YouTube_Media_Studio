@@ -344,6 +344,84 @@ class LibraryRecommendationsTest(unittest.TestCase):
         self.assertEqual(verifier_input["filters"], ("bengali",))
         self.assertIn("bengali", result[0].reason)
 
+    def test_screenshot_query_rejects_hindi_results_and_duplicate_recordings(self) -> None:
+        items = [
+            track("duti-one.mp3", "Duti Pakhi Duti Teere", "Kumar Sanu"),
+            track(
+                "khel.mp3",
+                "Aa Khel Khelen Hum",
+                "Asha Bhosle, Kumar Sanu, Kishore Kumar",
+            ),
+            track("chander.mp3", "Chander Eto Alo", "Kumar Sanu"),
+            track("deewana.mp3", "Dil Hai Mera Deewana", "Kumar Sanu"),
+            track("duti-two.mp3", "Duti Pakhi Duti Teere", "Kumar Sanu"),
+            track("raat.mp3", "Ei Raat Bhalobashar", "Kumar Sanu"),
+        ]
+        evidence_by_title = {
+            "Duti Pakhi Duti Teere": {"language": "Bengali"},
+            "Aa Khel Khelen Hum": {
+                "language": "Hindi",
+                "web_search_excerpts": "A search result also mentions Bengali music.",
+            },
+            "Chander Eto Alo": {"language": "Bengali"},
+            "Dil Hai Mera Deewana": {
+                "language": "Hindi",
+                "web_search_excerpts": "A search result also mentions Bengali music.",
+            },
+            "Ei Raat Bhalobashar": {"language": "Bengali"},
+        }
+
+        def agent_response(**kwargs: object) -> SimpleNamespace:
+            name = str(kwargs["name"]).casefold()
+            if name == "library query planner":
+                return plan(artists=["Kumar Sanu"])
+            input_data = kwargs["input_data"]
+            assert isinstance(input_data, dict)
+            catalog = input_data["catalog"]
+            assert isinstance(catalog, list)
+            if name == "library semantic verifier":
+                return response(
+                    {
+                        "matches": [
+                            {
+                                "id": row["id"],
+                                "matches": True,
+                                "confidence": 0.99,
+                                "matched_filters": ["Bengali"],
+                            }
+                            for row in catalog
+                        ]
+                    }
+                )
+            return response({"ids": [row["id"] for row in catalog]})
+
+        with (
+            patch(
+                "youtube_audio_video_downloader.services.library_recommendations."
+                "run_structured_agent",
+                side_effect=agent_response,
+            ) as agent_mock,
+            patch(
+                "youtube_audio_video_downloader.services.library_recommendations."
+                "_collect_catalog_evidence",
+                side_effect=lambda candidates, _filters: {
+                    index: evidence_by_title[item.title]
+                    for index, item in enumerate(candidates)
+                },
+            ),
+        ):
+            result = recommend_library_tracks(
+                "kumar sanu bengali", items, model="model", limit=10
+            )
+
+        self.assertEqual(
+            [value.item.title for value in result],
+            ["Chander Eto Alo", "Duti Pakhi Duti Teere", "Ei Raat Bhalobashar"],
+        )
+        verifier_input = agent_mock.call_args_list[1].kwargs["input_data"]
+        self.assertEqual(verifier_input["filters"], ("bengali",))
+        self.assertEqual(len(verifier_input["catalog"]), 5)
+
     def test_planner_outage_still_enforces_recovered_constraints(self) -> None:
         items = [
             track("hindi.mp3", "Hindi Track", "Kumar Sanu"),
