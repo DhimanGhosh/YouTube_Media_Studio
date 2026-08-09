@@ -50,13 +50,14 @@ _REFERENCE_MARKERS = (
 _TIMESTAMP_KEYS = {"start", "end", "start_time", "end_time", "from_time", "to_time"}
 _TIMESTAMP_PATTERN = re.compile(r"^\s*\d{1,2}(?::\d{2}){1,2}(?:\.\d+)?\s*$")
 _MODEL_KEYS = {"model", "agentic_model"}
+OPERATION_PREFLIGHT_TIMEOUT_SECONDS = 90.0
 
 
 def preflight_operation(
     operation: str,
     params: Mapping[str, object],
     *,
-    timeout: float = 8.0,
+    timeout: float = OPERATION_PREFLIGHT_TIMEOUT_SECONDS,
 ) -> OperationPreflightDecision:
     """Audit an operation using NVIDIA first and local Ollama second.
 

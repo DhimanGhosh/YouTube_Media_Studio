@@ -10,6 +10,7 @@ from youtube_audio_video_downloader.core.cancellation import CancellationToken
 from youtube_audio_video_downloader.gui.operations import execute_operation
 from youtube_audio_video_downloader.services.ai_provider import AIResponse
 from youtube_audio_video_downloader.services.operation_agent import (
+    OPERATION_PREFLIGHT_TIMEOUT_SECONDS,
     OperationPreflightDecision,
     preflight_operation,
 )
@@ -44,6 +45,10 @@ class OperationAgentTest(unittest.TestCase):
 
         self.assertEqual(decision.action, "proceed")
         self.assertEqual(captured[0]["kwargs"]["model"], "global:test")  # type: ignore[index]
+        self.assertEqual(
+            captured[0]["kwargs"]["timeout"],  # type: ignore[index]
+            OPERATION_PREFLIGHT_TIMEOUT_SECONDS,
+        )
         user_payload = json.loads(captured[0]["messages"][1]["content"])  # type: ignore[index]
         references = user_payload["evidence"]["immutable_references"]
         self.assertIn({"field": "params.output_dir", "value": path}, references)
