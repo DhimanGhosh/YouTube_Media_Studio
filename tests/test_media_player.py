@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import os
 import tempfile
+import time
 import unittest
+from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -41,6 +43,17 @@ def media(name: str, year: int, duration: int) -> LibraryItem:
         media_type="audio",
         modified_ns=1,
     )
+
+
+def wait_until(predicate: Callable[[], bool], timeout_ms: int = 2_000) -> bool:
+    """Process Qt events until a background UI condition is satisfied or times out."""
+
+    deadline = time.monotonic() + timeout_ms / 1_000
+    while not predicate():
+        if time.monotonic() >= deadline:
+            return False
+        QTest.qWait(10)
+    return True
 
 
 class MediaPlayerPageTest(unittest.TestCase):
@@ -512,7 +525,13 @@ class MediaPlayerPageTest(unittest.TestCase):
         ) as recommendation_mock:
             self.page.recommendation_request.setText("calm Test Artist songs")
             self.page.request_ai_recommendations()
-            QTest.qWait(100)
+            self.assertTrue(
+                wait_until(
+                    lambda: self.page.recommendations.isVisibleTo(self.page)
+                    and self.page.recommendation_button.isEnabled()
+                ),
+                "recommendations did not render and finish worker cleanup",
+            )
 
         recommendation_mock.assert_called_once()
         self.assertEqual(
