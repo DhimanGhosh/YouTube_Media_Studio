@@ -4,6 +4,11 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [2.2.3] - 2026-08-10
+
+### Changed
+
+- fix AI provider settings and Ollama requests (`7d0512b`)
 ## [2.2.2] - 2026-08-04
 
 ### Fixed
