@@ -93,6 +93,30 @@ def test_recent_nvidia_failure_is_bypassed_and_timeouts_are_bounded(monkeypatch)
     )
 
 
+def test_ollama_gets_full_default_budget_for_cold_model_start(monkeypatch) -> None:
+    configure(monkeypatch)
+    ollama = Response({"message": {"content": '{"answer":"local"}'}})
+
+    with patch.object(ai_provider, "urlopen", return_value=ollama) as open_mock:
+        ai_provider.chat_json(MESSAGES, SCHEMA)
+
+    assert open_mock.call_args.kwargs["timeout"] == 90.0
+
+
+def test_ollama_disables_thinking_for_structured_qwen_response(monkeypatch) -> None:
+    configure(monkeypatch)
+    monkeypatch.setenv(ai_provider.OLLAMA_MODEL_ENV, "qwen3.5:9b")
+    ollama = Response({"message": {"content": '{"answer":"local"}'}})
+
+    with patch.object(ai_provider, "urlopen", return_value=ollama) as open_mock:
+        result = ai_provider.chat_json(MESSAGES, SCHEMA)
+
+    request = open_mock.call_args.args[0]
+    body = json.loads(request.data.decode("utf-8"))
+    assert body["think"] is False
+    assert result.data == {"answer": "local"}
+
+
 def test_no_key_uses_ollama_directly(monkeypatch) -> None:
     configure(monkeypatch)
     ollama = Response({"message": {"content": '{"answer":"local"}'}})

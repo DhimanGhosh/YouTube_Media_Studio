@@ -178,6 +178,38 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         )
         self.assertEqual(os.environ.get("SERPAPI_API_KEY"), "serpapi-secret")
 
+    def test_saved_blank_provider_keys_override_launch_environment(self) -> None:
+        self.window.settings.setValue("defaults/nvidia_api_key", "")
+        self.window.settings.setValue("defaults/serpapi_api_key", "")
+        os.environ["NVIDIA_API_KEY"] = "nvapi-from-launch-environment"
+        os.environ["SERPAPI_API_KEY"] = "serpapi-from-launch-environment"
+
+        self.window._configure_ai_from_settings()
+
+        self.assertNotIn("NVIDIA_API_KEY", os.environ)
+        self.assertNotIn("SERPAPI_API_KEY", os.environ)
+        self.assertEqual(
+            self.window._saved_secret("defaults/nvidia_api_key", "NVIDIA_API_KEY"),
+            "",
+        )
+
+    def test_cleared_nvidia_key_remains_cleared_after_save_and_restart(self) -> None:
+        self.window.settings_nvidia_api_key.setText("")
+        os.environ["NVIDIA_API_KEY"] = "nvapi-old-value"
+
+        with (
+            patch.object(self.window, "_save_data_directory", return_value=False),
+            patch.object(QMessageBox, "information"),
+        ):
+            self.window._save_defaults()
+
+        self.assertEqual(self.window.settings.value("defaults/nvidia_api_key"), "")
+        self.assertNotIn("NVIDIA_API_KEY", os.environ)
+
+        os.environ["NVIDIA_API_KEY"] = "nvapi-restored-by-launch-environment"
+        self.window._configure_ai_from_settings()
+        self.assertNotIn("NVIDIA_API_KEY", os.environ)
+
     def test_track_reorder_clear_resets_folder_list_and_saved_value(self) -> None:
         self.window.track_reorder_folder.set_text("C:/Music/Album")
         self.window.track_reorder_list.addItem("01 Song.mp3")

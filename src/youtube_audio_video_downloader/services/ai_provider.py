@@ -20,7 +20,10 @@ OLLAMA_MODEL_ENV = "YOUTUBE_MEDIA_STUDIO_OLLAMA_MODEL"
 DEFAULT_NVIDIA_MODEL = "z-ai/glm-5.2"
 DEFAULT_OLLAMA_MODEL = "qwen2.5:7b"
 NVIDIA_ATTEMPT_TIMEOUT_SECONDS = 6.0
-OLLAMA_ATTEMPT_TIMEOUT_SECONDS = 20.0
+# Local models can need substantial time for their first load, especially after the
+# user switches models. Keep the attempt bounded, but allow the gateway's normal
+# 90-second request budget instead of treating a cold start as unavailable.
+OLLAMA_ATTEMPT_TIMEOUT_SECONDS = 90.0
 NVIDIA_FAILURE_COOLDOWN_SECONDS = 60.0
 
 _PROVIDER_STATE_LOCK = threading.Lock()
@@ -244,6 +247,10 @@ def _call_ollama(
         "model": model,
         "messages": list(messages),
         "stream": False,
+        # These workflows need a small structured result, not a long reasoning
+        # trace. Qwen 3-family models otherwise may exhaust the output budget in
+        # ``message.thinking`` before producing any JSON in ``message.content``.
+        "think": "low" if model.casefold().startswith("gpt-oss") else False,
         "format": dict(schema),
         "options": {
             "temperature": temperature,

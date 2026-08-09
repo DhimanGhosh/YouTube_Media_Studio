@@ -1931,8 +1931,7 @@ class MainWindow(QMainWindow):
         self.settings_nvidia_api_key.setEchoMode(QLineEdit.EchoMode.Password)
         self.settings_nvidia_api_key.setPlaceholderText("nvapi-… (optional)")
         self.settings_nvidia_api_key.setText(
-            os.environ.get(NVIDIA_API_KEY_ENV, "").strip()
-            or str(self.settings.value("defaults/nvidia_api_key", "") or "").strip()
+            self._saved_secret("defaults/nvidia_api_key", NVIDIA_API_KEY_ENV)
         )
         self.settings_nvidia_api_key.setToolTip(
             "Hosted NVIDIA NIM credential. It is never placed in operation parameters or logs."
@@ -1941,8 +1940,7 @@ class MainWindow(QMainWindow):
         self.settings_serpapi_api_key.setEchoMode(QLineEdit.EchoMode.Password)
         self.settings_serpapi_api_key.setPlaceholderText("Optional SerpApi key")
         self.settings_serpapi_api_key.setText(
-            os.environ.get(SERPAPI_API_KEY_ENV, "").strip()
-            or str(self.settings.value("defaults/serpapi_api_key", "") or "").strip()
+            self._saved_secret("defaults/serpapi_api_key", SERPAPI_API_KEY_ENV)
         )
         self.settings_serpapi_api_key.setToolTip(
             "Optional SerpApi credential used only when Wikipedia and Apple cannot "
@@ -2850,6 +2848,14 @@ class MainWindow(QMainWindow):
             return value
         return str(value).strip().lower() not in {"false", "0", "no", "off", ""}
 
+    def _saved_secret(self, key: str, environment_name: str) -> str:
+        """Return a saved credential, including an intentionally saved blank value."""
+
+        saved_value = self.settings.value(key, None)
+        if saved_value is not None:
+            return str(saved_value or "").strip()
+        return os.environ.get(environment_name, "").strip()
+
     def _agentic_model(self) -> str:
         """Return the effective NVIDIA model or Ollama fallback model."""
 
@@ -2866,9 +2872,8 @@ class MainWindow(QMainWindow):
         saved_nvidia_model = self.settings.value("defaults/nvidia_model", None)
         saved_ollama_model = self.settings.value("defaults/agentic_model", None)
         configure_ai_environment(
-            nvidia_api_key=(
-                os.environ.get(NVIDIA_API_KEY_ENV, "").strip()
-                or str(self.settings.value("defaults/nvidia_api_key", "") or "").strip()
+            nvidia_api_key=self._saved_secret(
+                "defaults/nvidia_api_key", NVIDIA_API_KEY_ENV
             ),
             nvidia_model=(
                 DEFAULT_NVIDIA_MODEL
@@ -2882,8 +2887,7 @@ class MainWindow(QMainWindow):
             ),
         )
         configure_serpapi_environment(
-            os.environ.get(SERPAPI_API_KEY_ENV, "").strip()
-            or str(self.settings.value("defaults/serpapi_api_key", "") or "").strip()
+            self._saved_secret("defaults/serpapi_api_key", SERPAPI_API_KEY_ENV)
         )
 
     def _preview_crystalness(self, value: int) -> None:
