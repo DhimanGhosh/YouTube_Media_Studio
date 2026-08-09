@@ -42,6 +42,7 @@ class MediaMetadataTest(unittest.TestCase):
             self.assertEqual(loaded.title, "Old title")
             self.assertEqual(loaded.album, "Old album")
             self.assertEqual(loaded.artists, "Artist One, Artist Two")
+            self.assertEqual(loaded.album_artist, "Existing album artist")
             self.assertTrue(loaded.artwork_present)
 
             replace_media_metadata(
@@ -64,6 +65,9 @@ class MediaMetadataTest(unittest.TestCase):
             self.assertEqual(resulting_tags["TPOS"].text, ["1/2"])
             self.assertEqual(resulting_tags["TCON"].text, ["Existing genre"])
             self.assertEqual(resulting_tags.getall("COMM")[0].text, ["Existing comment"])
+
+            replace_media_metadata(source, {"album_artist": "New Album Artist"})
+            self.assertEqual(read_media_metadata(source).album_artist, "New Album Artist")
 
     @patch("youtube_audio_video_downloader.gui.operations.edit_media_file")
     def test_unified_gui_operation_routes_metadata_only_edit(self, edit_mock) -> None:

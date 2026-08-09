@@ -70,6 +70,7 @@ from youtube_audio_video_downloader.config.app_storage import (
 )
 from youtube_audio_video_downloader.gui.widgets import (
     BlankClickSelectionFilter,
+    CollapsibleSection,
     GlassCard,
     JsonBatchEditor,
     LiquidBackground,
@@ -87,14 +88,27 @@ from youtube_audio_video_downloader.services.audio_trimmer import (
     format_timestamp,
     probe_audio_duration,
 )
+from youtube_audio_video_downloader.services.album_editor import inspect_album_folder
 from youtube_audio_video_downloader.services.media_metadata import read_media_metadata
 from youtube_audio_video_downloader.services.album_folders import resolve_album_folder_successor
 from youtube_audio_video_downloader.services.ai_provider import (
     DEFAULT_NVIDIA_MODEL,
     DEFAULT_OLLAMA_MODEL,
     NVIDIA_API_KEY_ENV,
+    NVIDIA_MODEL_ENV,
+    OLLAMA_MODEL_ENV,
     configure_ai_environment,
     configured_primary_model,
+)
+from youtube_audio_video_downloader.services.agno_provider import (
+    configure_agno_environment,
+)
+from youtube_audio_video_downloader.services.ai_provider_registry import (
+    AI_PROVIDER_API_KEY_ENV,
+    AI_PROVIDER_ENV,
+    AI_PROVIDER_MODEL_ENV,
+    PROVIDERS,
+    provider_definition,
 )
 from youtube_audio_video_downloader.services.song_search import (
     available_ollama_models,
@@ -329,11 +343,12 @@ class MainWindow(QMainWindow):
             ("≋  Jukebox Splitter", 5),
             ("#  Track Reorder", 6),
             ("✎  Edit File", 7),
-            ("▣  Album Consolidator", 8),
-            ("⌘  Utilities", 9),
-            ("›_  Live Logs", 10),
-            ("⚙  Global Settings", 11),
-            ("♫  Media Library", 12),
+            ("▤  Edit Album", 8),
+            ("▣  Album Consolidator", 9),
+            ("⌘  Utilities", 10),
+            ("›_  Live Logs", 11),
+            ("⚙  Global Settings", 12),
+            ("♫  Media Library", 13),
         ]
         for text, index in items:
             button = QPushButton(text)
@@ -374,6 +389,7 @@ class MainWindow(QMainWindow):
         self.pages.addWidget(self._build_jukebox_page())
         self.pages.addWidget(self._build_track_reorder_page())
         self.pages.addWidget(self._build_edit_file_page())
+        self.pages.addWidget(self._build_edit_album_page())
         self.pages.addWidget(self._build_album_consolidator_page())
         self.pages.addWidget(self._build_utilities_page())
         self.pages.addWidget(self._build_logs_page())
@@ -381,6 +397,7 @@ class MainWindow(QMainWindow):
         self.media_library = MediaLibraryPage(self.settings, self)
         self.media_library.request_search_song.connect(self._search_missing_library_song)
         self.media_library.request_edit_file.connect(self._edit_library_file)
+        self.media_library.request_edit_album.connect(self._edit_library_album)
         self.media_library.request_album_enricher.connect(
             self._open_library_album_enricher
         )
@@ -406,14 +423,31 @@ class MainWindow(QMainWindow):
         self.pulse_dot.setVisible(False)
         self.activity_label = QLabel("Idle")
         self.activity_label.setObjectName("mutedLabel")
+        provider_id = os.environ.get(AI_PROVIDER_ENV, "ollama").strip() or "ollama"
+        provider_key = os.environ.get(AI_PROVIDER_API_KEY_ENV, "").strip()
+        ollama_model = os.environ.get(OLLAMA_MODEL_ENV, "").strip()
         ready_model = self._agentic_model()
         if not self.settings.value("defaults/ai_enabled", True, type=bool):
             ready_provider = "DISABLED"
             ready_model = "internet/deterministic mode"
-        elif os.environ.get(NVIDIA_API_KEY_ENV, "").strip():
-            ready_provider = "NVIDIA"
-        elif ready_model:
+        elif provider_id == "ollama" and ollama_model:
+            ready_provider = "OLLAMA"
+            ready_model = ollama_model
+        elif provider_id == "custom":
+            ready_provider = provider_definition(provider_id).label.upper()
+            ready_model = os.environ.get(AI_PROVIDER_MODEL_ENV, "").strip()
+        elif provider_key or (
+            provider_id == "nvidia"
+            and os.environ.get(NVIDIA_API_KEY_ENV, "").strip()
+        ):
+            ready_provider = provider_definition(provider_id).label.upper()
+            ready_model = (
+                os.environ.get(AI_PROVIDER_MODEL_ENV, "").strip()
+                or os.environ.get(NVIDIA_MODEL_ENV, "").strip()
+            )
+        elif ollama_model:
             ready_provider = "OLLAMA FALLBACK"
+            ready_model = ollama_model
         else:
             ready_provider = "STATIC FALLBACK"
             ready_model = "no model configured"
@@ -421,7 +455,7 @@ class MainWindow(QMainWindow):
         self.ai_status_badge.setObjectName("aiStatusBadge")
         self.ai_status_badge.setProperty("active", True)
         self.ai_status_badge.setToolTip(
-            "Shows the active NVIDIA or Ollama provider, its model, and whether "
+            "Shows the selected hosted or local provider, its model, and whether "
             "evidence was verified or left for deterministic review."
         )
         self.activity_progress = QProgressBar()
@@ -552,6 +586,82 @@ class MainWindow(QMainWindow):
         form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         outer.addLayout(form)
         return card, outer, form
+
+    def _settings_group(
+        self,
+        title: str,
+        description: str,
+        key: str,
+        *,
+        expanded: bool,
+    ) -> tuple[CollapsibleSection, QVBoxLayout, QFormLayout]:
+        """Create a persistent collapsible group for related global settings."""
+
+        section = CollapsibleSection(title, removable=False)
+        section.setProperty("settingsGroup", key)
+        body_layout = QVBoxLayout(section.body)
+        body_layout.setContentsMargins(8, 4, 8, 8)
+        body_layout.setSpacing(10)
+        helper = QLabel(description)
+        helper.setObjectName("mutedLabel")
+        helper.setWordWrap(True)
+        body_layout.addWidget(helper)
+        form = QFormLayout()
+        form.setHorizontalSpacing(18)
+        form.setVerticalSpacing(11)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        body_layout.addLayout(form)
+        section.set_expanded(
+            self._setting_bool(f"ui/settings_sections/{key}", expanded)
+        )
+        section.toggle.toggled.connect(
+            lambda value, setting_key=key: self.settings.setValue(
+                f"ui/settings_sections/{setting_key}", bool(value)
+            )
+        )
+        return section, body_layout, form
+
+    def _capture_ai_provider_draft(self) -> None:
+        provider_id = getattr(self, "_active_ai_provider", "")
+        if not provider_id or not hasattr(self, "settings_ai_api_key"):
+            return
+        self._ai_provider_drafts[provider_id] = {
+            "api_key": self.settings_ai_api_key.text().strip(),
+            "model": self.settings_ai_model.text().strip(),
+            "base_url": self.settings_ai_base_url.text().strip(),
+        }
+
+    def _show_ai_provider_draft(self, provider_id: str) -> None:
+        definition = provider_definition(provider_id)
+        draft = self._ai_provider_drafts.get(
+            definition.id,
+            {
+                "api_key": "",
+                "model": definition.default_model,
+                "base_url": definition.base_url,
+            },
+        )
+        is_local = definition.id == "ollama"
+        self.settings_ai_api_key.setText(draft["api_key"])
+        self.settings_ai_api_key.setPlaceholderText(
+            "Not required for local Ollama" if is_local else definition.key_placeholder
+        )
+        self.settings_ai_api_key.setEnabled(not is_local)
+        self.settings_ai_model.setText(draft["model"])
+        self.settings_ai_model.setPlaceholderText(
+            "Uses the Ollama model below" if is_local else definition.default_model
+        )
+        self.settings_ai_model.setEnabled(not is_local)
+        self.settings_ai_base_url.setText(draft["base_url"])
+        self.settings_ai_base_url.setEnabled(definition.id == "custom")
+        self.settings_ai_base_url.setToolTip(
+            "Editable for custom providers. Built-in providers use their official endpoint."
+        )
+
+    def _ai_provider_selection_changed(self) -> None:
+        self._capture_ai_provider_draft()
+        self._active_ai_provider = str(self.settings_ai_provider.currentData())
+        self._show_ai_provider_draft(self._active_ai_provider)
 
     @staticmethod
     def _spin(minimum: int, maximum: int, value: int, suffix: str = "") -> QSpinBox:
@@ -845,6 +955,25 @@ class MainWindow(QMainWindow):
         self._save_workspace_state()
         self._append_log(f"[LIBRARY] Opened Edit File for: {path}")
 
+    def _edit_library_album(self, selected_folder: str) -> None:
+        """Open a browsed library album in the bulk album metadata editor."""
+
+        folder = Path(selected_folder).expanduser().resolve()
+        if not folder.is_dir():
+            QMessageBox.warning(
+                self,
+                "Album folder unavailable",
+                f"The selected album folder no longer exists:\n{folder}",
+            )
+            return
+        self._set_page(8)
+        self.edit_album_folder.set_text(str(folder))
+        self._edit_album_load_timer.stop()
+        self._load_edit_album_folder(str(folder))
+        self.edit_album_name.setFocus(Qt.FocusReason.OtherFocusReason)
+        self._save_workspace_state()
+        self._append_log(f"[LIBRARY] Opened Edit Album for: {folder}")
+
     def _open_library_album_enricher(self, selected_folder: str) -> None:
         """Populate only Album Enricher source; preserve the move destination."""
 
@@ -856,7 +985,7 @@ class MainWindow(QMainWindow):
                 f"The selected album folder no longer exists:\n{folder}",
             )
             return
-        self._set_page(8)
+        self._set_page(9)
         self.album_consolidator_source.set_text(str(folder))
         self.album_consolidator_source.line_edit.setFocus(
             Qt.FocusReason.OtherFocusReason
@@ -1572,6 +1701,144 @@ class MainWindow(QMainWindow):
         self.edit_file_duration.setText("Select a file to load its duration and metadata.")
         self._save_workspace_state()
 
+    # -------------------------------------------------------------- edit album
+    def _build_edit_album_page(self) -> QWidget:
+        page, layout = self._page_container(
+            "Edit Album",
+            "Update shared album identity across every supported media file in one folder.",
+        )
+        card, outer, form = self._form_card(
+            "Album-wide metadata",
+            "Titles, track artists, track numbers, artwork, filenames, and folder names are "
+            "preserved. Files in nested folders are included.",
+        )
+        self.edit_album_folder = PathPicker(
+            placeholder="Select the complete album folder",
+            mode="folder",
+        )
+        self.edit_album_name = QLineEdit()
+        self.edit_album_name.setPlaceholderText("Album name")
+        self.edit_album_year = QLineEdit()
+        self.edit_album_year.setMaxLength(4)
+        self.edit_album_year.setPlaceholderText("Four-digit release year")
+        self.edit_album_artist = QLineEdit()
+        self.edit_album_artist.setPlaceholderText("Album artist or compilation credit")
+        self.edit_album_status = QLabel("Select an album folder to inspect its shared metadata.")
+        self.edit_album_status.setObjectName("mutedLabel")
+        self.edit_album_status.setWordWrap(True)
+        form.addRow("Album folder", self.edit_album_folder)
+        form.addRow("Album name", self.edit_album_name)
+        form.addRow("Release year", self.edit_album_year)
+        form.addRow("Album artist", self.edit_album_artist)
+        form.addRow("Folder status", self.edit_album_status)
+
+        self._edit_album_load_timer = QTimer(self)
+        self._edit_album_load_timer.setSingleShot(True)
+        self._edit_album_load_timer.setInterval(180)
+        self._edit_album_load_timer.timeout.connect(
+            lambda: self._load_edit_album_folder(self.edit_album_folder.text())
+        )
+        self.edit_album_folder.line_edit.textChanged.connect(
+            lambda _value: self._edit_album_load_timer.start()
+        )
+
+        actions = QHBoxLayout()
+        clear_button = QPushButton("Clear")
+        clear_button.setObjectName("secondaryButton")
+        clear_button.clicked.connect(self._clear_edit_album)
+        run_button = QPushButton("Apply to all album files")
+        run_button.setObjectName("primaryButton")
+        run_button.setMinimumWidth(230)
+        run_button.clicked.connect(self._start_edit_album)
+        actions.addWidget(clear_button)
+        actions.addStretch(1)
+        actions.addWidget(run_button)
+        outer.addLayout(actions)
+        self._form_runs["edit_album"] = run_button
+        layout.addWidget(card)
+        layout.addWidget(
+            self._feature_card(
+                "Safety",
+                [
+                    "Each file is copied, retagged, validated, and atomically replaced.",
+                    "Unreadable files are reported individually while other files continue.",
+                    "A confirmation shows the exact number of files before changes begin.",
+                ],
+            )
+        )
+        layout.addStretch(1)
+        return page
+
+    def _load_edit_album_folder(self, requested_folder: str) -> None:
+        if requested_folder != self.edit_album_folder.text():
+            return
+        try:
+            summary = inspect_album_folder(requested_folder)
+        except (OSError, RuntimeError, ValueError) as exc:
+            self.edit_album_status.setText(str(exc))
+            return
+        self.edit_album_name.setText(summary.album)
+        self.edit_album_year.setText(summary.year)
+        self.edit_album_artist.setText(summary.album_artist)
+        mixed = (
+            " · mixed values: " + ", ".join(field.replace("_", " ") for field in summary.mixed_fields)
+            if summary.mixed_fields
+            else " · shared metadata detected"
+        )
+        self.edit_album_status.setText(f"{len(summary.files)} supported file(s){mixed}")
+
+    def _start_edit_album(self) -> None:
+        self._edit_album_load_timer.stop()
+        try:
+            summary = inspect_album_folder(self.edit_album_folder.text())
+        except (OSError, RuntimeError, ValueError) as exc:
+            QMessageBox.warning(self, "Cannot edit album", str(exc))
+            return
+        album = self.edit_album_name.text().strip()
+        year = self.edit_album_year.text().strip()
+        if not album:
+            QMessageBox.warning(self, "Album name required", "Enter the album name to apply.")
+            return
+        if year and not re.fullmatch(r"\d{4}", year):
+            QMessageBox.warning(
+                self, "Invalid release year", "Release year must contain four digits or be blank."
+            )
+            return
+        answer = QMessageBox.question(
+            self,
+            "Apply album metadata?",
+            f"Update album metadata in {len(summary.files)} file(s) inside:\n"
+            f"{summary.folder}\n\nAlbum: {album}\nYear: {year or '(clear)'}\n"
+            f"Album artist: {self.edit_album_artist.text().strip() or '(clear)'}",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self._start_operation(
+            "edit_album",
+            {
+                "folder": str(summary.folder),
+                "metadata": {
+                    "album": album,
+                    "year": year,
+                    "album_artist": self.edit_album_artist.text().strip(),
+                },
+                "ai_enabled": False,
+            },
+        )
+
+    def _clear_edit_album(self) -> None:
+        self._edit_album_load_timer.stop()
+        self.edit_album_folder.set_text("")
+        self.edit_album_name.clear()
+        self.edit_album_year.clear()
+        self.edit_album_artist.clear()
+        self.edit_album_status.setText(
+            "Select an album folder to inspect its shared metadata."
+        )
+        self._save_workspace_state()
+
     # ------------------------------------------------------ album consolidator
     def _build_album_consolidator_page(self) -> QWidget:
         page, layout = self._page_container(
@@ -1621,11 +1888,19 @@ class MainWindow(QMainWindow):
             placeholder="Folder that will contain the album folders",
             mode="folder",
         )
+        self.album_move_perform_enrichment = self._check(
+            "Perform album enrichment before and after moving",
+            True,
+        )
         self.album_move_enrich_all_destination = self._check(
             "Include all destination files in enrichment",
             False,
         )
+        self.album_move_perform_enrichment.toggled.connect(
+            self.album_move_enrich_all_destination.setEnabled
+        )
         move_form.addRow("Destination folder", self.album_consolidator_destination)
+        move_form.addRow("Metadata", self.album_move_perform_enrichment)
         move_form.addRow("Enrichment scope", self.album_move_enrich_all_destination)
 
         action_row = QWidget()
@@ -1650,7 +1925,9 @@ class MainWindow(QMainWindow):
         layout.addWidget(enrich_card)
         layout.addWidget(move_card)
         layout.addWidget(self._feature_card("Consolidation rules", [
-            "Album Enricher never moves files; Move enriches newly moved audio afterward",
+            "Album Enricher never moves files; Move enrichment is enabled by default",
+            "Disable move enrichment after stage 1 to route existing tags without repeating it",
+            "Track indexing still runs when move enrichment is disabled",
             "Enable the move scope option to enrich the complete destination tree instead",
             "Enriched files are renamed as Title - Album - Artists",
             "Soundtrack, EP, and Single storefront suffixes are removed from Album tags and searches",
@@ -1676,6 +1953,7 @@ class MainWindow(QMainWindow):
         return {
             "source_folder": source_folder,
             "destination_folder": self.album_consolidator_destination.text(),
+            "perform_enrichment": self.album_move_perform_enrichment.isChecked(),
             "enrich_all_destination": self.album_move_enrich_all_destination.isChecked(),
             "tracker_path": self._metadata_tracker_file,
         }
@@ -1716,6 +1994,7 @@ class MainWindow(QMainWindow):
         self.album_consolidator_source.set_text("")
         self.album_consolidator_destination.set_text("")
         self.album_enrich_destination_enabled.setChecked(False)
+        self.album_move_perform_enrichment.setChecked(True)
         self.album_move_enrich_all_destination.setChecked(False)
         self.album_enrich_force_recheck.setChecked(False)
         self._save_workspace_state()
@@ -1869,9 +2148,8 @@ class MainWindow(QMainWindow):
     def _build_settings_page(self) -> QWidget:
         page, layout = self._page_container(
             "Global Settings",
-            "Configure the authoritative execution defaults used throughout the application.",
+            "Configure application-wide defaults. Expand only the section you need.",
         )
-        card, outer, form = self._form_card("Default batch behavior")
         self.settings_workers = self._spin(
             1,
             MAX_PARALLEL_WORKERS,
@@ -1925,17 +2203,69 @@ class MainWindow(QMainWindow):
             else str(saved_ollama_model or "").strip()
         )
         self.settings_agentic_model.setToolTip(
-            "Local model used automatically when the NVIDIA key is absent or its request fails."
+            "Local model used as the primary provider or automatic hosted-provider fallback."
         )
-        self.settings_nvidia_api_key = QLineEdit()
-        self.settings_nvidia_api_key.setEchoMode(QLineEdit.EchoMode.Password)
-        self.settings_nvidia_api_key.setPlaceholderText("nvapi-… (optional)")
-        self.settings_nvidia_api_key.setText(
-            self._saved_secret("defaults/nvidia_api_key", NVIDIA_API_KEY_ENV)
+        legacy_nvidia_key = self._saved_secret(
+            "defaults/nvidia_api_key", NVIDIA_API_KEY_ENV
         )
-        self.settings_nvidia_api_key.setToolTip(
-            "Hosted NVIDIA NIM credential. It is never placed in operation parameters or logs."
+        saved_provider = str(self.settings.value("defaults/ai_provider", "") or "").strip()
+        if not saved_provider:
+            saved_provider = "nvidia" if legacy_nvidia_key else "ollama"
+        self._ai_provider_drafts: dict[str, dict[str, str]] = {}
+        for provider in PROVIDERS:
+            key = str(
+                self.settings.value(f"defaults/ai_providers/{provider.id}/api_key", "")
+                or ""
+            ).strip()
+            model = str(
+                self.settings.value(
+                    f"defaults/ai_providers/{provider.id}/model", provider.default_model
+                )
+                or ""
+            ).strip()
+            base_url = str(
+                self.settings.value(
+                    f"defaults/ai_providers/{provider.id}/base_url", provider.base_url
+                )
+                or ""
+            ).strip()
+            if provider.id == "nvidia":
+                key = key or legacy_nvidia_key
+                legacy_model = self.settings.value("defaults/nvidia_model", None)
+                model = (
+                    model
+                    if legacy_model is None
+                    else str(legacy_model or "").strip()
+                )
+            self._ai_provider_drafts[provider.id] = {
+                "api_key": key,
+                "model": model,
+                "base_url": base_url,
+            }
+        self.settings_ai_provider = QComboBox()
+        for provider in PROVIDERS:
+            self.settings_ai_provider.addItem(provider.label, provider.id)
+        provider_index = self.settings_ai_provider.findData(saved_provider)
+        self.settings_ai_provider.setCurrentIndex(max(0, provider_index))
+        self._active_ai_provider = str(self.settings_ai_provider.currentData())
+        self.settings_ai_api_key = QLineEdit()
+        self.settings_ai_api_key.setEchoMode(QLineEdit.EchoMode.Password)
+        self.settings_ai_api_key.setToolTip(
+            "Saved locally for the selected provider and never placed in operation logs."
         )
+        self.settings_ai_model = QLineEdit()
+        self.settings_ai_model.setToolTip("Provider model ID used by every Agno-backed task.")
+        self.settings_ai_base_url = QLineEdit()
+        self.settings_ai_base_url.setPlaceholderText(
+            "Required only for a custom OpenAI-compatible provider"
+        )
+        self.settings_ai_provider.currentIndexChanged.connect(
+            self._ai_provider_selection_changed
+        )
+        self._show_ai_provider_draft(self._active_ai_provider)
+        # Compatibility aliases retained for integrations that referenced the old controls.
+        self.settings_nvidia_api_key = self.settings_ai_api_key
+        self.settings_nvidia_model = self.settings_ai_model
         self.settings_serpapi_api_key = QLineEdit()
         self.settings_serpapi_api_key.setEchoMode(QLineEdit.EchoMode.Password)
         self.settings_serpapi_api_key.setPlaceholderText("Optional SerpApi key")
@@ -1946,14 +2276,6 @@ class MainWindow(QMainWindow):
             "Optional SerpApi credential used only when Wikipedia and Apple cannot "
             "identify missing album/movie metadata. It is never written to logs."
         )
-        self.settings_nvidia_model = QLineEdit()
-        saved_nvidia_model = self.settings.value("defaults/nvidia_model", None)
-        self.settings_nvidia_model.setText(
-            DEFAULT_NVIDIA_MODEL
-            if saved_nvidia_model is None
-            else str(saved_nvidia_model or "").strip()
-        )
-        self.settings_nvidia_model.setPlaceholderText(DEFAULT_NVIDIA_MODEL)
         self.settings_persist_state = self._check(
             "Restore forms, statuses, output folders, and history after restart",
             self._setting_bool("workspace/persist_enabled", True),
@@ -2003,25 +2325,89 @@ class MainWindow(QMainWindow):
         self.settings_crystalness.valueChanged.connect(self._preview_crystalness)
         crystal_layout.addWidget(self.settings_crystalness, 1)
         crystal_layout.addWidget(self.settings_crystalness_value)
-        form.addRow("Parallel workers", self.settings_workers)
-        form.addRow("Minimum delay", self.settings_min_delay)
-        form.addRow("Maximum delay", self.settings_max_delay)
-        form.addRow("Retries", self.settings_retries)
-        form.addRow("Retry delay", self.settings_retry_wait)
-        form.addRow("Rate-limit wait", self.settings_rate_limit_wait)
-        form.addRow("Default MP3 bitrate", self.settings_audio_quality)
-        form.addRow("Default sample rate", self.settings_sample_rate)
-        form.addRow("Album track ordering", self.settings_wikipedia_order)
-        form.addRow("Default AI policy", self.settings_ai_enabled)
-        form.addRow("Crash-report storage", self.settings_crash_reports)
-        form.addRow("NVIDIA API key", self.settings_nvidia_api_key)
-        form.addRow("NVIDIA model", self.settings_nvidia_model)
-        form.addRow("Ollama fallback model", self.settings_agentic_model)
-        form.addRow("SerpApi key", self.settings_serpapi_api_key)
-        form.addRow("Workspace state", self.settings_persist_state)
-        form.addRow("Library suggestions", self.settings_search_suggestions)
-        form.addRow("Application data folder", self.settings_data_directory)
-        form.addRow("Crystalness", crystal_control)
+
+        actions_card = GlassCard()
+        settings_actions = QHBoxLayout(actions_card)
+        settings_actions.setContentsMargins(14, 10, 14, 10)
+        reset = QPushButton("Reset app")
+        reset.setObjectName("dangerButton")
+        reset.setToolTip(
+            "Clear every tool, remove saved provider credentials/models, and restore defaults"
+        )
+        reset.clicked.connect(self._reset_app)
+        save = QPushButton("Save and apply defaults")
+        save.setObjectName("primaryButton")
+        save.clicked.connect(self._save_defaults)
+        settings_actions.addWidget(reset)
+        settings_actions.addStretch(1)
+        settings_actions.addWidget(save)
+        layout.addWidget(actions_card)
+
+        self.settings_sections: dict[str, CollapsibleSection] = {}
+        batch_section, _batch_body, batch_form = self._settings_group(
+            "Batch processing & network",
+            "Concurrency, pacing, retry, and rate-limit defaults used by download workflows.",
+            "batch_network",
+            expanded=True,
+        )
+        batch_form.addRow("Parallel workers", self.settings_workers)
+        batch_form.addRow("Minimum delay", self.settings_min_delay)
+        batch_form.addRow("Maximum delay", self.settings_max_delay)
+        batch_form.addRow("Retries", self.settings_retries)
+        batch_form.addRow("Retry delay", self.settings_retry_wait)
+        batch_form.addRow("Rate-limit wait", self.settings_rate_limit_wait)
+        self.settings_sections["batch_network"] = batch_section
+        layout.addWidget(batch_section)
+
+        audio_section, _audio_body, audio_form = self._settings_group(
+            "Audio & metadata defaults",
+            "Output quality and deterministic album ordering applied across media workflows.",
+            "audio_metadata",
+            expanded=False,
+        )
+        audio_form.addRow("Default MP3 bitrate", self.settings_audio_quality)
+        audio_form.addRow("Default sample rate", self.settings_sample_rate)
+        audio_form.addRow("Album track ordering", self.settings_wikipedia_order)
+        self.settings_sections["audio_metadata"] = audio_section
+        layout.addWidget(audio_section)
+
+        ai_section, _ai_body, ai_form = self._settings_group(
+            "AI providers & online evidence",
+            "Choose a local or hosted Agno provider. Hosted providers automatically fall back "
+            "to the selected Ollama model. Credentials remain local and are never logged.",
+            "ai_providers",
+            expanded=True,
+        )
+        ai_form.addRow("Default AI policy", self.settings_ai_enabled)
+        ai_form.addRow("Primary provider", self.settings_ai_provider)
+        ai_form.addRow("Provider API key", self.settings_ai_api_key)
+        ai_form.addRow("Provider model", self.settings_ai_model)
+        ai_form.addRow("Provider base URL", self.settings_ai_base_url)
+        ai_form.addRow("Ollama local / fallback", self.settings_agentic_model)
+        ai_form.addRow("SerpApi key", self.settings_serpapi_api_key)
+        self.settings_sections["ai_providers"] = ai_section
+        layout.addWidget(ai_section)
+
+        behavior_section, _behavior_body, behavior_form = self._settings_group(
+            "Application behavior & privacy",
+            "Control workspace restoration, local diagnostics, and Media Library suggestion size.",
+            "behavior_privacy",
+            expanded=False,
+        )
+        behavior_form.addRow("Workspace state", self.settings_persist_state)
+        behavior_form.addRow("Crash-report storage", self.settings_crash_reports)
+        behavior_form.addRow("Library suggestions", self.settings_search_suggestions)
+        self.settings_sections["behavior_privacy"] = behavior_section
+        layout.addWidget(behavior_section)
+
+        storage_section, storage_body, storage_form = self._settings_group(
+            "Storage & appearance",
+            "Choose where persistent app data lives and tune the glass appearance.",
+            "storage_appearance",
+            expanded=False,
+        )
+        storage_form.addRow("Application data folder", self.settings_data_directory)
+        storage_form.addRow("Crystalness", crystal_control)
         storage_actions = QHBoxLayout()
         open_storage = QPushButton("Open data folder")
         open_storage.setObjectName("secondaryButton")
@@ -2033,30 +2419,27 @@ class MainWindow(QMainWindow):
         storage_actions.addWidget(storage_note)
         storage_actions.addStretch(1)
         storage_actions.addWidget(open_storage)
-        outer.addLayout(storage_actions)
-        reset = QPushButton("Reset app")
-        reset.setObjectName("dangerButton")
-        reset.setToolTip(
-            "Clear every tool, remove saved provider credentials/models, and restore defaults"
-        )
-        reset.clicked.connect(self._reset_app)
-        save = QPushButton("Save and apply defaults")
-        save.setObjectName("primaryButton")
-        save.clicked.connect(self._save_defaults)
-        settings_actions = QHBoxLayout()
-        settings_actions.addWidget(reset)
-        settings_actions.addStretch(1)
-        settings_actions.addWidget(save)
-        outer.addLayout(settings_actions)
-        layout.addWidget(card)
+        storage_body.addLayout(storage_actions)
+        self.settings_sections["storage_appearance"] = storage_section
+        layout.addWidget(storage_section)
 
-        requirements = self._feature_card("Runtime requirements", [
-            "Packaged desktop builds include Python, FFmpeg, FFprobe, Deno, and all Python libraries",
-            "Source runs install managed FFmpeg and Deno runtimes through uv sync",
-            "Network access for YouTube metadata and media downloads",
-            "NVIDIA API key for lightweight hosted inference; Ollama is the automatic local fallback",
-            "Optional SerpApi key for Google metadata evidence when built-in catalogs are inconclusive",
-        ])
+        requirements, requirements_body, _requirements_form = self._settings_group(
+            "Runtime requirements",
+            "Environment information for source and packaged desktop builds.",
+            "runtime_requirements",
+            expanded=False,
+        )
+        for requirement in (
+            "Packaged builds include Python, FFmpeg, FFprobe, Deno, and Python libraries.",
+            "Source runs install managed FFmpeg and Deno runtimes through uv sync.",
+            "Network access is required for YouTube metadata and media downloads.",
+            "Ollama is local; NVIDIA and SerpApi are optional hosted services.",
+        ):
+            label = QLabel(f"•  {requirement}")
+            label.setObjectName("mutedLabel")
+            label.setWordWrap(True)
+            requirements_body.addWidget(label)
+        self.settings_sections["runtime_requirements"] = requirements
         layout.addWidget(requirements)
         layout.addStretch(1)
         return page
@@ -2096,8 +2479,8 @@ class MainWindow(QMainWindow):
             5: "jukebox",
             6: "track_reorder",
             7: "edit_media",
-            8: "album_consolidator",
-            9: "utilities",
+            9: "album_consolidator",
+            10: "utilities",
         }.get(index)
         if operation:
             self._show_workspace_ai_policy(operation)
@@ -2127,7 +2510,9 @@ class MainWindow(QMainWindow):
                 index -= 1
         if schema < 7 and index >= 8:
             index += 1
-        self.settings.setValue("window/navigation_schema", 7)
+        if schema < 8 and index >= 8:
+            index += 1
+        self.settings.setValue("window/navigation_schema", 8)
         self._set_page(index)
 
     def toggle_maximize(self) -> None:
@@ -2857,7 +3242,7 @@ class MainWindow(QMainWindow):
         return os.environ.get(environment_name, "").strip()
 
     def _agentic_model(self) -> str:
-        """Return the effective NVIDIA model or Ollama fallback model."""
+        """Return the selected provider model or Ollama fallback model."""
 
         saved_model = self.settings.value("defaults/agentic_model", None)
         return configured_primary_model(
@@ -2869,22 +3254,58 @@ class MainWindow(QMainWindow):
     def _configure_ai_from_settings(self) -> None:
         """Apply global provider settings before any workspace starts an AI task."""
 
-        saved_nvidia_model = self.settings.value("defaults/nvidia_model", None)
         saved_ollama_model = self.settings.value("defaults/agentic_model", None)
+        legacy_nvidia_key = self._saved_secret(
+            "defaults/nvidia_api_key", NVIDIA_API_KEY_ENV
+        )
+        provider_id = str(self.settings.value("defaults/ai_provider", "") or "").strip()
+        if not provider_id:
+            provider_id = "nvidia" if legacy_nvidia_key else "ollama"
+        definition = provider_definition(provider_id)
+        api_key = str(
+            self.settings.value(
+                f"defaults/ai_providers/{definition.id}/api_key",
+                legacy_nvidia_key if definition.id == "nvidia" else "",
+            )
+            or ""
+        ).strip()
+        legacy_nvidia_model = self.settings.value("defaults/nvidia_model", None)
+        default_provider_model = (
+            DEFAULT_NVIDIA_MODEL
+            if definition.id == "nvidia" and legacy_nvidia_model is None
+            else definition.default_model
+        )
+        provider_model = str(
+            self.settings.value(
+                f"defaults/ai_providers/{definition.id}/model",
+                legacy_nvidia_model
+                if definition.id == "nvidia" and legacy_nvidia_model is not None
+                else default_provider_model,
+            )
+            or ""
+        ).strip()
+        base_url = str(
+            self.settings.value(
+                f"defaults/ai_providers/{definition.id}/base_url",
+                definition.base_url,
+            )
+            or ""
+        ).strip()
+        ollama_model = (
+            DEFAULT_OLLAMA_MODEL
+            if saved_ollama_model is None
+            else str(saved_ollama_model or "").strip()
+        )
         configure_ai_environment(
-            nvidia_api_key=self._saved_secret(
-                "defaults/nvidia_api_key", NVIDIA_API_KEY_ENV
-            ),
-            nvidia_model=(
-                DEFAULT_NVIDIA_MODEL
-                if saved_nvidia_model is None
-                else str(saved_nvidia_model or "").strip()
-            ),
-            ollama_model=(
-                DEFAULT_OLLAMA_MODEL
-                if saved_ollama_model is None
-                else str(saved_ollama_model or "").strip()
-            ),
+            nvidia_api_key=api_key if definition.id == "nvidia" else "",
+            nvidia_model=provider_model if definition.id == "nvidia" else "",
+            ollama_model=ollama_model,
+        )
+        configure_agno_environment(
+            provider=definition.id,
+            api_key=api_key,
+            model=provider_model,
+            base_url=base_url,
         )
         configure_serpapi_environment(
             self._saved_secret("defaults/serpapi_api_key", SERPAPI_API_KEY_ENV)
@@ -2933,8 +3354,10 @@ class MainWindow(QMainWindow):
                 "edit_file_input", "edit_file_output", "edit_file_artwork", "edit_file_action",
                 "edit_file_url", "edit_file_start", "edit_file_end", "edit_file_content",
                 "edit_file_overwrite", "edit_file_metadata", "edit_file_remove_artwork",
+                "edit_album_folder", "edit_album_metadata",
                 "album_consolidator_source", "album_consolidator_destination",
                 "album_enrich_destination_enabled",
+                "album_move_perform_enrichment",
                 "album_move_enrich_all_destination",
             ):
                 self.settings.remove(f"workspace/{key}")
@@ -2955,6 +3378,7 @@ class MainWindow(QMainWindow):
             "sample_rate": "44100",
             "wikipedia_track_order": True,
             "ai_enabled": True,
+            "ai_provider": "ollama",
             "crash_reports_enabled": False,
             "agentic_model": "",
             "nvidia_api_key": "",
@@ -2994,7 +3418,7 @@ class MainWindow(QMainWindow):
         answer = QMessageBox.question(
             self,
             f"Reset {APP_DISPLAY_NAME}?",
-            "This will remove saved NVIDIA and SerpApi credentials and all AI model selections, "
+            "This will remove saved AI-provider and SerpApi credentials and all model selections, "
             "restore global defaults, clear every tool form, library folder, status, "
             "and history, and return application storage to its default folder.\n\n"
             "Downloaded and edited media files will not be deleted.",
@@ -3051,9 +3475,22 @@ class MainWindow(QMainWindow):
         self.settings_crash_reports.setChecked(bool(values["crash_reports_enabled"]))
         for checkbox in self._tool_ai_checks.values():
             checkbox.setChecked(bool(values["ai_enabled"]))
-        self.settings_nvidia_api_key.clear()
+        self._ai_provider_drafts = {
+            provider.id: {
+                "api_key": "",
+                "model": provider.default_model,
+                "base_url": provider.base_url,
+            }
+            for provider in PROVIDERS
+        }
+        provider_signals = self.settings_ai_provider.blockSignals(True)
+        self.settings_ai_provider.setCurrentIndex(
+            self.settings_ai_provider.findData("ollama")
+        )
+        self.settings_ai_provider.blockSignals(provider_signals)
+        self._active_ai_provider = "ollama"
+        self._show_ai_provider_draft("ollama")
         self.settings_serpapi_api_key.clear()
-        self.settings_nvidia_model.clear()
         self.settings_agentic_model.setCurrentText("")
         self.settings_search_suggestions.setValue(int(values["search_suggestions"]))
         self.settings_crystalness.setValue(int(values["crystalness"]))
@@ -3063,6 +3500,7 @@ class MainWindow(QMainWindow):
         self.settings_persist_state.blockSignals(persist_signals)
 
         configure_ai_environment(nvidia_api_key="", nvidia_model="", ollama_model="")
+        configure_agno_environment(provider="ollama", api_key="", model="", base_url="")
         configure_serpapi_environment("")
         self.ai_status_badge.setText("AI READY · STATIC FALLBACK · no model configured")
         self.workers_metric.set_value(values["workers"])
@@ -3125,6 +3563,7 @@ class MainWindow(QMainWindow):
 
         self._clear_track_reorder()
         self._clear_edit_file()
+        self._clear_edit_album()
         self._clear_album_consolidator()
         self.album_enrich_force_recheck.setChecked(False)
         self.duplicate_input.set_text("")
@@ -3150,6 +3589,9 @@ class MainWindow(QMainWindow):
         if min_delay > max_delay:
             QMessageBox.warning(self, "Invalid settings", "Minimum delay cannot exceed maximum delay.")
             return
+        self._capture_ai_provider_draft()
+        provider_id = self._active_ai_provider
+        provider_draft = self._ai_provider_drafts[provider_id]
         values = {
             "workers": self.settings_workers.value(),
             "min_delay": min_delay,
@@ -3162,34 +3604,49 @@ class MainWindow(QMainWindow):
             "wikipedia_track_order": self.settings_wikipedia_order.isChecked(),
             "ai_enabled": self.settings_ai_enabled.isChecked(),
             "agentic_model": self.settings_agentic_model.currentText().strip(),
-            "nvidia_api_key": self.settings_nvidia_api_key.text().strip(),
-            "nvidia_model": self.settings_nvidia_model.text().strip(),
+            "ai_provider": provider_id,
             "serpapi_api_key": self.settings_serpapi_api_key.text().strip(),
             "search_suggestions": self.settings_search_suggestions.value(),
             "crystalness": self.settings_crystalness.value(),
         }
         for key, value in values.items():
             self.settings.setValue(f"defaults/{key}", value)
+        for saved_provider, draft in self._ai_provider_drafts.items():
+            for field, value in draft.items():
+                self.settings.setValue(
+                    f"defaults/ai_providers/{saved_provider}/{field}", value
+                )
+        nvidia_draft = self._ai_provider_drafts["nvidia"]
+        self.settings.setValue("defaults/nvidia_api_key", nvidia_draft["api_key"])
+        self.settings.setValue("defaults/nvidia_model", nvidia_draft["model"])
         self.settings.setValue(
             "privacy/crash_reports_enabled",
             self.settings_crash_reports.isChecked(),
         )
         self.settings.sync()
         configure_ai_environment(
-            nvidia_api_key=str(values["nvidia_api_key"]),
-            nvidia_model=str(values["nvidia_model"]),
+            nvidia_api_key=(
+                provider_draft["api_key"] if provider_id == "nvidia" else ""
+            ),
+            nvidia_model=(provider_draft["model"] if provider_id == "nvidia" else ""),
             ollama_model=str(values["agentic_model"]),
+        )
+        configure_agno_environment(
+            provider=provider_id,
+            api_key=provider_draft["api_key"],
+            model=provider_draft["model"],
+            base_url=provider_draft["base_url"],
         )
         configure_serpapi_environment(str(values["serpapi_api_key"]))
         if not bool(values["ai_enabled"]):
             provider = "DISABLED"
             ready_model = "internet/deterministic mode"
-        elif str(values["nvidia_api_key"]):
-            provider = "NVIDIA"
-            ready_model = self._agentic_model()
-        elif str(values["agentic_model"]):
-            provider = "OLLAMA FALLBACK"
-            ready_model = self._agentic_model()
+        elif provider_id == "ollama" and str(values["agentic_model"]):
+            provider = "OLLAMA"
+            ready_model = str(values["agentic_model"])
+        elif provider_draft["api_key"] or provider_id == "custom":
+            provider = provider_definition(provider_id).label.upper()
+            ready_model = provider_draft["model"]
         else:
             provider = "STATIC FALLBACK"
             ready_model = "no model configured"
@@ -3281,6 +3738,7 @@ class MainWindow(QMainWindow):
                 "edit_file_input": self.edit_file_input,
                 "edit_file_output": self.edit_file_output,
                 "edit_file_artwork": self.edit_meta_artwork,
+                "edit_album_folder": self.edit_album_folder,
                 "album_consolidator_source": self.album_consolidator_source,
                 "album_consolidator_destination": self.album_consolidator_destination,
             }
@@ -3338,6 +3796,16 @@ class MainWindow(QMainWindow):
             self.edit_meta_remove_artwork.setChecked(
                 self._setting_bool("workspace/edit_file_remove_artwork", False)
             )
+            album_metadata_raw = str(
+                self.settings.value("workspace/edit_album_metadata", "") or ""
+            )
+            if album_metadata_raw:
+                album_metadata = json.loads(album_metadata_raw)
+                self.edit_album_name.setText(str(album_metadata.get("album", "") or ""))
+                self.edit_album_year.setText(str(album_metadata.get("year", "") or ""))
+                self.edit_album_artist.setText(
+                    str(album_metadata.get("album_artist", "") or "")
+                )
             self.album_enrich_destination_enabled.setChecked(
                 self._setting_bool(
                     "workspace/album_enrich_destination_enabled", False
@@ -3346,6 +3814,11 @@ class MainWindow(QMainWindow):
             self.album_move_enrich_all_destination.setChecked(
                 self._setting_bool(
                     "workspace/album_move_enrich_all_destination", False
+                )
+            )
+            self.album_move_perform_enrichment.setChecked(
+                self._setting_bool(
+                    "workspace/album_move_perform_enrichment", True
                 )
             )
             self._edit_file_action_changed()
@@ -3390,6 +3863,7 @@ class MainWindow(QMainWindow):
             "edit_file_input": self.edit_file_input,
             "edit_file_output": self.edit_file_output,
             "edit_file_artwork": self.edit_meta_artwork,
+            "edit_album_folder": self.edit_album_folder,
             "album_consolidator_source": self.album_consolidator_source,
             "album_consolidator_destination": self.album_consolidator_destination,
         }
@@ -3398,6 +3872,10 @@ class MainWindow(QMainWindow):
         self.settings.setValue(
             "workspace/album_enrich_destination_enabled",
             self.album_enrich_destination_enabled.isChecked(),
+        )
+        self.settings.setValue(
+            "workspace/album_move_perform_enrichment",
+            self.album_move_perform_enrichment.isChecked(),
         )
         self.settings.setValue(
             "workspace/album_move_enrich_all_destination",
@@ -3417,6 +3895,17 @@ class MainWindow(QMainWindow):
         )
         self.settings.setValue(
             "workspace/edit_file_remove_artwork", self.edit_meta_remove_artwork.isChecked()
+        )
+        self.settings.setValue(
+            "workspace/edit_album_metadata",
+            json.dumps(
+                {
+                    "album": self.edit_album_name.text(),
+                    "year": self.edit_album_year.text(),
+                    "album_artist": self.edit_album_artist.text(),
+                },
+                ensure_ascii=False,
+            ),
         )
         self.settings.setValue(
             "workspace/album_statuses", json.dumps(self._album_statuses, ensure_ascii=False)

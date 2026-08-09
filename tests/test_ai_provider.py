@@ -114,6 +114,7 @@ def test_ollama_disables_thinking_for_structured_qwen_response(monkeypatch) -> N
     request = open_mock.call_args.args[0]
     body = json.loads(request.data.decode("utf-8"))
     assert body["think"] is False
+    assert body["options"]["num_ctx"] == ai_provider.OLLAMA_CONTEXT_WINDOW
     assert result.data == {"answer": "local"}
 
 
@@ -126,6 +127,24 @@ def test_no_key_uses_ollama_directly(monkeypatch) -> None:
     assert open_mock.call_count == 1
     assert open_mock.call_args.args[0].full_url.endswith("/api/chat")
     assert result.provider == "Ollama"
+
+
+def test_selected_generic_provider_routes_legacy_structured_calls_through_agno(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("YOUTUBE_MEDIA_STUDIO_AI_PROVIDER", "openai")
+    with patch(
+        "youtube_audio_video_downloader.services.agno_provider.run_structured_json_agent",
+        return_value=({"answer": "hosted"}, "OpenAI", "gpt-test"),
+    ) as run_agent:
+        result = ai_provider.chat_json(
+            [{"role": "user", "content": "question"}],
+            SCHEMA,
+            model="gpt-test",
+        )
+    assert result.data == {"answer": "hosted"}
+    assert result.provider == "OpenAI"
+    assert run_agent.call_args.kwargs["output_schema"] == SCHEMA
 
 
 def test_all_provider_failures_raise_for_static_caller_fallback(monkeypatch) -> None:

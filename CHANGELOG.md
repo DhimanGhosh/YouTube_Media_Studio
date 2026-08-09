@@ -4,6 +4,35 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## Unreleased
+
+### Added
+
+- Add Agno-powered Smart Library Curator, which decomposes natural-language requests,
+  searches only the indexed local library, verifies semantic music qualities with
+  bounded public evidence, and ranks validated local tracks without automatic YouTube
+  redirection.
+- Add selectable Ollama, NVIDIA NIM, OpenAI, Anthropic, Google Gemini, Groq, Hugging
+  Face Inference, OpenRouter, OpenCode Zen, and custom OpenAI-compatible providers with
+  independent saved credentials and local Ollama fallback.
+- Add Edit Album for atomically applying album, year, and album artist across an album
+  folder, including album-level Media Library context actions.
+
+### Changed
+
+- Organize Global Settings into focused persistent collapsible sections with clearer
+  save/reset actions and provider-specific controls.
+- Let Album Consolidator skip a repeated enrichment pass while still routing files and
+  applying verified track indexing.
+
+### Fixed
+
+- Preserve an explicitly cleared hosted-provider key after save and restart.
+- Use the configured local Ollama model through Agno and retry it directly when the
+  selected hosted model cannot complete a request.
+- Cap application Ollama requests at a 16K context window so models do not allocate an
+  unused 262K KV cache and spill inference onto CPU on common GPUs.
+
 ## [2.2.4] - 2026-08-10
 
 ### Changed

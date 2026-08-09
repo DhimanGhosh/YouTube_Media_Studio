@@ -195,6 +195,7 @@ edit, consolidate, inspect logs, configure defaults, and play the finished libra
 | Find and download a song | [Song workflow](docs/USER_GUIDE.md#find-and-download-a-song) |
 | Split an album or jukebox | [Splitter workflow](docs/USER_GUIDE.md#split-an-album-or-jukebox) |
 | Repair or trim a local file | [Edit File guide](docs/USER_GUIDE.md#edit-a-local-media-file) |
+| Retag a complete album folder | [Edit Album guide](docs/USER_GUIDE.md#edit-an-album-folder) |
 | Enrich and move an existing music folder | [Album Consolidator guide](docs/USER_GUIDE.md#enrich-and-organize-an-existing-music-folder) |
 | Browse and play my local collection | [Media Library guide](docs/USER_GUIDE.md#use-the-local-media-library) |
 | Understand a skip, review, or failure | [Live Log glossary](docs/USER_GUIDE.md#read-live-logs) |
@@ -214,7 +215,8 @@ edit, consolidate, inspect logs, configure defaults, and play the finished libra
 | **Jukebox Splitter** | Split compilation videos and organize the resulting songs |
 | **Search Song** | Find tracks, albums, release years, performers, and cover artwork |
 | **Metadata tools** | Inspect, repair, reorder, retag, trim, rename, and consolidate local media |
-| **Media Library** | Browse, search, play, and manage local audio and video |
+| **Edit Album** | Change album name, year, or album artist across every supported file in a folder |
+| **Media Library** | Browse, play, manage, and semantically curate local audio and video |
 | **Utilities** | Detect duplicate links, normalize artist names, and convert timestamps to JSON |
 | **Live Logs** | Follow background operations and diagnose failures without leaving the app |
 | **Automation** | Run the same core workflows through stable CLI commands and JSON job files |
@@ -224,25 +226,28 @@ and the GUI can persist a custom location.
 
 ## How AI helps
 
-AI is an optional verification assistant for workflows that expose **Use AI for this
-task**. It reviews metadata evidence, spots conflicting album or recording identities,
-explains why a file needs review, and adds a safety check before Album Consolidator
-moves files. Downloads, editing, splitting, playback, and deterministic catalog matching
-continue to work with AI switched off.
+AI is an optional verification and library-curation assistant for workflows that expose
+**Use AI for this task**. Agno coordinates specialized planning, evidence, semantic
+verification, and ranking agents for **Smart Library Curator**, while the existing
+safety agents review metadata evidence and conflicting identities. Downloads, editing,
+splitting, playback, and deterministic catalog matching continue to work with AI off.
 
 | Mode | Setup | What happens |
 | --- | --- | --- |
-| **Local AI with Ollama** | Install and run Ollama separately, download a compatible model, then select it under **Global Settings → Ollama fallback model**. No model API key is required. | Prompts and model responses stay on the user's computer. Internet metadata sources are still contacted when the selected workflow requires them. |
-| **Hosted AI with an API key** | Add an NVIDIA NIM key and model under **Global Settings**. The credential field is password-masked. | The hosted model is used first; request context needed for verification is sent to that provider. If it is unavailable, the app can fall back to the selected local Ollama model. |
-| **No AI** | Leave **Use AI for this task** off. | Wikipedia, catalog, SerpApi (when separately configured), and deterministic rules perform the work without NVIDIA or Ollama calls. |
+| **Local AI with Ollama** | Install and run Ollama separately, download a compatible model, then select **Ollama (local)** and the model under **Global Settings → AI providers & online evidence**. No API key is required. | Prompts and model responses stay on the user's computer. Internet evidence is still contacted when the selected workflow requires it. |
+| **Hosted AI with an API key** | Select NVIDIA NIM, OpenAI, Anthropic, Google Gemini, Groq, Hugging Face Inference, OpenRouter, or OpenCode Zen; then save that provider's key and model. | The selected provider runs through Agno. Its password-masked key/model draft is retained independently, and Ollama is the local fallback. |
+| **Compatible endpoint** | Select **Custom OpenAI-compatible**, enter its `/v1` base URL and model, and add a key only if the endpoint requires one. | Self-hosted and other compatible services can participate without provider-specific application code. |
+| **No AI** | Leave **Use AI for this task** off. | Wikipedia, catalog, web evidence, SerpApi (when separately configured), and deterministic rules perform the work without model calls. |
 
 AI does not invent missing tags or override conflicting evidence. If the available sources
 cannot establish a safe identity, the file remains unchanged and Live Logs reports a
 review outcome. A SerpApi key is separate from an AI-provider key: it enables authenticated
 Google Search and Google Images evidence, not language-model inference.
 
-See the [desktop user guide](docs/USER_GUIDE.md#how-ai-helps) for configuration,
-provider order, privacy notes, and log meanings.
+Provider keys are stored separately: switching providers does not copy one provider's
+credential into another, and clearing a key remains cleared after **Save and apply
+defaults** and restart. See the [desktop user guide](docs/USER_GUIDE.md#how-ai-helps)
+for configuration, fallback order, privacy notes, and log meanings.
 
 Album Enricher uses Wikipedia and Apple's public catalog by default. Users may add
 their own optional [SerpApi](https://serpapi.com/) key under **Global Settings** to use

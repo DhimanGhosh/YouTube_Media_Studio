@@ -88,6 +88,7 @@ def find_catalog_song_metadata(
                     "duration_seconds": str(
                         round(float(result.get("trackTimeMillis") or 0) / 1000, 3)
                     ),
+                    "genre": str(result.get("primaryGenreName") or "").strip(),
                     "language": _catalog_language(result.get("primaryGenreName")),
                 },
                 result,
@@ -141,6 +142,9 @@ def find_catalog_song_metadata(
         collection_language = _catalog_language(collection.get("primaryGenreName"))
         if collection_language:
             best["language"] = collection_language
+        collection_genre = str(collection.get("primaryGenreName") or "").strip()
+        if collection_genre:
+            best["genre"] = collection_genre
     return best
 
 

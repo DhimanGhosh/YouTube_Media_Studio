@@ -23,6 +23,9 @@ from youtube_audio_video_downloader.gui.main_window import MainWindow  # noqa: E
 from youtube_audio_video_downloader.gui.theme import APP_STYLE  # noqa: E402
 from youtube_audio_video_downloader.config.settings import machine_parallel_workers  # noqa: E402
 from youtube_audio_video_downloader.version import application_version  # noqa: E402
+from youtube_audio_video_downloader.services.album_editor import (  # noqa: E402
+    AlbumFolderMetadata,
+)
 
 
 class MainWindowGlobalAiUiTest(unittest.TestCase):
@@ -113,7 +116,18 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
             self.window.settings_serpapi_api_key.echoMode(),
             QLineEdit.EchoMode.Password,
         )
-        self.assertEqual(self.window.settings_nvidia_model.text(), "z-ai/glm-5.2")
+        self.assertEqual(self.window.settings_ai_provider.currentData(), "ollama")
+        self.assertFalse(self.window.settings_ai_model.isEnabled())
+        self.assertEqual(
+            {
+                self.window.settings_ai_provider.itemData(index)
+                for index in range(self.window.settings_ai_provider.count())
+            },
+            {
+                "ollama", "nvidia", "openai", "anthropic", "google", "groq",
+                "huggingface", "openrouter", "opencode", "custom",
+            },
+        )
         self.assertEqual(
             self.window.version_label.text(), f"Version {application_version()}"
         )
@@ -163,6 +177,28 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
             self.data_directory / "album_enrichment_tracker.json",
         )
 
+    def test_global_settings_are_grouped_into_persistent_collapsible_sections(self) -> None:
+        self.assertEqual(
+            set(self.window.settings_sections),
+            {
+                "batch_network",
+                "audio_metadata",
+                "ai_providers",
+                "behavior_privacy",
+                "storage_appearance",
+                "runtime_requirements",
+            },
+        )
+        self.assertFalse(self.window.settings_sections["batch_network"].body.isHidden())
+        self.assertTrue(self.window.settings_sections["audio_metadata"].body.isHidden())
+
+        self.window.settings_sections["audio_metadata"].set_expanded(True)
+        self.assertTrue(
+            self.window.settings.value(
+                "ui/settings_sections/audio_metadata", False, type=bool
+            )
+        )
+
     def test_serpapi_key_is_saved_and_applied_without_operation_parameters(self) -> None:
         self.window.settings_serpapi_api_key.setText("serpapi-secret")
 
@@ -194,6 +230,9 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         )
 
     def test_cleared_nvidia_key_remains_cleared_after_save_and_restart(self) -> None:
+        self.window.settings_ai_provider.setCurrentIndex(
+            self.window.settings_ai_provider.findData("nvidia")
+        )
         self.window.settings_nvidia_api_key.setText("")
         os.environ["NVIDIA_API_KEY"] = "nvapi-old-value"
 
@@ -205,6 +244,39 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
 
         self.assertEqual(self.window.settings.value("defaults/nvidia_api_key"), "")
         self.assertNotIn("NVIDIA_API_KEY", os.environ)
+
+    def test_provider_specific_credentials_are_isolated_and_applied(self) -> None:
+        self.window.settings_ai_provider.setCurrentIndex(
+            self.window.settings_ai_provider.findData("openai")
+        )
+        self.window.settings_ai_api_key.setText("openai-secret")
+        self.window.settings_ai_model.setText("gpt-test")
+        self.window.settings_ai_provider.setCurrentIndex(
+            self.window.settings_ai_provider.findData("huggingface")
+        )
+        self.assertNotEqual(self.window.settings_ai_api_key.text(), "openai-secret")
+        self.window.settings_ai_api_key.setText("hf-secret")
+        self.window.settings_ai_model.setText("org/model:fastest")
+
+        with (
+            patch.object(self.window, "_save_data_directory", return_value=False),
+            patch.object(QMessageBox, "information"),
+        ):
+            self.window._save_defaults()
+
+        self.assertEqual(self.window.settings.value("defaults/ai_provider"), "huggingface")
+        self.assertEqual(
+            self.window.settings.value("defaults/ai_providers/openai/api_key"),
+            "openai-secret",
+        )
+        self.assertEqual(
+            self.window.settings.value("defaults/ai_providers/huggingface/api_key"),
+            "hf-secret",
+        )
+        self.assertEqual(
+            os.environ.get("YOUTUBE_MEDIA_STUDIO_AI_PROVIDER"), "huggingface"
+        )
+        self.assertEqual(os.environ.get("YOUTUBE_MEDIA_STUDIO_AI_API_KEY"), "hf-secret")
 
         os.environ["NVIDIA_API_KEY"] = "nvapi-restored-by-launch-environment"
         self.window._configure_ai_from_settings()
@@ -258,7 +330,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         library.queue_list.setCurrentRow(0)
         self.window.track_reorder_list.addItem("Selected reorder song")
         self.window.track_reorder_list.setCurrentRow(0)
-        self.window._set_page(12)
+        self.window._set_page(13)
         self.window.show()
         self.app.processEvents()
 
@@ -274,7 +346,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         library.folder_list.addItem("C:/Music")
         library.folder_list.setCurrentRow(0)
         library.queue_list.addItem("Queue song")
-        self.window._set_page(12)
+        self.window._set_page(13)
         library.queue_toggle_button.setChecked(True)
         self.window.show()
         self.app.processEvents()
@@ -294,7 +366,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         library = self.window.media_library
         library.queue_list.addItem("Queue song")
         library.queue_list.setCurrentRow(0)
-        self.window._set_page(12)
+        self.window._set_page(13)
         library.queue_toggle_button.setChecked(True)
         self.window.show()
         self.app.processEvents()
@@ -325,7 +397,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
 
         self.window._open_library_album_enricher(str(album))
 
-        self.assertEqual(self.window.pages.currentIndex(), 8)
+        self.assertEqual(self.window.pages.currentIndex(), 9)
         self.assertEqual(self.window.album_consolidator_source.text(), str(album))
         self.assertEqual(
             self.window.album_consolidator_destination.text(), "D:/Do not change"
@@ -334,6 +406,57 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         self.window._open_library_track_reorder(str(album))
         self.assertEqual(self.window.pages.currentIndex(), 6)
         self.assertEqual(self.window.track_reorder_folder.text(), str(album))
+
+    def test_library_album_handoff_opens_bulk_album_editor(self) -> None:
+        album = self.data_directory / "Album (2024)"
+        album.mkdir()
+        with patch.object(self.window, "_load_edit_album_folder") as load:
+            self.window._edit_library_album(str(album))
+
+        self.assertEqual(self.window.pages.currentIndex(), 8)
+        self.assertEqual(self.window.edit_album_folder.text(), str(album))
+        load.assert_called_once_with(str(album))
+
+    def test_album_editor_confirms_and_starts_one_bulk_operation(self) -> None:
+        album = self.data_directory / "Album"
+        album.mkdir()
+        summary = AlbumFolderMetadata(
+            album,
+            (album / "one.mp3", album / "two.flac"),
+            "Old Album",
+            "2000",
+            "Old Artist",
+        )
+        self.window.edit_album_folder.set_text(str(album))
+        self.window.edit_album_name.setText("New Album")
+        self.window.edit_album_year.setText("2026")
+        self.window.edit_album_artist.setText("New Album Artist")
+        with (
+            patch(
+                "youtube_audio_video_downloader.gui.main_window.inspect_album_folder",
+                return_value=summary,
+            ),
+            patch.object(
+                QMessageBox,
+                "question",
+                return_value=QMessageBox.StandardButton.Yes,
+            ),
+            patch.object(self.window, "_start_operation") as start,
+        ):
+            self.window._start_edit_album()
+
+        start.assert_called_once()
+        operation, params = start.call_args.args
+        self.assertEqual(operation, "edit_album")
+        self.assertEqual(
+            params["metadata"],
+            {
+                "album": "New Album",
+                "year": "2026",
+                "album_artist": "New Album Artist",
+            },
+        )
+        self.assertFalse(params["ai_enabled"])
 
     def test_album_enricher_name_is_used_in_the_workspace(self) -> None:
         labels = {
@@ -347,7 +470,29 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         self.assertIn("1. Album enricher", labels)
         self.assertIn("Run album enricher", buttons)
 
+    def test_move_enrichment_is_default_on_and_can_be_disabled(self) -> None:
+        self.assertTrue(self.window.album_move_perform_enrichment.isChecked())
+        self.assertTrue(self.window.album_move_enrich_all_destination.isEnabled())
+
+        self.window.album_move_perform_enrichment.setChecked(False)
+        params = self.window._album_consolidator_params()
+
+        self.assertFalse(params["perform_enrichment"])
+        self.assertFalse(self.window.album_move_enrich_all_destination.isEnabled())
+
+        self.window._save_workspace_state()
+        self.assertFalse(
+            self.window.settings.value(
+                "workspace/album_move_perform_enrichment", type=bool
+            )
+        )
+
+    def test_reset_restores_move_enrichment_default(self) -> None:
         reset_data = self.data_directory / "portable" / "YouTubeMediaStudioData"
+        self.window.album_move_perform_enrichment.setChecked(False)
+        self.window.settings_ai_provider.setCurrentIndex(
+            self.window.settings_ai_provider.findData("nvidia")
+        )
         self.window.settings_nvidia_api_key.setText("nvapi-secret")
         self.window.settings_serpapi_api_key.setText("serpapi-secret")
         self.window.settings_nvidia_model.setText("hosted:model")
@@ -380,6 +525,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         self.assertEqual(self.window.settings_nvidia_api_key.text(), "")
         self.assertEqual(self.window.settings_serpapi_api_key.text(), "")
         self.assertEqual(self.window.settings_nvidia_model.text(), "")
+        self.assertEqual(self.window.settings_ai_provider.currentData(), "ollama")
         self.assertEqual(self.window.settings_agentic_model.currentText(), "")
         self.assertEqual(self.window.settings_workers.value(), machine_parallel_workers())
         self.assertEqual(self.window.settings_data_directory.text(), str(reset_data))
@@ -388,6 +534,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         self.assertEqual(self.window.track_reorder_folder.text(), "")
         self.assertEqual(self.window.edit_file_input.text(), "")
         self.assertEqual(self.window.album_consolidator_source.text(), "")
+        self.assertTrue(self.window.album_move_perform_enrichment.isChecked())
         self.assertEqual(self.window.media_library.folder_list.count(), 0)
         self.assertIn("STATIC FALLBACK", self.window.ai_status_badge.text())
 
