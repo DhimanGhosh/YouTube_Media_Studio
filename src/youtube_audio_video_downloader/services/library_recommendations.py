@@ -320,7 +320,7 @@ def _promote_evidence_languages(
         languages=tuple(dict.fromkeys((*plan.languages, *promoted))),
         semantic_filters=tuple(remaining),
         time_preference=plan.time_preference,
-        use_web_evidence=True,
+        use_web_evidence=plan.use_web_evidence,
     )
 
 
