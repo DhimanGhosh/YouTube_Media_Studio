@@ -15,8 +15,11 @@ abbreviated hashes to the next version section.
 - Add selectable Ollama, NVIDIA NIM, OpenAI, Anthropic, Google Gemini, Groq, Hugging
   Face Inference, OpenRouter, OpenCode Zen, and custom OpenAI-compatible providers with
   independent saved credentials and local Ollama fallback.
-- Add Edit Album for atomically applying album, year, and album artist across an album
-  folder, including album-level Media Library context actions.
+- Add Edit Album for atomically applying album, year, and the same track artist(s) across
+  every song in an album folder, then safely rebuilding each filename from the preserved
+  title and new shared identity, including album-level Media Library context actions.
+- Add a visible Smart Library Curator result-count control, natural-language count
+  overrides, and Start mix playback that continues with verified same-language tracks.
 
 ### Changed
 
@@ -24,6 +27,8 @@ abbreviated hashes to the next version section.
   save/reset actions and provider-specific controls.
 - Let Album Consolidator skip a repeated enrichment pass while still routing files and
   applying verified track indexing.
+- Simplify Global Settings section labels and remove the generic Runtime requirements
+  accordion from that page.
 
 ### Fixed
 
@@ -32,6 +37,17 @@ abbreviated hashes to the next version section.
   selected hosted model cannot complete a request.
 - Cap application Ollama requests at a 16K context window so models do not allocate an
   unused 262K KV cache and spill inference onto CPU on common GPUs.
+- Display and invoke the saved hosted provider and model in Smart Library Curator instead
+  of incorrectly reporting the Ollama fallback identity.
+- Reject curator language matches that conflict with or lack independent catalog/web
+  evidence, preventing Hindi tracks from being labeled as Bengali by model assertion.
+- Require the same independent corroboration for requested mood, activity, style, energy,
+  and tempo filters, preventing upbeat tracks from being asserted as slow and suppressing
+  unrequested model-invented traits from result explanations.
+- Pass the configured library suggestion count into the curator instead of silently using
+  its internal eight-result default.
+- Replace Qt mnemonic ampersands in Global Settings titles so section names no longer
+  render with stray underscores.
 
 ## [2.3.0] - 2026-08-10
 

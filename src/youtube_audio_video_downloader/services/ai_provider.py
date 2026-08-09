@@ -13,8 +13,10 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from youtube_audio_video_downloader.services.ai_provider_registry import (
+    AI_PROVIDER_API_KEY_ENV,
     AI_PROVIDER_ENV,
     AI_PROVIDER_MODEL_ENV,
+    provider_definition,
 )
 
 
@@ -107,12 +109,26 @@ def _finish_nvidia_probe(*, available: bool) -> None:
 def configured_primary_model(requested_model: str = "") -> str:
     """Return the selected provider model, otherwise the Ollama fallback model."""
 
+    return configured_primary_identity(requested_model)[1]
+
+
+def configured_primary_identity(requested_model: str = "") -> tuple[str, str]:
+    """Return the provider label and model that will actually receive the request."""
+
     provider = os.environ.get(AI_PROVIDER_ENV, "").strip().casefold()
     if provider and provider not in {"ollama", "nvidia"}:
-        return os.environ.get(AI_PROVIDER_MODEL_ENV, "").strip() or requested_model.strip()
+        provider_key = os.environ.get(AI_PROVIDER_API_KEY_ENV, "").strip()
+        if provider_key or provider == "custom":
+            model = (
+                os.environ.get(AI_PROVIDER_MODEL_ENV, "").strip()
+                or requested_model.strip()
+            )
+            return provider_definition(provider).label, model
     if os.environ.get(NVIDIA_API_KEY_ENV, "").strip():
-        return os.environ.get(NVIDIA_MODEL_ENV, "").strip() or requested_model.strip()
-    return os.environ.get(OLLAMA_MODEL_ENV, "").strip() or requested_model.strip()
+        model = os.environ.get(NVIDIA_MODEL_ENV, "").strip() or requested_model.strip()
+        return "NVIDIA NIM", model
+    model = os.environ.get(OLLAMA_MODEL_ENV, "").strip() or requested_model.strip()
+    return "Ollama", model
 
 
 def chat_json(

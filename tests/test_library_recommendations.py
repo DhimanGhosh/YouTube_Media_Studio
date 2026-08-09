@@ -175,7 +175,13 @@ class LibraryRecommendationsTest(unittest.TestCase):
             patch(
                 "youtube_audio_video_downloader.services.library_recommendations."
                 "_collect_catalog_evidence",
-                return_value={1: {"language": "Hindi", "genre": "Bollywood"}},
+                return_value={
+                    1: {
+                        "language": "Hindi",
+                        "genre": "Bollywood dance",
+                        "web_search_excerpts": "A high-energy upbeat dance track.",
+                    }
+                },
             ) as evidence_mock,
         ):
             result = recommend_library_tracks(
@@ -197,35 +203,205 @@ class LibraryRecommendationsTest(unittest.TestCase):
             track("old-hindi.mp3", "Purana Gana", "Singer B", year=1980),
             track("new-bengali.mp3", "Notun Gaan", "Singer C", year=2024),
         ]
-        with patch(
-            "youtube_audio_video_downloader.services.library_recommendations."
-            "run_structured_agent",
-            side_effect=[
-                plan(languages=["Bengali"], time_preference="older"),
-                response(
-                    {
-                        "matches": [
-                            {
-                                "id": 0,
-                                "matches": True,
-                                "confidence": 0.9,
-                                "matched_filters": ["Bengali"],
-                            },
-                            {
-                                "id": 1,
-                                "matches": False,
-                                "confidence": 0.9,
-                                "matched_filters": [],
-                            },
-                        ]
-                    }
-                ),
-                response({"ids": [0]}),
-            ],
+        with (
+            patch(
+                "youtube_audio_video_downloader.services.library_recommendations."
+                "run_structured_agent",
+                side_effect=[
+                    plan(languages=["Bengali"], time_preference="older"),
+                    response(
+                        {
+                            "matches": [
+                                {
+                                    "id": 0,
+                                    "matches": True,
+                                    "confidence": 0.9,
+                                    "matched_filters": ["Bengali"],
+                                },
+                                {
+                                    "id": 1,
+                                    "matches": False,
+                                    "confidence": 0.9,
+                                    "matched_filters": [],
+                                },
+                            ]
+                        }
+                    ),
+                    response({"ids": [0]}),
+                ],
+            ),
+            patch(
+                "youtube_audio_video_downloader.services.library_recommendations."
+                "_collect_catalog_evidence",
+                return_value={0: {"language": "Bengali"}},
+            ),
         ):
             result = recommend_library_tracks("old bengali songs", items, model="model")
         self.assertEqual([value.item.title for value in result], ["Purono Gaan"])
         self.assertIn("older release (1970)", result[0].reason)
+
+    def test_language_claim_without_matching_evidence_is_rejected(self) -> None:
+        items = [
+            track("hindi.mp3", "Aur Mohabbat Kitni Karoon", "Singer A"),
+            track("bengali.mp3", "Bengali Song", "Singer B"),
+        ]
+        semantic = response(
+            {
+                "matches": [
+                    {
+                        "id": index,
+                        "matches": True,
+                        "confidence": 0.95,
+                        "matched_filters": ["Bengali", "slow"],
+                    }
+                    for index in range(2)
+                ]
+            }
+        )
+        with (
+            patch(
+                "youtube_audio_video_downloader.services.library_recommendations."
+                "run_structured_agent",
+                side_effect=[
+                    plan(languages=["Bengali"], semantic_filters=["slow"]),
+                    semantic,
+                    response({"ids": [0]}),
+                ],
+            ),
+            patch(
+                "youtube_audio_video_downloader.services.library_recommendations."
+                "_collect_catalog_evidence",
+                side_effect=lambda candidates, _filters: {
+                    index: {
+                        "language": (
+                            "Hindi"
+                            if item.title == "Aur Mohabbat Kitni Karoon"
+                            else "Bengali"
+                        ),
+                        "web_search_excerpts": (
+                            "A slow Bengali ballad."
+                            if item.title == "Bengali Song"
+                            else "A Hindi romantic song."
+                        ),
+                    }
+                    for index, item in enumerate(candidates)
+                },
+            ),
+        ):
+            result = recommend_library_tracks("slow bengali songs", items, model="model")
+
+        self.assertEqual([value.item.title for value in result], ["Bengali Song"])
+
+    def test_slow_claim_is_rejected_when_evidence_says_upbeat(self) -> None:
+        items = [
+            track("slow.mp3", "Verified Slow Song", "Singer A"),
+            track("upbeat.mp3", "Kichu Halka", "Singer B"),
+        ]
+        semantic = response(
+            {
+                "matches": [
+                    {
+                        "id": index,
+                        "matches": True,
+                        "confidence": 0.95,
+                        "matched_filters": ["Bengali", "slow", "sleeping", "ballad"],
+                    }
+                    for index in range(2)
+                ]
+            }
+        )
+        with (
+            patch(
+                "youtube_audio_video_downloader.services.library_recommendations."
+                "run_structured_agent",
+                side_effect=[
+                    plan(languages=["Bengali"], semantic_filters=["slow"]),
+                    semantic,
+                    response({"ids": [0]}),
+                ],
+            ),
+            patch(
+                "youtube_audio_video_downloader.services.library_recommendations."
+                "_collect_catalog_evidence",
+                side_effect=lambda candidates, _filters: {
+                    index: {
+                        "language": "Bengali",
+                        "web_search_excerpts": (
+                            "A slow Bengali song with low tempo."
+                            if item.title == "Verified Slow Song"
+                            else "An upbeat high-energy Bengali travel song."
+                        ),
+                    }
+                    for index, item in enumerate(candidates)
+                },
+            ),
+        ):
+            result = recommend_library_tracks("slow bengali songs", items, model="model")
+
+        self.assertEqual([value.item.title for value in result], ["Verified Slow Song"])
+        self.assertNotIn("sleeping", result[0].reason.casefold())
+        self.assertNotIn("ballad", result[0].reason.casefold())
+
+    def test_mix_continuation_preserves_language_but_relaxes_mood(self) -> None:
+        items = [track("bengali.mp3", "Another Bengali Song", "Singer B")]
+        with (
+            patch(
+                "youtube_audio_video_downloader.services.library_recommendations."
+                "run_structured_agent",
+                side_effect=[
+                    plan(languages=["Bengali"], semantic_filters=["slow"]),
+                    response(
+                        {
+                            "matches": [
+                                {
+                                    "id": 0,
+                                    "matches": True,
+                                    "confidence": 0.95,
+                                    "matched_filters": ["Bengali"],
+                                }
+                            ]
+                        }
+                    ),
+                    response({"ids": [0]}),
+                ],
+            ) as agent_mock,
+            patch(
+                "youtube_audio_video_downloader.services.library_recommendations."
+                "_collect_catalog_evidence",
+                return_value={0: {"language": "Bengali"}},
+            ),
+        ):
+            result = recommend_library_tracks(
+                "slow bengali songs",
+                items,
+                model="model",
+                language_continuation=True,
+            )
+
+        verifier_call = agent_mock.call_args_list[1]
+        self.assertEqual(verifier_call.kwargs["input_data"]["filters"], ("Bengali",))
+        self.assertEqual(
+            verifier_call.kwargs["input_data"]["request"],
+            "Songs in requested language(s): Bengali",
+        )
+        self.assertEqual([value.item.title for value in result], ["Another Bengali Song"])
+
+    def test_mix_continuation_without_a_planned_language_stops_after_planning(self) -> None:
+        items = [track("song.mp3", "A Song", "Singer")]
+        with patch(
+            "youtube_audio_video_downloader.services.library_recommendations."
+            "run_structured_agent",
+            return_value=plan(semantic_filters=["slow"]),
+        ) as agent_mock:
+            result = recommend_library_tracks(
+                "slow songs",
+                items,
+                model="model",
+                language_continuation=True,
+            )
+
+        self.assertEqual(result, [])
+        agent_mock.assert_called_once()
 
     def test_requested_artist_with_no_matching_local_track_stops_after_planning(self) -> None:
         items = [track("atif.mp3", "Atif Song", "Atif Aslam")]

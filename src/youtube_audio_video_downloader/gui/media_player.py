@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import random
+import re
 import sys
 import time
 from pathlib import Path
 from ctypes import wintypes
+from typing import Callable
 
 from PyQt6.QtCore import (
     QEasingCurve,
@@ -80,7 +82,7 @@ from youtube_audio_video_downloader.services.library_recommendations import (
     LibraryRecommendation,
     recommend_library_tracks,
 )
-from youtube_audio_video_downloader.services.ai_provider import configured_primary_model
+from youtube_audio_video_downloader.services.ai_provider import configured_primary_identity
 
 
 class LibraryScanner(QObject):
@@ -165,18 +167,30 @@ class LibraryRecommendationWorker(QObject):
     finished = pyqtSignal(object, str)
 
     def __init__(
-        self, request_text: str, items: list[LibraryItem], model: str
+        self,
+        request_text: str,
+        items: list[LibraryItem],
+        model: str,
+        limit: int,
+        *,
+        language_continuation: bool = False,
     ) -> None:
         super().__init__()
         self.request_text = request_text
         self.items = items
         self.model = model
+        self.limit = limit
+        self.language_continuation = language_continuation
 
     @pyqtSlot()
     def run(self) -> None:
         try:
             result = recommend_library_tracks(
-                self.request_text, self.items, model=self.model
+                self.request_text,
+                self.items,
+                model=self.model,
+                limit=self.limit,
+                language_continuation=self.language_continuation,
             )
         except Exception as exc:  # worker boundary must report failures to the UI
             self.finished.emit([], str(exc))
@@ -481,6 +495,7 @@ class MediaLibraryPage(QWidget):
     def __init__(self, settings: QSettings, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.settings = settings
+        self.ai_identity_resolver: Callable[[], tuple[str, str]] | None = None
         self.items: list[LibraryItem] = []
         self.filtered: list[LibraryItem] = []
         self.queue: list[LibraryItem] = []
@@ -507,6 +522,7 @@ class MediaLibraryPage(QWidget):
         self._recommendation_thread: QThread | None = None
         self._recommendation_worker: LibraryRecommendationWorker | None = None
         self._last_recommendation_request = ""
+        self._last_recommendations: list[LibraryRecommendation] = []
         self._search_request_id = 0
         self._applied_query = ""
         self._search_pending = False
@@ -654,6 +670,14 @@ class MediaLibraryPage(QWidget):
             self.request_ai_recommendations
         )
         row.addWidget(self.recommendation_request, 1)
+        self.recommendation_limit = QSpinBox()
+        self.recommendation_limit.setRange(1, 20)
+        self.recommendation_limit.setValue(self._suggestion_limit)
+        self.recommendation_limit.setSuffix(" results")
+        self.recommendation_limit.setToolTip(
+            "Maximum exact matches to display; a number in the request overrides this value."
+        )
+        row.addWidget(self.recommendation_limit)
         self.recommendation_button = QPushButton(
             "Find in my library"
             if self.recommendation_ai_enabled.isChecked()
@@ -662,6 +686,14 @@ class MediaLibraryPage(QWidget):
         self.recommendation_button.setObjectName("primaryButton")
         self.recommendation_button.clicked.connect(self.request_ai_recommendations)
         row.addWidget(self.recommendation_button)
+        self.start_mix_button = QPushButton("Start mix")
+        self.start_mix_button.setObjectName("secondaryButton")
+        self.start_mix_button.setEnabled(False)
+        self.start_mix_button.setToolTip(
+            "Play exact matches first, then continue with verified tracks in the same language."
+        )
+        self.start_mix_button.clicked.connect(self.start_recommendation_mix)
+        row.addWidget(self.start_mix_button)
         self.online_recommendation_button = QPushButton("Search YouTube too")
         self.online_recommendation_button.setObjectName("secondaryButton")
         self.online_recommendation_button.clicked.connect(
@@ -715,23 +747,63 @@ class MediaLibraryPage(QWidget):
         if not self.items:
             self.recommendation_status.setText("Library is empty")
             return
-        model = configured_primary_model(
-            str(self.settings.value("defaults/agentic_model", "qwen2.5:7b") or "")
-        )
+        provider, model, identity = self._resolve_ai_identity()
         self._last_recommendation_request = request_text
+        requested_limit = _requested_result_limit(
+            request_text, self.recommendation_limit.value()
+        )
         self.recommendation_button.setEnabled(False)
-        self.recommendation_status.setText(f"AI working · {model or 'not configured'}")
+        self.recommendation_status.setText(
+            f"AI working · {identity or 'not configured'}"
+        )
         self.recommendations.clear()
         self.recommendations.setVisible(False)
         log_diagnostic(
             "AI-START",
-            f"Library recommendations | model={model!r} items={len(self.items)}",
+            f"Library recommendations | provider={provider!r} "
+            f"model={model!r} items={len(self.items)}",
         )
+        self._run_recommendation_worker(
+            request_text,
+            self.items,
+            model,
+            requested_limit,
+            finished_slot=self._recommendations_finished,
+        )
+
+    def _resolve_ai_identity(self) -> tuple[str, str, str]:
+        fallback_model = str(
+            self.settings.value("defaults/agentic_model", "qwen2.5:7b") or ""
+        )
+        provider, model = (
+            self.ai_identity_resolver()
+            if self.ai_identity_resolver is not None
+            else configured_primary_identity(fallback_model)
+        )
+        identity = " · ".join(value for value in (provider, model) if value)
+        return provider, model, identity
+
+    def _run_recommendation_worker(
+        self,
+        request_text: str,
+        items: list[LibraryItem],
+        model: str,
+        limit: int,
+        *,
+        finished_slot: Callable[[object, str], None],
+        language_continuation: bool = False,
+    ) -> None:
         thread = QThread(self)
-        worker = LibraryRecommendationWorker(request_text, list(self.items), model)
+        worker = LibraryRecommendationWorker(
+            request_text,
+            list(items),
+            model,
+            limit,
+            language_continuation=language_continuation,
+        )
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
-        worker.finished.connect(self._recommendations_finished)
+        worker.finished.connect(finished_slot)
         worker.finished.connect(thread.quit)
         worker.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
@@ -754,6 +826,8 @@ class MediaLibraryPage(QWidget):
             if isinstance(result, list)
             else []
         )
+        self._last_recommendations = recommendations if not error else []
+        self.start_mix_button.setEnabled(bool(self._last_recommendations))
         if error:
             self.recommendation_status.setText("AI unavailable")
             self.recommendations.addItem(f"Could not create suggestions: {error}")
@@ -795,9 +869,64 @@ class MediaLibraryPage(QWidget):
             return
         self.recommendation_request.clear()
         self._last_recommendation_request = ""
+        self._last_recommendations.clear()
+        self.start_mix_button.setEnabled(False)
         self.recommendations.clear()
         self.recommendations.setVisible(False)
         self.recommendation_status.setText("AI idle")
+
+    def start_recommendation_mix(self) -> None:
+        """Queue exact matches, then find verified same-language continuation tracks."""
+
+        if self._recommendation_thread is not None or not self._last_recommendations:
+            return
+        exact = [
+            value.item for value in self._last_recommendations
+            if value.exists_locally
+        ]
+        if not exact:
+            self.recommendation_status.setText("Matching local files are missing")
+            return
+        self._replace_queue(exact)
+        exact_paths = {item.path.casefold() for item in exact}
+        remaining = [
+            item for item in self.items if item.path.casefold() not in exact_paths
+        ]
+        if not remaining:
+            self.recommendation_status.setText(f"Mix started · {len(exact)} track(s)")
+            return
+        _provider, model, identity = self._resolve_ai_identity()
+        self.start_mix_button.setEnabled(False)
+        self.recommendation_status.setText(
+            f"Mix started · {identity} · finding continuation tracks"
+        )
+        self._run_recommendation_worker(
+            self._last_recommendation_request,
+            remaining,
+            model,
+            20,
+            language_continuation=True,
+            finished_slot=self._finish_recommendation_mix,
+        )
+
+    def _finish_recommendation_mix(
+        self, result: object, error: str
+    ) -> None:
+        self._recommendation_worker = None
+        recommendations = (
+            [value for value in result if isinstance(value, LibraryRecommendation)]
+            if isinstance(result, list)
+            else []
+        )
+        continuation = [value.item for value in recommendations if value.exists_locally]
+        added = self._append_to_queue(continuation)
+        self.start_mix_button.setEnabled(bool(self._last_recommendations))
+        suffix = f" · {added} related track(s) queued" if added else ""
+        if error:
+            suffix = " · continuation unavailable"
+        self.recommendation_status.setText(
+            f"Mix playing {len(self.queue)} track(s){suffix}"
+        )
 
     def reset_page(self) -> bool:
         """Clear library configuration and UI state without deleting media files."""
@@ -1515,6 +1644,8 @@ class MediaLibraryPage(QWidget):
     def set_suggestion_limit(self, value: int) -> None:
         self._suggestion_limit = max(1, min(20, int(value)))
         self.search_completer.setMaxVisibleItems(self._suggestion_limit)
+        if hasattr(self, "recommendation_limit"):
+            self.recommendation_limit.setValue(self._suggestion_limit)
         self._schedule_search()
 
     def _populate_table(
@@ -2405,6 +2536,32 @@ class MediaLibraryPage(QWidget):
 def _suggestion_text(item: LibraryItem) -> str:
     year = f" ({item.year})" if item.year else ""
     return f"{item.title} — {item.artists} • {item.album}{year}"
+
+
+_MIN_RECOMMENDATION_RESULTS = 1
+_MAX_RECOMMENDATION_RESULTS = 20
+
+
+def _clamp_recommendation_results(value: int) -> int:
+    return max(
+        _MIN_RECOMMENDATION_RESULTS,
+        min(_MAX_RECOMMENDATION_RESULTS, int(value)),
+    )
+
+
+def _requested_result_limit(request: str, fallback: int) -> int:
+    """Honor an explicit 'N results/tracks/songs' count without involving the model."""
+
+    patterns = (
+        r"\b(?:return|show|give|find|suggest|play)\s+(?:me\s+)?(\d{1,2})"
+        r"\s+(?:results?|songs?|tracks?|matches?)\b",
+        r"\b(\d{1,2})\s+(?:results?|songs?|tracks?|matches?)\b",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, request, flags=re.IGNORECASE)
+        if match:
+            return _clamp_recommendation_results(int(match.group(1)))
+    return _clamp_recommendation_results(fallback)
 
 
 def _match_rank(item: LibraryItem, query: str) -> tuple[int, int, str]:

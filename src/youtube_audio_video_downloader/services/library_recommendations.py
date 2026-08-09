@@ -20,8 +20,8 @@ from youtube_audio_video_downloader.services.music_web_evidence import (
 
 MAX_LIBRARY_CANDIDATES = 750
 MAX_SEMANTIC_CANDIDATES = 120
-MAX_EVIDENCE_LOOKUPS = 16
-MAX_RECOMMENDATIONS = 12
+MAX_EVIDENCE_LOOKUPS = 20
+MAX_RECOMMENDATIONS = 20
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,6 +82,7 @@ def recommend_library_tracks(
     model: str,
     limit: int = 8,
     timeout: float = 90,
+    language_continuation: bool = False,
 ) -> list[LibraryRecommendation]:
     """Plan, filter, verify, and rank a natural-language local-library request."""
 
@@ -101,6 +102,14 @@ def recommend_library_tracks(
         request_text, all_items, literal_artists=literal_artists,
         model=selected_model, timeout=timeout,
     )
+    if language_continuation:
+        plan = _QueryPlan(
+            languages=plan.languages,
+            use_web_evidence=bool(plan.languages),
+        )
+        if not plan.languages:
+            return []
+        request_text = "Songs in requested language(s): " + ", ".join(plan.languages)
     print(
         "[AI-AGENT] Library query planner | "
         f"artists={list(plan.artists)} languages={list(plan.languages)} "
@@ -132,6 +141,8 @@ def recommend_library_tracks(
     )
     verified = _verify_semantics(
         request_text, semantic_candidates, semantic_filters, evidence,
+        languages=plan.languages,
+        semantic_filters=plan.semantic_filters,
         model=selected_model, timeout=timeout,
     )
     if verified is not None:
@@ -229,6 +240,8 @@ def _verify_semantics(
     filters: tuple[str, ...],
     evidence: dict[int, dict[str, str]],
     *,
+    languages: tuple[str, ...],
+    semantic_filters: tuple[str, ...],
     model: str,
     timeout: float,
 ) -> tuple[list[LibraryItem], dict[int, tuple[str, ...]]] | None:
@@ -244,10 +257,12 @@ def _verify_semantics(
                 "Treat the original request as authoritative and independently identify every "
                 "explicit musical constraint in it. Evaluate every catalog item against all of "
                 "those constraints, including any descriptor the planning agent omitted from "
-                "filters. Use indexed metadata, supplied internet catalog evidence, and reliable "
-                "general musical knowledge. matches may be true only when the item satisfies the "
+                "filters. Use indexed metadata and supplied internet catalog evidence. Do not "
+                "substitute unsupported general musical knowledge. matches may be true only when the item satisfies the "
                 "whole original request. Be conservative when identity is ambiguous; never "
-                "invent IDs. Judge activity, energy, and tempo from the music itself—not video "
+                "invent IDs. Language claims must be supported by the supplied catalog or web "
+                "evidence; never infer language from a singer's nationality, other songs, or "
+                "general popularity. Judge activity, energy, and tempo from the music itself—not video "
                 "choreography, actors dancing, search-result SEO, or the presence of a word in "
                 "a title. matched_filters must list every provided filter plus every explicit "
                 "request descriptor that the item meets."
@@ -279,10 +294,18 @@ def _verify_semantics(
         matched = _clean_strings(row.matched_filters)
         if not _covers_filters(matched, filters):
             continue
+        if languages and not _evidence_supports_languages(
+            evidence.get(candidate_id, {}), languages
+        ):
+            continue
+        if semantic_filters and not _evidence_supports_semantic_filters(
+            evidence.get(candidate_id, {}), semantic_filters
+        ):
+            continue
         seen.add(candidate_id)
         item = candidates[candidate_id]
         selected.append(item)
-        reasons[id(item)] = matched
+        reasons[id(item)] = filters
     return selected, reasons
 
 
@@ -507,6 +530,50 @@ def _covers_filters(matched: tuple[str, ...], requested: tuple[str, ...]) -> boo
         any(key == candidate or key in candidate or candidate in key for candidate in matched_keys)
         for key in (_text_key(value) for value in requested) if key
     )
+
+
+def _evidence_supports_languages(
+    evidence: dict[str, str], requested: tuple[str, ...]
+) -> bool:
+    """Require independent evidence for every requested language."""
+
+    requested_keys = tuple(key for value in requested if (key := _text_key(value)))
+    if not requested_keys:
+        return True
+    explicit_language = _text_key(evidence.get("language", ""))
+    if explicit_language:
+        return all(_values_overlap(value, explicit_language) for value in requested_keys)
+    corroboration = _evidence_corroboration_text(evidence)
+    return bool(corroboration) and all(
+        value in corroboration for value in requested_keys
+    )
+
+
+def _evidence_supports_semantic_filters(
+    evidence: dict[str, str], requested: tuple[str, ...]
+) -> bool:
+    """Require supplied public evidence for requested mood, style, or tempo traits."""
+
+    corroboration = _evidence_corroboration_text(evidence)
+    evidence_words = set(corroboration.split())
+    return bool(evidence_words) and all(
+        set(_text_key(value).split()).issubset(evidence_words)
+        for value in requested
+        if _text_key(value)
+    )
+
+
+def _evidence_corroboration_text(evidence: dict[str, str]) -> str:
+    return _text_key(
+        " ".join(
+            str(evidence.get(key, ""))
+            for key in ("genre", "web_search_excerpts")
+        )
+    )
+
+
+def _values_overlap(first: str, second: str) -> bool:
+    return first == second or first in second or second in first
 
 
 def _clean_strings(value: object) -> tuple[str, ...]:

@@ -98,6 +98,7 @@ from youtube_audio_video_downloader.services.ai_provider import (
     NVIDIA_MODEL_ENV,
     OLLAMA_MODEL_ENV,
     configure_ai_environment,
+    configured_primary_identity,
     configured_primary_model,
 )
 from youtube_audio_video_downloader.services.agno_provider import (
@@ -395,6 +396,7 @@ class MainWindow(QMainWindow):
         self.pages.addWidget(self._build_logs_page())
         self.pages.addWidget(self._build_settings_page())
         self.media_library = MediaLibraryPage(self.settings, self)
+        self.media_library.ai_identity_resolver = self._active_ai_identity
         self.media_library.request_search_song.connect(self._search_missing_library_song)
         self.media_library.request_edit_file.connect(self._edit_library_file)
         self.media_library.request_edit_album.connect(self._edit_library_album)
@@ -1709,8 +1711,9 @@ class MainWindow(QMainWindow):
         )
         card, outer, form = self._form_card(
             "Album-wide metadata",
-            "Titles, track artists, track numbers, artwork, filenames, and folder names are "
-            "preserved. Files in nested folders are included.",
+            "Titles, track numbers, artwork, and folder names are preserved. Album, year, "
+            "and Artist(s) replace those tags on every file; filenames are rebuilt from the "
+            "preserved title and new shared values, including nested folders.",
         )
         self.edit_album_folder = PathPicker(
             placeholder="Select the complete album folder",
@@ -1722,14 +1725,14 @@ class MainWindow(QMainWindow):
         self.edit_album_year.setMaxLength(4)
         self.edit_album_year.setPlaceholderText("Four-digit release year")
         self.edit_album_artist = QLineEdit()
-        self.edit_album_artist.setPlaceholderText("Album artist or compilation credit")
+        self.edit_album_artist.setPlaceholderText("Comma-separated artists for every track")
         self.edit_album_status = QLabel("Select an album folder to inspect its shared metadata.")
         self.edit_album_status.setObjectName("mutedLabel")
         self.edit_album_status.setWordWrap(True)
         form.addRow("Album folder", self.edit_album_folder)
         form.addRow("Album name", self.edit_album_name)
         form.addRow("Release year", self.edit_album_year)
-        form.addRow("Album artist", self.edit_album_artist)
+        form.addRow("Artist(s)", self.edit_album_artist)
         form.addRow("Folder status", self.edit_album_status)
 
         self._edit_album_load_timer = QTimer(self)
@@ -1779,7 +1782,7 @@ class MainWindow(QMainWindow):
             return
         self.edit_album_name.setText(summary.album)
         self.edit_album_year.setText(summary.year)
-        self.edit_album_artist.setText(summary.album_artist)
+        self.edit_album_artist.setText(summary.artists)
         mixed = (
             " · mixed values: " + ", ".join(field.replace("_", " ") for field in summary.mixed_fields)
             if summary.mixed_fields
@@ -1799,6 +1802,14 @@ class MainWindow(QMainWindow):
         if not album:
             QMessageBox.warning(self, "Album name required", "Enter the album name to apply.")
             return
+        artists = self.edit_album_artist.text().strip()
+        if not artists:
+            QMessageBox.warning(
+                self,
+                "Artist(s) required",
+                "Enter the artist value to apply to every track.",
+            )
+            return
         if year and not re.fullmatch(r"\d{4}", year):
             QMessageBox.warning(
                 self, "Invalid release year", "Release year must contain four digits or be blank."
@@ -1809,7 +1820,7 @@ class MainWindow(QMainWindow):
             "Apply album metadata?",
             f"Update album metadata in {len(summary.files)} file(s) inside:\n"
             f"{summary.folder}\n\nAlbum: {album}\nYear: {year or '(clear)'}\n"
-            f"Album artist: {self.edit_album_artist.text().strip() or '(clear)'}",
+            f"Artist(s) on every track: {artists}",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -1822,7 +1833,7 @@ class MainWindow(QMainWindow):
                 "metadata": {
                     "album": album,
                     "year": year,
-                    "album_artist": self.edit_album_artist.text().strip(),
+                    "artists": artists,
                 },
                 "ai_enabled": False,
             },
@@ -2345,7 +2356,7 @@ class MainWindow(QMainWindow):
 
         self.settings_sections: dict[str, CollapsibleSection] = {}
         batch_section, _batch_body, batch_form = self._settings_group(
-            "Batch processing & network",
+            "Batch processing and network",
             "Concurrency, pacing, retry, and rate-limit defaults used by download workflows.",
             "batch_network",
             expanded=True,
@@ -2360,7 +2371,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(batch_section)
 
         audio_section, _audio_body, audio_form = self._settings_group(
-            "Audio & metadata defaults",
+            "Audio and metadata defaults",
             "Output quality and deterministic album ordering applied across media workflows.",
             "audio_metadata",
             expanded=False,
@@ -2372,7 +2383,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(audio_section)
 
         ai_section, _ai_body, ai_form = self._settings_group(
-            "AI providers & online evidence",
+            "AI providers and online evidence",
             "Choose a local or hosted Agno provider. Hosted providers automatically fall back "
             "to the selected Ollama model. Credentials remain local and are never logged.",
             "ai_providers",
@@ -2389,7 +2400,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(ai_section)
 
         behavior_section, _behavior_body, behavior_form = self._settings_group(
-            "Application behavior & privacy",
+            "Application behavior and privacy",
             "Control workspace restoration, local diagnostics, and Media Library suggestion size.",
             "behavior_privacy",
             expanded=False,
@@ -2401,7 +2412,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(behavior_section)
 
         storage_section, storage_body, storage_form = self._settings_group(
-            "Storage & appearance",
+            "Storage and appearance",
             "Choose where persistent app data lives and tune the glass appearance.",
             "storage_appearance",
             expanded=False,
@@ -2423,24 +2434,6 @@ class MainWindow(QMainWindow):
         self.settings_sections["storage_appearance"] = storage_section
         layout.addWidget(storage_section)
 
-        requirements, requirements_body, _requirements_form = self._settings_group(
-            "Runtime requirements",
-            "Environment information for source and packaged desktop builds.",
-            "runtime_requirements",
-            expanded=False,
-        )
-        for requirement in (
-            "Packaged builds include Python, FFmpeg, FFprobe, Deno, and Python libraries.",
-            "Source runs install managed FFmpeg and Deno runtimes through uv sync.",
-            "Network access is required for YouTube metadata and media downloads.",
-            "Ollama is local; NVIDIA and SerpApi are optional hosted services.",
-        ):
-            label = QLabel(f"•  {requirement}")
-            label.setObjectName("mutedLabel")
-            label.setWordWrap(True)
-            requirements_body.addWidget(label)
-        self.settings_sections["runtime_requirements"] = requirements
-        layout.addWidget(requirements)
         layout.addStretch(1)
         return page
 
@@ -3251,6 +3244,17 @@ class MainWindow(QMainWindow):
             else str(saved_model or "").strip()
         )
 
+    def _active_ai_identity(self) -> tuple[str, str]:
+        """Refresh saved provider settings and return the effective task identity."""
+
+        self._configure_ai_from_settings()
+        saved_model = self.settings.value("defaults/agentic_model", None)
+        return configured_primary_identity(
+            DEFAULT_OLLAMA_MODEL
+            if saved_model is None
+            else str(saved_model or "").strip()
+        )
+
     def _configure_ai_from_settings(self) -> None:
         """Apply global provider settings before any workspace starts an AI task."""
 
@@ -3804,7 +3808,11 @@ class MainWindow(QMainWindow):
                 self.edit_album_name.setText(str(album_metadata.get("album", "") or ""))
                 self.edit_album_year.setText(str(album_metadata.get("year", "") or ""))
                 self.edit_album_artist.setText(
-                    str(album_metadata.get("album_artist", "") or "")
+                    str(
+                        album_metadata.get("artists")
+                        or album_metadata.get("album_artist")
+                        or ""
+                    )
                 )
             self.album_enrich_destination_enabled.setChecked(
                 self._setting_bool(
@@ -3902,7 +3910,7 @@ class MainWindow(QMainWindow):
                 {
                     "album": self.edit_album_name.text(),
                     "year": self.edit_album_year.text(),
-                    "album_artist": self.edit_album_artist.text(),
+                    "artists": self.edit_album_artist.text(),
                 },
                 ensure_ascii=False,
             ),

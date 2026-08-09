@@ -102,7 +102,7 @@ The provider order is:
 
 1. **Selected primary:** choose Ollama, NVIDIA NIM, OpenAI, Anthropic, Google Gemini,
    Groq, Hugging Face Inference, OpenRouter, OpenCode Zen, or a custom
-   OpenAI-compatible endpoint under **Global Settings → AI providers & online
+   OpenAI-compatible endpoint under **Global Settings → AI providers and online
    evidence**. Hosted keys are password-masked and never printed in operation logs.
    Each provider keeps its own key, model, and base-URL draft when you switch entries.
 2. **Ollama local fallback:** when a hosted provider cannot complete a request, Agno
@@ -142,7 +142,7 @@ item unchanged.
 | **Jukebox Splitter** | Splits a compilation containing tracks from different albums or artists. | Add the source, review each timestamped track and its individual metadata, then split and organize. |
 | **Track Reorder** | Applies a verified album order to existing local tracks. | Select an album folder, preview the proposed sequence, and apply it only after checking the matches. |
 | **Edit File** | Trims a local file and repairs its filename, tags, track number, or artwork. | Select a file, load its current values, change only the required fields or trim range, then save. |
-| **Edit Album** | Applies one album name, year, and album artist to every supported media file in a folder. | Browse an album folder, inspect the file count/current values, confirm the shared values, then apply them. Other tags and filenames are preserved. |
+| **Edit Album** | Applies one album name, year, and track artist value to every supported media file in a folder. | Browse an album folder, enter comma-separated artists, inspect the file count/current values, then confirm. Titles, track numbers, artwork, and the dedicated album-artist tag are preserved; filenames are safely rebuilt as `Title - Album (Year) - Artists`. |
 | **Album Consolidator** | Enriches local metadata and routes verified files into album folders. | Select the source, run the enricher, inspect review items, select a destination, then move verified tracks. |
 | **Utilities** | Checks duplicate source links, formats artist names, and converts timestamp text. | Choose the relevant tab, paste or load input, run the tool, then copy or save its result. |
 | **Live Logs** | Explains what an operation changed, skipped, or could not verify. | Filter or copy the relevant block when troubleshooting or reporting a bug. |
@@ -266,10 +266,16 @@ report the complete log block.
    library**. Agno plans the constraints, filters local artist/language/time metadata,
    gathers bounded public evidence when a semantic quality such as dance energy needs
    verification, and ranks only IDs in the scanned library.
-4. Play a result, add tracks to the queue, and use shuffle or repeat as required.
+4. Choose the visible result count or include a count in the request, such as `return 5
+   results`. Select **Start mix** to play the exact verified matches first and then append
+   other evidence-verified local tracks in the requested language with relaxed mood and
+   tempo constraints. Use shuffle or repeat as required.
 5. Use file and album context actions to edit metadata, enrich an album, reorder tracks,
    or open the containing folder.
-6. The curator never redirects automatically. If the local result is empty, select the
+6. Language, mood, style, activity, energy, and tempo are strict evidence gates: the
+   curator rejects a model claim when catalog or web evidence conflicts with or cannot
+   corroborate it. Only filters actually requested by the user appear in result reasons.
+7. The curator never redirects automatically. If the local result is empty, select the
    explicit **Search YouTube too** action only when you want an online search.
 
 The songs-and-videos table shows every matching scanned item; it does not truncate a
