@@ -65,6 +65,30 @@ def test_configured_primary_identity_reports_real_ollama_fallback(monkeypatch) -
     assert ai_provider.configured_primary_identity() == ("Ollama", "qwen:test")
 
 
+def test_configured_primary_identity_reports_nvidia(monkeypatch) -> None:
+    configure(monkeypatch)
+    monkeypatch.setenv(ai_provider.AI_PROVIDER_ENV, "nvidia")
+    monkeypatch.setenv(ai_provider.NVIDIA_API_KEY_ENV, "nvidia-secret")
+    monkeypatch.setenv(ai_provider.NVIDIA_MODEL_ENV, "nvidia-model")
+
+    assert ai_provider.configured_primary_identity() == (
+        "NVIDIA NIM",
+        "nvidia-model",
+    )
+
+
+def test_configured_primary_identity_reports_keyless_custom_provider(monkeypatch) -> None:
+    configure(monkeypatch)
+    monkeypatch.setenv(ai_provider.AI_PROVIDER_ENV, "custom")
+    monkeypatch.delenv(ai_provider.AI_PROVIDER_API_KEY_ENV, raising=False)
+    monkeypatch.setenv(ai_provider.AI_PROVIDER_MODEL_ENV, "custom-model")
+
+    assert ai_provider.configured_primary_identity() == (
+        "Custom OpenAI-compatible",
+        "custom-model",
+    )
+
+
 def test_nvidia_is_used_first_when_key_is_configured(monkeypatch) -> None:
     configure(monkeypatch, key="nvapi-secret")
     response = Response({"choices": [{"message": {"content": '{"answer":"nvidia"}'}}]})

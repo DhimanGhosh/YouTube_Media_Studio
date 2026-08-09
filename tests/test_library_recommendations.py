@@ -386,6 +386,23 @@ class LibraryRecommendationsTest(unittest.TestCase):
         )
         self.assertEqual([value.item.title for value in result], ["Another Bengali Song"])
 
+    def test_mix_continuation_without_a_planned_language_stops_after_planning(self) -> None:
+        items = [track("song.mp3", "A Song", "Singer")]
+        with patch(
+            "youtube_audio_video_downloader.services.library_recommendations."
+            "run_structured_agent",
+            return_value=plan(semantic_filters=["slow"]),
+        ) as agent_mock:
+            result = recommend_library_tracks(
+                "slow songs",
+                items,
+                model="model",
+                language_continuation=True,
+            )
+
+        self.assertEqual(result, [])
+        agent_mock.assert_called_once()
+
     def test_requested_artist_with_no_matching_local_track_stops_after_planning(self) -> None:
         items = [track("atif.mp3", "Atif Song", "Atif Aslam")]
         with patch(

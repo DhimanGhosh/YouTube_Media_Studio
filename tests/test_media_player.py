@@ -502,6 +502,9 @@ class MediaPlayerPageTest(unittest.TestCase):
         )
         self.page.items = [item]
         self.page.settings.setValue("defaults/agentic_model", "library-agent:test")
+        self.page.ai_identity_resolver = Mock(
+            return_value=("Groq", "openai/gpt-oss-120b")
+        )
         expected = [LibraryRecommendation(item, "Artist matches the request", True)]
         with patch(
             "youtube_audio_video_downloader.gui.media_player.recommend_library_tracks",
@@ -513,8 +516,9 @@ class MediaPlayerPageTest(unittest.TestCase):
 
         recommendation_mock.assert_called_once()
         self.assertEqual(
-            recommendation_mock.call_args.kwargs["model"], "library-agent:test"
+            recommendation_mock.call_args.kwargs["model"], "openai/gpt-oss-120b"
         )
+        self.page.ai_identity_resolver.assert_called_once_with()
         self.assertEqual(recommendation_mock.call_args.kwargs["limit"], 10)
         self.assertTrue(self.page.recommendations.isVisibleTo(self.page))
         self.assertIn("[LOCAL] Calm Song", self.page.recommendations.item(0).text())
@@ -533,6 +537,26 @@ class MediaPlayerPageTest(unittest.TestCase):
 
         self.assertEqual(recommendation_mock.call_args.kwargs["limit"], 12)
 
+    def test_prompt_result_counts_cover_noun_pattern_clamping_and_years(self) -> None:
+        cases = (
+            ("find 3 tracks", 3),
+            ("40 songs", 20),
+            ("0 results", 1),
+            ("songs from 1999", 5),
+        )
+        self.page.recommendation_limit.setValue(5)
+        for request, expected in cases:
+            with self.subTest(request=request), patch(
+                "youtube_audio_video_downloader.gui.media_player.recommend_library_tracks",
+                return_value=[],
+            ) as recommendation_mock:
+                self.page.recommendation_request.setText(request)
+                self.page.request_ai_recommendations()
+                QTest.qWait(100)
+                self.assertEqual(
+                    recommendation_mock.call_args.kwargs["limit"], expected
+                )
+
     def test_mix_appends_verified_continuation_without_duplicates(self) -> None:
         exact = self.page.items[0]
         continuation = self.page.items[1]
@@ -540,8 +564,6 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.page._last_recommendations = [
             LibraryRecommendation(exact, "Matches Bengali, slow", True)
         ]
-        self.page._recommendation_mix_pending = True
-
         self.page._finish_recommendation_mix(
             [
                 LibraryRecommendation(exact, "Matches Bengali", True),
@@ -552,6 +574,23 @@ class MediaPlayerPageTest(unittest.TestCase):
 
         self.assertEqual(self.page.queue, [exact, continuation])
         self.assertIn("related track(s) queued", self.page.recommendation_status.text())
+
+    def test_mix_handles_missing_exact_files_and_empty_continuation(self) -> None:
+        missing = self.page.items[0]
+        self.page._last_recommendations = [
+            LibraryRecommendation(missing, "Matches Bengali", False)
+        ]
+        self.page.start_recommendation_mix()
+        self.assertEqual(
+            self.page.recommendation_status.text(), "Matching local files are missing"
+        )
+
+        self.page.queue = [self.page.items[1]]
+        self.page._queue_source = [self.page.items[1]]
+        self.page.queue_index = 0
+        self.page._finish_recommendation_mix([], "")
+        self.assertEqual(self.page.queue, [self.page.items[1]])
+        self.assertIn("Mix playing 1 track(s)", self.page.recommendation_status.text())
 
     def test_ai_suggestions_can_be_cleared_and_routed_to_youtube(self) -> None:
         self.page.recommendation_request.setText("Atif songs")

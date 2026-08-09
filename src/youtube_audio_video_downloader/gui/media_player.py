@@ -523,7 +523,6 @@ class MediaLibraryPage(QWidget):
         self._recommendation_worker: LibraryRecommendationWorker | None = None
         self._last_recommendation_request = ""
         self._last_recommendations: list[LibraryRecommendation] = []
-        self._recommendation_mix_pending = False
         self._search_request_id = 0
         self._applied_query = ""
         self._search_pending = False
@@ -748,20 +747,12 @@ class MediaLibraryPage(QWidget):
         if not self.items:
             self.recommendation_status.setText("Library is empty")
             return
-        fallback_model = str(
-            self.settings.value("defaults/agentic_model", "qwen2.5:7b") or ""
-        )
-        provider, model = (
-            self.ai_identity_resolver()
-            if self.ai_identity_resolver is not None
-            else configured_primary_identity(fallback_model)
-        )
+        provider, model, identity = self._resolve_ai_identity()
         self._last_recommendation_request = request_text
         requested_limit = _requested_result_limit(
             request_text, self.recommendation_limit.value()
         )
         self.recommendation_button.setEnabled(False)
-        identity = " · ".join(value for value in (provider, model) if value)
         self.recommendation_status.setText(
             f"AI working · {identity or 'not configured'}"
         )
@@ -772,13 +763,47 @@ class MediaLibraryPage(QWidget):
             f"Library recommendations | provider={provider!r} "
             f"model={model!r} items={len(self.items)}",
         )
+        self._run_recommendation_worker(
+            request_text,
+            self.items,
+            model,
+            requested_limit,
+            finished_slot=self._recommendations_finished,
+        )
+
+    def _resolve_ai_identity(self) -> tuple[str, str, str]:
+        fallback_model = str(
+            self.settings.value("defaults/agentic_model", "qwen2.5:7b") or ""
+        )
+        provider, model = (
+            self.ai_identity_resolver()
+            if self.ai_identity_resolver is not None
+            else configured_primary_identity(fallback_model)
+        )
+        identity = " · ".join(value for value in (provider, model) if value)
+        return provider, model, identity
+
+    def _run_recommendation_worker(
+        self,
+        request_text: str,
+        items: list[LibraryItem],
+        model: str,
+        limit: int,
+        *,
+        finished_slot: Callable[[object, str], None],
+        language_continuation: bool = False,
+    ) -> None:
         thread = QThread(self)
         worker = LibraryRecommendationWorker(
-            request_text, list(self.items), model, requested_limit
+            request_text,
+            list(items),
+            model,
+            limit,
+            language_continuation=language_continuation,
         )
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
-        worker.finished.connect(self._recommendations_finished)
+        worker.finished.connect(finished_slot)
         worker.finished.connect(thread.quit)
         worker.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
@@ -801,9 +826,6 @@ class MediaLibraryPage(QWidget):
             if isinstance(result, list)
             else []
         )
-        if self._recommendation_mix_pending:
-            self._finish_recommendation_mix(recommendations, error)
-            return
         self._last_recommendations = recommendations if not error else []
         self.start_mix_button.setEnabled(bool(self._last_recommendations))
         if error:
@@ -873,40 +895,29 @@ class MediaLibraryPage(QWidget):
         if not remaining:
             self.recommendation_status.setText(f"Mix started · {len(exact)} track(s)")
             return
-        fallback_model = str(
-            self.settings.value("defaults/agentic_model", "qwen2.5:7b") or ""
-        )
-        _provider, model = (
-            self.ai_identity_resolver()
-            if self.ai_identity_resolver is not None
-            else configured_primary_identity(fallback_model)
-        )
-        self._recommendation_mix_pending = True
+        _provider, model, identity = self._resolve_ai_identity()
         self.start_mix_button.setEnabled(False)
-        self.recommendation_status.setText("Mix started · finding continuation tracks")
-        thread = QThread(self)
-        worker = LibraryRecommendationWorker(
+        self.recommendation_status.setText(
+            f"Mix started · {identity} · finding continuation tracks"
+        )
+        self._run_recommendation_worker(
             self._last_recommendation_request,
             remaining,
             model,
             20,
             language_continuation=True,
+            finished_slot=self._finish_recommendation_mix,
         )
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)
-        worker.finished.connect(self._recommendations_finished)
-        worker.finished.connect(thread.quit)
-        worker.finished.connect(worker.deleteLater)
-        thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(self._recommendation_thread_finished)
-        self._recommendation_thread = thread
-        self._recommendation_worker = worker
-        thread.start()
 
     def _finish_recommendation_mix(
-        self, recommendations: list[LibraryRecommendation], error: str
+        self, result: object, error: str
     ) -> None:
-        self._recommendation_mix_pending = False
+        self._recommendation_worker = None
+        recommendations = (
+            [value for value in result if isinstance(value, LibraryRecommendation)]
+            if isinstance(result, list)
+            else []
+        )
         continuation = [value.item for value in recommendations if value.exists_locally]
         added = self._append_to_queue(continuation)
         self.start_mix_button.setEnabled(bool(self._last_recommendations))
@@ -2527,18 +2538,30 @@ def _suggestion_text(item: LibraryItem) -> str:
     return f"{item.title} — {item.artists} • {item.album}{year}"
 
 
+_MIN_RECOMMENDATION_RESULTS = 1
+_MAX_RECOMMENDATION_RESULTS = 20
+
+
+def _clamp_recommendation_results(value: int) -> int:
+    return max(
+        _MIN_RECOMMENDATION_RESULTS,
+        min(_MAX_RECOMMENDATION_RESULTS, int(value)),
+    )
+
+
 def _requested_result_limit(request: str, fallback: int) -> int:
-    """Honor an explicit natural-language result count without involving the model."""
+    """Honor an explicit 'N results/tracks/songs' count without involving the model."""
 
     patterns = (
-        r"\b(?:return|show|give|find|suggest|play)\s+(?:me\s+)?(\d{1,2})\b",
+        r"\b(?:return|show|give|find|suggest|play)\s+(?:me\s+)?(\d{1,2})"
+        r"\s+(?:results?|songs?|tracks?|matches?)\b",
         r"\b(\d{1,2})\s+(?:results?|songs?|tracks?|matches?)\b",
     )
     for pattern in patterns:
         match = re.search(pattern, request, flags=re.IGNORECASE)
         if match:
-            return max(1, min(20, int(match.group(1))))
-    return max(1, min(20, int(fallback)))
+            return _clamp_recommendation_results(int(match.group(1)))
+    return _clamp_recommendation_results(fallback)
 
 
 def _match_rank(item: LibraryItem, query: str) -> tuple[int, int, str]:

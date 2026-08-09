@@ -542,18 +542,8 @@ def _evidence_supports_languages(
         return True
     explicit_language = _text_key(evidence.get("language", ""))
     if explicit_language:
-        return all(
-            value == explicit_language
-            or value in explicit_language
-            or explicit_language in value
-            for value in requested_keys
-        )
-    corroboration = _text_key(
-        " ".join(
-            str(evidence.get(key, ""))
-            for key in ("genre", "web_search_excerpts")
-        )
-    )
+        return all(_values_overlap(value, explicit_language) for value in requested_keys)
+    corroboration = _evidence_corroboration_text(evidence)
     return bool(corroboration) and all(
         value in corroboration for value in requested_keys
     )
@@ -564,18 +554,26 @@ def _evidence_supports_semantic_filters(
 ) -> bool:
     """Require supplied public evidence for requested mood, style, or tempo traits."""
 
-    corroboration = _text_key(
-        " ".join(
-            str(evidence.get(key, ""))
-            for key in ("genre", "web_search_excerpts")
-        )
-    )
+    corroboration = _evidence_corroboration_text(evidence)
     evidence_words = set(corroboration.split())
     return bool(evidence_words) and all(
         set(_text_key(value).split()).issubset(evidence_words)
         for value in requested
         if _text_key(value)
     )
+
+
+def _evidence_corroboration_text(evidence: dict[str, str]) -> str:
+    return _text_key(
+        " ".join(
+            str(evidence.get(key, ""))
+            for key in ("genre", "web_search_excerpts")
+        )
+    )
+
+
+def _values_overlap(first: str, second: str) -> bool:
+    return first == second or first in second or second in first
 
 
 def _clean_strings(value: object) -> tuple[str, ...]:

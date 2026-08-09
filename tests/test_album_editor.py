@@ -12,6 +12,7 @@ from youtube_audio_video_downloader.core.cancellation import CancellationToken
 from youtube_audio_video_downloader.gui.operations import execute_operation
 from youtube_audio_video_downloader.services.album_editor import (
     AlbumEditResult,
+    _rename_album_file,
     edit_album_folder,
     inspect_album_folder,
 )
@@ -104,6 +105,25 @@ def test_edit_renames_each_file_from_title_and_new_album_year_and_artists() -> N
         assert result.failed == ()
         assert result.updated[0].name == "First Song - New Album (2026) - Solo, Guest.mp3"
         assert result.updated[0].is_file()
+
+
+def test_album_filename_collision_uses_numbered_suffix() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        source = root / "old-name.mp3"
+        source.touch()
+        existing = root / "First Song - New Album (2026) - Solo.mp3"
+        existing.touch()
+
+        result = _rename_album_file(
+            source,
+            "First Song",
+            {"album": "New Album", "year": "2026", "artists": "Solo"},
+        )
+
+        assert result.name == "First Song - New Album (2026) - Solo (2).mp3"
+        assert result.is_file()
+        assert existing.is_file()
 
 
 def test_edit_validates_album_and_year_before_writing() -> None:
