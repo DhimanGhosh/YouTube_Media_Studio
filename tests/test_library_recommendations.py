@@ -111,7 +111,7 @@ class LibraryRecommendationsTest(unittest.TestCase):
                 response({"ids": []}),
             ],
         ) as chat_mock:
-            recommend_library_tracks("calm mood", items, model="global-model")
+            recommend_library_tracks("songs", items, model="global-model")
 
         supplied = chat_mock.call_args_list[1].kwargs["input_data"]["catalog"]
         self.assertEqual(
@@ -292,6 +292,114 @@ class LibraryRecommendationsTest(unittest.TestCase):
 
         self.assertEqual([value.item.title for value in result], ["Bengali Song"])
 
+    def test_planner_cannot_drop_an_explicit_language_constraint(self) -> None:
+        items = [
+            track("hindi.mp3", "Chot Dil Pe Lagi", "Kumar Sanu"),
+            track("bengali.mp3", "Duti Pakhi Duti Teere", "Kumar Sanu"),
+        ]
+        semantic = response(
+            {
+                "matches": [
+                    {
+                        "id": index,
+                        "matches": True,
+                        "confidence": 0.95,
+                        "matched_filters": ["Bengali"],
+                    }
+                    for index in range(2)
+                ]
+            }
+        )
+        with (
+            patch(
+                "youtube_audio_video_downloader.services.library_recommendations."
+                "run_structured_agent",
+                side_effect=[
+                    plan(artists=["Kumar Sanu"]),
+                    semantic,
+                    response({"ids": [0]}),
+                ],
+            ) as agent_mock,
+            patch(
+                "youtube_audio_video_downloader.services.library_recommendations."
+                "_collect_catalog_evidence",
+                side_effect=lambda candidates, _filters: {
+                    index: {
+                        "language": (
+                            "Bengali"
+                            if item.title == "Duti Pakhi Duti Teere"
+                            else "Hindi"
+                        )
+                    }
+                    for index, item in enumerate(candidates)
+                },
+            ),
+        ):
+            result = recommend_library_tracks(
+                "kumar sanu bengali", items, model="model"
+            )
+
+        self.assertEqual([value.item.title for value in result], ["Duti Pakhi Duti Teere"])
+        verifier_input = agent_mock.call_args_list[1].kwargs["input_data"]
+        self.assertEqual(verifier_input["filters"], ("bengali",))
+        self.assertIn("bengali", result[0].reason)
+
+    def test_planner_outage_still_enforces_recovered_constraints(self) -> None:
+        items = [
+            track("hindi.mp3", "Hindi Track", "Kumar Sanu"),
+            track("bengali.mp3", "Bengali Track", "Kumar Sanu"),
+        ]
+        with (
+            patch(
+                "youtube_audio_video_downloader.services.library_recommendations."
+                "run_structured_agent",
+                side_effect=[
+                    RuntimeError("planner offline"),
+                    RuntimeError("verifier offline"),
+                    response({"ids": [0]}),
+                ],
+            ),
+            patch(
+                "youtube_audio_video_downloader.services.library_recommendations."
+                "_collect_catalog_evidence",
+                side_effect=lambda candidates, _filters: {
+                    index: {"language": "Bengali" if "Bengali" in item.title else "Hindi"}
+                    for index, item in enumerate(candidates)
+                },
+            ),
+        ):
+            result = recommend_library_tracks(
+                "kumar sanu bengali", items, model="model"
+            )
+
+        self.assertEqual([value.item.title for value in result], ["Bengali Track"])
+
+    def test_recovered_constraints_respect_verifier_schema_limit(self) -> None:
+        items = [track("song.mp3", "Song", "Kumar Sanu")]
+        verbose_constraints = " ".join(f"trait{index}" for index in range(20))
+        with (
+            patch(
+                "youtube_audio_video_downloader.services.library_recommendations."
+                "run_structured_agent",
+                side_effect=[
+                    plan(artists=["Kumar Sanu"]),
+                    response({"matches": []}),
+                ],
+            ) as agent_mock,
+            patch(
+                "youtube_audio_video_downloader.services.library_recommendations."
+                "_collect_catalog_evidence",
+                return_value={},
+            ),
+        ):
+            result = recommend_library_tracks(
+                f"kumar sanu {verbose_constraints}", items, model="model"
+            )
+
+        self.assertEqual(result, [])
+        verifier_filters = agent_mock.call_args_list[1].kwargs["input_data"]["filters"]
+        self.assertEqual(len(verifier_filters), 12)
+
     def test_slow_claim_is_rejected_when_evidence_says_upbeat(self) -> None:
         items = [
             track("slow.mp3", "Verified Slow Song", "Singer A"),
@@ -416,10 +524,17 @@ class LibraryRecommendationsTest(unittest.TestCase):
 
     def test_ai_outage_uses_deterministic_local_ranking(self) -> None:
         items = [track("one.mp3", "Calm One"), track("two.mp3", "Other")]
-        with patch(
-            "youtube_audio_video_downloader.services.library_recommendations."
-            "run_structured_agent",
-            side_effect=RuntimeError("offline"),
+        with (
+            patch(
+                "youtube_audio_video_downloader.services.library_recommendations."
+                "run_structured_agent",
+                side_effect=RuntimeError("offline"),
+            ),
+            patch(
+                "youtube_audio_video_downloader.services.library_recommendations."
+                "_collect_catalog_evidence",
+                return_value={0: {"web_search_excerpts": "A calm track."}},
+            ),
         ):
             result = recommend_library_tracks("calm mood", items, model="model", limit=1)
         self.assertEqual([item.item.title for item in result], ["Calm One"])
