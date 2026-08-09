@@ -23,6 +23,20 @@ MAX_SEMANTIC_CANDIDATES = 120
 MAX_EVIDENCE_LOOKUPS = 20
 MAX_RECOMMENDATIONS = 20
 
+_QUERY_SCAFFOLD_TOKENS = {
+    "a", "all", "an", "and", "any", "by", "find", "for", "from", "get",
+    "give", "in", "library", "matching", "me", "mood", "music", "my", "of",
+    "or", "please", "play", "recommend", "recommendation", "recommendations",
+    "result", "results", "return", "show", "song", "songs", "some", "suggestion",
+    "suggestions", "the", "track", "tracks", "with",
+}
+_TIME_PREFERENCE_TOKENS = {
+    "latest": {"latest", "newest", "recent"},
+    "newer": {"new", "newer", "recent"},
+    "older": {"old", "older"},
+    "oldest": {"earliest", "oldest"},
+}
+
 
 @dataclass(frozen=True, slots=True)
 class LibraryRecommendation:
@@ -102,6 +116,7 @@ def recommend_library_tracks(
         request_text, all_items, literal_artists=literal_artists,
         model=selected_model, timeout=timeout,
     )
+    plan = _recover_omitted_constraints(request_text, plan)
     if language_continuation:
         plan = _QueryPlan(
             languages=plan.languages,
@@ -147,6 +162,13 @@ def recommend_library_tracks(
     )
     if verified is not None:
         candidates, reasons = verified
+    elif semantic_filters:
+        candidates, reasons = _filter_by_independent_evidence(
+            candidates,
+            evidence,
+            languages=plan.languages,
+            semantic_filters=plan.semantic_filters,
+        )
     print(f"[AI-AGENT] Semantic verifier | matches={len(candidates)}")
     if not candidates:
         return []
@@ -234,6 +256,36 @@ def _plan_request(
     )
 
 
+def _recover_omitted_constraints(request_text: str, plan: _QueryPlan) -> _QueryPlan:
+    """Retain meaningful request terms even when the planning model drops them."""
+
+    represented = {
+        token
+        for value in (*plan.artists, *plan.languages, *plan.semantic_filters)
+        for token in _text_key(value).split()
+    }
+    represented.update(_TIME_PREFERENCE_TOKENS.get(plan.time_preference, ()))
+    recovered = tuple(
+        dict.fromkeys(
+            token
+            for token in _text_key(request_text).split()
+            if len(token) > 2
+            and not token.isdigit()
+            and token not in represented
+            and token not in _QUERY_SCAFFOLD_TOKENS
+        )
+    )
+    if not recovered:
+        return plan
+    return _QueryPlan(
+        artists=plan.artists,
+        languages=plan.languages,
+        semantic_filters=(*plan.semantic_filters, *recovered),
+        time_preference=plan.time_preference,
+        use_web_evidence=True,
+    )
+
+
 def _verify_semantics(
     request_text: str,
     candidates: list[LibraryItem],
@@ -306,6 +358,29 @@ def _verify_semantics(
         item = candidates[candidate_id]
         selected.append(item)
         reasons[id(item)] = filters
+    return selected, reasons
+
+
+def _filter_by_independent_evidence(
+    candidates: list[LibraryItem],
+    evidence: dict[int, dict[str, str]],
+    *,
+    languages: tuple[str, ...],
+    semantic_filters: tuple[str, ...],
+) -> tuple[list[LibraryItem], dict[int, tuple[str, ...]]]:
+    """Fail closed on constrained requests when the semantic agent is unavailable."""
+
+    requested = (*languages, *semantic_filters)
+    selected: list[LibraryItem] = []
+    reasons: dict[int, tuple[str, ...]] = {}
+    for candidate_id, item in enumerate(candidates):
+        facts = evidence.get(candidate_id, {})
+        if not _evidence_supports_languages(facts, languages):
+            continue
+        if not _evidence_supports_semantic_filters(facts, semantic_filters):
+            continue
+        selected.append(item)
+        reasons[id(item)] = requested
     return selected, reasons
 
 
@@ -567,7 +642,7 @@ def _evidence_corroboration_text(evidence: dict[str, str]) -> str:
     return _text_key(
         " ".join(
             str(evidence.get(key, ""))
-            for key in ("genre", "web_search_excerpts")
+            for key in ("language", "genre", "web_search_excerpts")
         )
     )
 

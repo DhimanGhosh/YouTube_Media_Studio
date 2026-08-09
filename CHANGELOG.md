@@ -4,6 +4,14 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## Unreleased
+
+### Fixed
+
+- Recover meaningful natural-language constraints omitted by the Smart Library Curator
+  planning model and require independent evidence for them, preventing artist-only
+  results from bypassing requested language, mood, tempo, genre, or activity filters.
+
 ## [2.3.1] - 2026-08-10
 
 ### Added
