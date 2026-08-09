@@ -374,6 +374,32 @@ class LibraryRecommendationsTest(unittest.TestCase):
 
         self.assertEqual([value.item.title for value in result], ["Bengali Track"])
 
+    def test_recovered_constraints_respect_verifier_schema_limit(self) -> None:
+        items = [track("song.mp3", "Song", "Kumar Sanu")]
+        verbose_constraints = " ".join(f"trait{index}" for index in range(20))
+        with (
+            patch(
+                "youtube_audio_video_downloader.services.library_recommendations."
+                "run_structured_agent",
+                side_effect=[
+                    plan(artists=["Kumar Sanu"]),
+                    response({"matches": []}),
+                ],
+            ) as agent_mock,
+            patch(
+                "youtube_audio_video_downloader.services.library_recommendations."
+                "_collect_catalog_evidence",
+                return_value={},
+            ),
+        ):
+            result = recommend_library_tracks(
+                f"kumar sanu {verbose_constraints}", items, model="model"
+            )
+
+        self.assertEqual(result, [])
+        verifier_filters = agent_mock.call_args_list[1].kwargs["input_data"]["filters"]
+        self.assertEqual(len(verifier_filters), 12)
+
     def test_slow_claim_is_rejected_when_evidence_says_upbeat(self) -> None:
         items = [
             track("slow.mp3", "Verified Slow Song", "Singer A"),

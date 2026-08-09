@@ -22,6 +22,7 @@ MAX_LIBRARY_CANDIDATES = 750
 MAX_SEMANTIC_CANDIDATES = 120
 MAX_EVIDENCE_LOOKUPS = 20
 MAX_RECOMMENDATIONS = 20
+MAX_MATCHED_FILTERS = 12
 
 _QUERY_SCAFFOLD_TOKENS = {
     "a", "all", "an", "and", "any", "by", "find", "for", "from", "get",
@@ -74,7 +75,7 @@ class _SemanticMatch(BaseModel):
     id: int
     matches: bool
     confidence: float = Field(ge=0, le=1)
-    matched_filters: list[str] = Field(max_length=12)
+    matched_filters: list[str] = Field(max_length=MAX_MATCHED_FILTERS)
 
 
 class _SemanticOutput(BaseModel):
@@ -265,6 +266,10 @@ def _recover_omitted_constraints(request_text: str, plan: _QueryPlan) -> _QueryP
         for token in _text_key(value).split()
     }
     represented.update(_TIME_PREFERENCE_TOKENS.get(plan.time_preference, ()))
+    recovery_budget = max(
+        0,
+        MAX_MATCHED_FILTERS - len(plan.languages) - len(plan.semantic_filters),
+    )
     recovered = tuple(
         dict.fromkeys(
             token
@@ -274,7 +279,7 @@ def _recover_omitted_constraints(request_text: str, plan: _QueryPlan) -> _QueryP
             and token not in represented
             and token not in _QUERY_SCAFFOLD_TOKENS
         )
-    )
+    )[:recovery_budget]
     if not recovered:
         return plan
     return _QueryPlan(
