@@ -4,6 +4,14 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## Unreleased
+
+### Fixed
+
+- Use Agno's bounded DuckDuckGo evidence tool to promote recovered language requests
+  into strict catalog-backed validation, reject conflicting language results, and
+  collapse duplicate recordings indexed at different file paths.
+
 ## [2.3.2] - 2026-08-10
 
 ### Fixed
