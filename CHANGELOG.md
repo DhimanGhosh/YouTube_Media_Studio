@@ -8,35 +8,19 @@ abbreviated hashes to the next version section.
 
 ### Added
 
-- Add Agno-powered Smart Library Curator, which decomposes natural-language requests,
-  searches only the indexed local library, verifies semantic music qualities with
-  bounded public evidence, and ranks validated local tracks without automatic YouTube
-  redirection.
-- Add selectable Ollama, NVIDIA NIM, OpenAI, Anthropic, Google Gemini, Groq, Hugging
-  Face Inference, OpenRouter, OpenCode Zen, and custom OpenAI-compatible providers with
-  independent saved credentials and local Ollama fallback.
-- Add Edit Album for atomically applying album, year, and the same track artist(s) across
-  every song in an album folder, then safely rebuilding each filename from the preserved
-  title and new shared identity, including album-level Media Library context actions.
 - Add a visible Smart Library Curator result-count control, natural-language count
   overrides, and Start mix playback that continues with verified same-language tracks.
 
 ### Changed
 
-- Organize Global Settings into focused persistent collapsible sections with clearer
-  save/reset actions and provider-specific controls.
-- Let Album Consolidator skip a repeated enrichment pass while still routing files and
-  applying verified track indexing.
 - Simplify Global Settings section labels and remove the generic Runtime requirements
   accordion from that page.
+- Make Edit Album replace album, year, and the normal track Artist(s) across every song
+  in the selected folder, then safely rebuild filenames from the preserved titles and
+  new shared identity.
 
 ### Fixed
 
-- Preserve an explicitly cleared hosted-provider key after save and restart.
-- Use the configured local Ollama model through Agno and retry it directly when the
-  selected hosted model cannot complete a request.
-- Cap application Ollama requests at a 16K context window so models do not allocate an
-  unused 262K KV cache and spill inference onto CPU on common GPUs.
 - Display and invoke the saved hosted provider and model in Smart Library Curator instead
   of incorrectly reporting the Ollama fallback identity.
 - Reject curator language matches that conflict with or lack independent catalog/web
@@ -53,7 +37,31 @@ abbreviated hashes to the next version section.
 
 ### Added
 
-- feat: add agentic library curation and album workflows (#3) (`5462026`)
+- Add Agno-powered Smart Library Curator, which decomposes natural-language requests,
+  searches only the indexed local library, verifies semantic music qualities with
+  bounded public evidence, and ranks validated local tracks without automatic YouTube
+  redirection.
+- Add selectable Ollama, NVIDIA NIM, OpenAI, Anthropic, Google Gemini, Groq, Hugging
+  Face Inference, OpenRouter, OpenCode Zen, and custom OpenAI-compatible providers with
+  independent saved credentials and local Ollama fallback.
+- Add Edit Album for album-wide metadata editing, including album-level Media Library
+  context actions.
+
+### Changed
+
+- Organize Global Settings into focused persistent collapsible sections with clearer
+  save/reset actions and provider-specific controls.
+- Let Album Consolidator skip a repeated enrichment pass while still routing files and
+  applying verified track indexing.
+
+### Fixed
+
+- Preserve an explicitly cleared hosted-provider key after save and restart.
+- Use the configured local Ollama model through Agno and retry it directly when the
+  selected hosted model cannot complete a request.
+- Cap application Ollama requests at a 16K context window so models do not allocate an
+  unused 262K KV cache and spill inference onto CPU on common GPUs.
+
 ## [2.2.4] - 2026-08-10
 
 ### Changed

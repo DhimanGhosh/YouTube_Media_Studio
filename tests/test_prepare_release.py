@@ -88,3 +88,24 @@ def test_update_changelog_promotes_curated_unreleased_notes(tmp_path, monkeypatc
     assert "## [2.1.0]" in updated
     assert "- SerpApi metadata lookup." in updated
     assert updated.index("## [2.1.0]") < updated.index("## [2.0.2]")
+
+
+def test_update_changelog_promotes_unbracketed_project_heading(tmp_path, monkeypatch) -> None:
+    changelog = tmp_path / "CHANGELOG.md"
+    changelog.write_text(
+        "# Changelog\n\nIntro.\n\n"
+        "## Unreleased\n\n### Fixed\n\n- Correct release notes.\n\n"
+        "## [2.3.0] - 2026-08-10\n\n### Added\n\n- Previous feature.\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(release, "CHANGELOG", changelog)
+    monkeypatch.setattr(release, "latest_release_tag", lambda: ("v2.3.0", (2, 3, 0)))
+    monkeypatch.setattr(release, "commits_since", lambda _tag: [commit("fix: notes")])
+
+    release.update_changelog("2.3.1")
+
+    updated = changelog.read_text(encoding="utf-8")
+    assert "## Unreleased" not in updated
+    assert "## [2.3.1]" in updated
+    assert "- Correct release notes." in updated
+    assert updated.index("## [2.3.1]") < updated.index("## [2.3.0]")
