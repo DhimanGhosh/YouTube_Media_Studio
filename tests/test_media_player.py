@@ -529,7 +529,8 @@ class MediaPlayerPageTest(unittest.TestCase):
                 wait_until(
                     lambda: self.page.recommendations.isVisibleTo(self.page)
                     and self.page.recommendation_button.isEnabled()
-                )
+                ),
+                "recommendations did not render and finish worker cleanup",
             )
 
         recommendation_mock.assert_called_once()
