@@ -4,6 +4,11 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [2.2.4] - 2026-08-10
+
+### Changed
+
+- fix Ollama preflight timeout (#2) (`d20a54a`)
 ## [2.2.3] - 2026-08-10
 
 ### Changed
