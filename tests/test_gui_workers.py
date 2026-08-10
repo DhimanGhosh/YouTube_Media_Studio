@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import sys
 import tempfile
 import threading
 import unittest
@@ -54,6 +55,7 @@ class GuiWorkerProgressTest(unittest.TestCase):
         def capture_first() -> None:
             with _capture_worker_output(SignalTextStream(first_lines.append)):
                 print("first worker")
+                print("first worker error", file=sys.stderr)
                 first_ready.set()
                 release_first.wait(timeout=2)
 
@@ -61,11 +63,16 @@ class GuiWorkerProgressTest(unittest.TestCase):
             first_ready.wait(timeout=2)
             with _capture_worker_output(SignalTextStream(second_lines.append)):
                 print("second worker")
+                print("second worker error", file=sys.stderr)
                 second_ready.set()
                 release_second.wait(timeout=2)
 
         fallback = io.StringIO()
-        with contextlib.redirect_stdout(fallback):
+        error_fallback = io.StringIO()
+        with (
+            contextlib.redirect_stdout(fallback),
+            contextlib.redirect_stderr(error_fallback),
+        ):
             first = threading.Thread(target=capture_first)
             second = threading.Thread(target=capture_second)
             first.start()
@@ -75,17 +82,28 @@ class GuiWorkerProgressTest(unittest.TestCase):
             first.join(timeout=2)
             self.assertFalse(first.is_alive())
             print("child output after first worker finished")
+            print("child error after first worker finished", file=sys.stderr)
             release_second.set()
             second.join(timeout=2)
             self.assertFalse(second.is_alive())
             print("track extraction continues")
+            print("track extraction error continues", file=sys.stderr)
 
-        self.assertEqual(first_lines, ["first worker"])
+        self.assertEqual(first_lines, ["first worker", "first worker error"])
         self.assertEqual(
             second_lines,
-            ["second worker", "child output after first worker finished"],
+            [
+                "second worker",
+                "second worker error",
+                "child output after first worker finished",
+                "child error after first worker finished",
+            ],
         )
         self.assertEqual(fallback.getvalue(), "track extraction continues\n")
+        self.assertEqual(
+            error_fallback.getvalue(),
+            "track extraction error continues\n",
+        )
 
     def test_later_phase_resets_total_and_album_result_advances_progress(self) -> None:
         worker = OperationWorker("album_metadata_enricher", {})

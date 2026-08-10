@@ -203,6 +203,8 @@ class _ThreadOutputRouter(io.TextIOBase):
         return self.fallback.fileno()
 
 
+# Router-local locks protect writes and capture membership. This separate lock
+# makes the process-global stdout/stderr installation and restoration atomic.
 _OUTPUT_ROUTER_LOCK = threading.RLock()
 
 
