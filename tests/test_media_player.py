@@ -802,6 +802,7 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.page.apply_filters()
 
         self.assertFalse(self.page.all_albums_button.isHidden())
+        self.assertFalse(self.page.all_tracks_button.isHidden())
         self.assertEqual([item.album for item in self.page.filtered], ["Atif Album"])
         self.assertIn("Atif Aslam", self.page.album_browser_context.text())
         self.assertIn("1 album", self.page.album_browser_context.text())
@@ -823,6 +824,47 @@ class MediaPlayerPageTest(unittest.TestCase):
             {item.album for item in self.page.filtered},
             {"Atif Album", "Other Album"},
         )
+
+    def test_play_selection_does_not_clear_the_active_artist_filter(self) -> None:
+        self.page.items = [
+            LibraryItem(
+                "C:/atif.mp3", "Atif Song", "Atif Album",
+                "Atif Aslam", 2020, 1000, "audio", 1,
+            ),
+            LibraryItem(
+                "C:/other.mp3", "Other Song", "Other Album",
+                "Other Artist", 2021, 1000, "audio", 1,
+            ),
+        ]
+        self.page.apply_filters()
+        atif = self.page.facets.findItems(
+            "Atif Aslam", Qt.MatchFlag.MatchExactly
+        )[0]
+        atif.setSelected(True)
+        self.page.apply_filters()
+        self.page.resize(1200, 800)
+        self.page.show()
+        self.app.processEvents()
+        selection_filter = BlankClickSelectionFilter(self.page)
+        self.app.installEventFilter(selection_filter)
+
+        try:
+            row = self.page.table.item(0, 0)
+            QTest.mouseClick(
+                self.page.table.viewport(),
+                Qt.MouseButton.LeftButton,
+                pos=self.page.table.visualItemRect(row).center(),
+            )
+            self.app.processEvents()
+        finally:
+            self.app.removeEventFilter(selection_filter)
+
+        self.assertEqual(
+            [item.text() for item in self.page.facets.selectedItems()],
+            ["Atif Aslam"],
+        )
+        self.assertEqual([item.album for item in self.page.filtered], ["Atif Album"])
+        self.assertEqual(self.page.albums.count(), 1)
 
     def test_search_closes_album_detail_when_album_no_longer_matches(self) -> None:
         self.page.open_album(self.page.albums.item(0))

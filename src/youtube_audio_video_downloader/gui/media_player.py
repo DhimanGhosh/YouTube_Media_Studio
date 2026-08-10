@@ -59,8 +59,10 @@ from PyQt6.QtWidgets import (
     QListWidgetItem,
     QMenu,
     QPushButton,
+    QScrollArea,
     QSlider,
     QSpinBox,
+    QSplitter,
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -563,6 +565,11 @@ class MediaLibraryPage(QWidget):
         title.setObjectName("pageTitle")
         header.addWidget(title)
         header.addStretch(1)
+        self.library_refresh_button = QPushButton("Refresh")
+        self.library_refresh_button.setObjectName("secondaryButton")
+        self.library_refresh_button.setToolTip("Rescan every configured library folder")
+        self.library_refresh_button.clicked.connect(self.refresh_library)
+        header.addWidget(self.library_refresh_button)
         self.queue_toggle_button = QPushButton("Queue (0) ›")
         self.queue_toggle_button.setObjectName("secondaryButton")
         self.queue_toggle_button.setCheckable(True)
@@ -579,8 +586,13 @@ class MediaLibraryPage(QWidget):
         main_layout.addWidget(self._build_folder_card())
         main_layout.addLayout(self._build_search_row())
         main_layout.addWidget(self._build_recommendation_card())
-        main_layout.addWidget(self._build_browser(), 3)
-        main_layout.addWidget(self._build_album_section(), 2)
+        self.library_splitter = QSplitter(Qt.Orientation.Vertical)
+        self.library_splitter.addWidget(self._build_browser())
+        self.library_splitter.addWidget(self._build_album_section())
+        self.library_splitter.setStretchFactor(0, 2)
+        self.library_splitter.setStretchFactor(1, 3)
+        self.library_splitter.setSizes([320, 430])
+        main_layout.addWidget(self.library_splitter, 1)
         main_layout.addWidget(self._build_player())
         layout.addWidget(main, 1)
         self.queue_drawer = self._build_queue_drawer()
@@ -592,23 +604,65 @@ class MediaLibraryPage(QWidget):
         card = GlassCard()
         row = QHBoxLayout(card)
         row.setContentsMargins(12, 9, 12, 9)
-        self.folder_list = QListWidget()
-        self.folder_list.setMaximumHeight(66)
-        row.addWidget(self.folder_list, 1)
-        for text, handler, primary in (
-            ("Add folder", self.add_folder, True),
-            ("Remove selected", self.remove_folder, False),
-            ("Refresh", self.refresh_library, False),
-        ):
-            button = QPushButton(text)
-            button.setObjectName("primaryButton" if primary else "secondaryButton")
-            button.clicked.connect(handler)
-            row.addWidget(button)
+        self.folder_list = QListWidget(card)
+        self.folder_list.setVisible(False)
+        self.folder_chip_host = QWidget()
+        self.folder_chip_host.setStyleSheet("background: transparent;")
+        self.folder_chip_layout = QHBoxLayout(self.folder_chip_host)
+        self.folder_chip_layout.setContentsMargins(0, 0, 0, 0)
+        self.folder_chip_layout.setSpacing(6)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.setStyleSheet(
+            "QScrollArea, QScrollArea > QWidget > QWidget { "
+            "background: transparent; border: none; }"
+        )
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setMaximumHeight(46)
+        scroll.setWidget(self.folder_chip_host)
+        row.addWidget(scroll, 1)
+        add_button = QPushButton("+")
+        add_button.setObjectName("primaryButton")
+        add_button.setToolTip("Add a media library folder")
+        add_button.setAccessibleName("Add library folder")
+        add_button.clicked.connect(self.add_folder)
+        row.addWidget(add_button)
         return card
+
+    def _render_folder_chips(self) -> None:
+        while self.folder_chip_layout.count():
+            item = self.folder_chip_layout.takeAt(0)
+            if item.widget() is not None:
+                item.widget().deleteLater()
+        folders = self.folders()
+        if not folders:
+            empty = QLabel("No folders added")
+            empty.setObjectName("mutedLabel")
+            self.folder_chip_layout.addWidget(empty)
+        for path in folders:
+            chip = GlassCard()
+            chip_row = QHBoxLayout(chip)
+            chip_row.setContentsMargins(8, 3, 3, 3)
+            chip_row.setSpacing(5)
+            label = QLabel(Path(path).name or path)
+            label.setToolTip(path)
+            chip_row.addWidget(label)
+            remove = QPushButton("×")
+            remove.setObjectName("secondaryButton")
+            remove.setToolTip(f"Remove {path} from the library")
+            remove.clicked.connect(
+                lambda _checked=False, value=path: self._remove_folder_path(value)
+            )
+            chip_row.addWidget(remove)
+            self.folder_chip_layout.addWidget(chip)
+        self.folder_chip_layout.addStretch(1)
 
     def _build_search_row(self) -> QHBoxLayout:
         row = QHBoxLayout()
         self.search = QLineEdit()
+        self.search.setMaximumWidth(920)
         self.search.setPlaceholderText("Search title, album, artist, year, or filename…")
         self.search.textChanged.connect(self._schedule_search)
         self.search.returnPressed.connect(self.search_or_download)
@@ -622,6 +676,11 @@ class MediaLibraryPage(QWidget):
         self.search_completer.activated[str].connect(self._suggestion_activated)
         self.search.setCompleter(self.search_completer)
         row.addWidget(self.search, 1)
+        clear_search = QPushButton("Clear")
+        clear_search.setObjectName("secondaryButton")
+        clear_search.setToolTip("Clear the library search")
+        clear_search.clicked.connect(self.search.clear)
+        row.addWidget(clear_search)
         self.year_from = QSpinBox()
         self.year_to = QSpinBox()
         for spin, label in ((self.year_from, "From year"), (self.year_to, "To year")):
@@ -636,6 +695,17 @@ class MediaLibraryPage(QWidget):
         return row
 
     def _build_recommendation_card(self) -> QWidget:
+        container = QWidget()
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(6)
+        self.recommendation_toggle = QPushButton("Smart Library Curator  ›")
+        self.recommendation_toggle.setObjectName("secondaryButton")
+        self.recommendation_toggle.setCheckable(True)
+        self.recommendation_toggle.setToolTip(
+            "Open natural-language local-library curation"
+        )
+        container_layout.addWidget(self.recommendation_toggle)
         card = GlassCard()
         card.setObjectName("libraryRecommendationCard")
         layout = QVBoxLayout(card)
@@ -730,9 +800,20 @@ class MediaLibraryPage(QWidget):
         )
         self.recommendations.setVisible(False)
         layout.addWidget(self.recommendations)
-        return card
+        card.setVisible(False)
+        self.recommendation_toggle.toggled.connect(card.setVisible)
+        self.recommendation_toggle.toggled.connect(
+            lambda expanded: self.recommendation_toggle.setText(
+                "Smart Library Curator  ⌄"
+                if expanded
+                else "Smart Library Curator  ›"
+            )
+        )
+        container_layout.addWidget(card)
+        return container
 
     def request_ai_recommendations(self) -> None:
+        self.recommendation_toggle.setChecked(True)
         if self._recommendation_thread is not None:
             return
         request_text = self.recommendation_request.text().strip()
@@ -835,7 +916,8 @@ class MediaLibraryPage(QWidget):
         elif not recommendations:
             self.recommendation_status.setText("No matching local tracks")
             self.recommendations.addItem(
-                "No indexed tracks satisfied every requested filter. "
+                "The curator could not independently verify every requested filter "
+                "for a local track. "
                 "Use 'Search YouTube too' for external discovery."
             )
             log_diagnostic("AI-REVIEW", "Library recommendations returned no tracks")
@@ -944,6 +1026,7 @@ class MediaLibraryPage(QWidget):
         if self.player.playbackState() != QMediaPlayer.PlaybackState.StoppedState:
             self.stop()
         self.folder_list.clear()
+        self._render_folder_chips()
         self.search.clear()
         self.year_from.setValue(0)
         self.year_to.setValue(0)
@@ -997,6 +1080,7 @@ class MediaLibraryPage(QWidget):
         grid.setHorizontalSpacing(10)
         grid.addWidget(QLabel("Artists • select one or several"), 0, 0)
         self.facets = QListWidget()
+        self.facets.setProperty("persistentFilterSelection", True)
         self.facets.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.facets.itemSelectionChanged.connect(self._schedule_search)
         grid.addWidget(self.facets, 1, 0)
@@ -1004,6 +1088,12 @@ class MediaLibraryPage(QWidget):
         actions = QHBoxLayout()
         actions.setSpacing(8)
         actions.addWidget(QLabel("Songs and videos"))
+        self.all_tracks_button = QPushButton("‹ All tracks")
+        self.all_tracks_button.setObjectName("secondaryButton")
+        self.all_tracks_button.setToolTip("Clear artist selection and show all tracks")
+        self.all_tracks_button.clicked.connect(self._show_all_albums)
+        self.all_tracks_button.setVisible(False)
+        actions.addWidget(self.all_tracks_button)
         self.match_status = QLabel()
         self.match_status.setObjectName("mutedLabel")
         actions.addWidget(self.match_status)
@@ -1035,7 +1125,7 @@ class MediaLibraryPage(QWidget):
 
     def _build_album_section(self) -> QWidget:
         self.album_stack = QStackedWidget()
-        self.album_stack.setMinimumHeight(225)
+        self.album_stack.setMinimumHeight(330)
 
         browser = QWidget()
         browser_layout = QVBoxLayout(browser)
@@ -1209,11 +1299,6 @@ class MediaLibraryPage(QWidget):
         controls_layout.setContentsMargins(0, 0, 0, 0)
         controls_layout.setSpacing(8)
         controls_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.library_refresh_button = QPushButton("Refresh")
-        self.library_refresh_button.setObjectName("playerModeButton")
-        self.library_refresh_button.setToolTip("Refresh media library")
-        self.library_refresh_button.clicked.connect(self.refresh_library)
-        controls_layout.addWidget(self.library_refresh_button)
         self.shuffle_button = QPushButton()
         self.shuffle_button.setObjectName("playerModeButton")
         self.shuffle_button.setCheckable(True)
@@ -1392,6 +1477,7 @@ class MediaLibraryPage(QWidget):
     def _load_folders(self) -> None:
         folders = self.settings.value("library/folders", [], type=list)
         self.folder_list.addItems([str(value) for value in folders])
+        self._render_folder_chips()
 
     def folders(self) -> list[str]:
         return [
@@ -1404,12 +1490,22 @@ class MediaLibraryPage(QWidget):
         if not selected or selected in self.folders():
             return
         self.folder_list.addItem(str(Path(selected).resolve()))
+        self._render_folder_chips()
         self._save_folders()
         self.refresh_library()
 
     def remove_folder(self) -> None:
         for item in self.folder_list.selectedItems():
             self.folder_list.takeItem(self.folder_list.row(item))
+        self._render_folder_chips()
+        self._save_folders()
+        self.refresh_library()
+
+    def _remove_folder_path(self, path: str) -> None:
+        for index in range(self.folder_list.count() - 1, -1, -1):
+            if self.folder_list.item(index).text() == path:
+                self.folder_list.takeItem(index)
+        self._render_folder_chips()
         self._save_folders()
         self.refresh_library()
 
@@ -1608,6 +1704,7 @@ class MediaLibraryPage(QWidget):
             entry.setSelected(artist.casefold() in selected_keys)
         self.facets.blockSignals(False)
         self.all_albums_button.setVisible(bool(selected_keys))
+        self.all_tracks_button.setVisible(bool(selected_keys))
 
     def _show_all_albums(self) -> None:
         """Return from an artist-filtered collection to the complete album grid."""

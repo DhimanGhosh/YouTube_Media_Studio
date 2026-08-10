@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import sys
 import tarfile
 from pathlib import Path
@@ -145,6 +146,10 @@ def test_packaged_installer_runs_payload_self_check(monkeypatch, tmp_path) -> No
     assert captured["command"] == [str(installer), "--check"]
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="Windows cannot create the macOS Applications symlink without elevation",
+)
 def test_macos_dmg_contains_app_and_applications_alias(monkeypatch, tmp_path) -> None:
     app = tmp_path / "YouTubeMediaStudio.app"
     executable = app / "Contents" / "MacOS"

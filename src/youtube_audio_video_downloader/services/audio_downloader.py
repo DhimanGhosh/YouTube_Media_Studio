@@ -19,6 +19,9 @@ from youtube_audio_video_downloader.services.album_folders import (
     find_existing_album_track,
 )
 from youtube_audio_video_downloader.core.exceptions import UserCancelledError
+from youtube_audio_video_downloader.services.download_range import (
+    build_download_range_options,
+)
 
 
 class YouTubeAudioDownloader:
@@ -28,10 +31,15 @@ class YouTubeAudioDownloader:
         self,
         settings: DownloadSettings | None = None,
         cancellation_token: CancellationToken | None = None,
+        start_timestamp: str = "00:00",
+        end_timestamp: str = "",
     ) -> None:
         self.settings = settings or DownloadSettings()
         self.cancellation_token = cancellation_token or CancellationToken()
         self.metadata_tagger = MetadataTagger()
+        self.download_range_options = build_download_range_options(
+            start_timestamp, end_timestamp
+        )
 
     def cancel(self) -> None:
         """Request cooperative cancellation for running audio workers."""
@@ -337,6 +345,7 @@ class YouTubeAudioDownloader:
                 }
             ],
             "postprocessor_args": ["-ar", self.settings.audio_sample_rate],
+            **self.download_range_options,
         }
 
     def _wait_before_download(self, song_title: str) -> None:

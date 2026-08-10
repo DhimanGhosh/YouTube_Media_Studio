@@ -29,7 +29,7 @@ def test_returns_bounded_title_and_excerpt_without_local_context() -> None:
     query = search.return_value.duckduckgo_search.call_args.args[0]
     assert '"Dance Ka Bhoot" Arijit Singh' in query
     assert "Hindi dance upbeat" in query
-    assert len(evidence) <= 1800
+    assert len(evidence) <= 900
 
 
 def test_discards_search_results_for_a_different_song() -> None:

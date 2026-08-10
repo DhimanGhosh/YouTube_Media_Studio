@@ -427,8 +427,13 @@ def _input_json(params: dict[str, Any], path_field: str, label: str):
 
 def _run_audio(params: dict[str, Any], token: CancellationToken) -> OperationSummary:
     settings = _base_settings(params)
-    service = YouTubeAudioDownloader(settings=settings, cancellation_token=token)
     mode = str(params.get("mode", "download"))
+    service = YouTubeAudioDownloader(
+        settings=settings,
+        cancellation_token=token,
+        start_timestamp=("00:00" if mode == "tag-existing" else str(params.get("start_timestamp", "00:00"))),
+        end_timestamp=("" if mode == "tag-existing" else str(params.get("end_timestamp", ""))),
+    )
     with _input_json(params, "input_path", "Audio") as json_path:
         if mode == "tag-existing":
             results_dir = Path.cwd() if params.get("input_data") is not None else None
@@ -452,6 +457,8 @@ def _run_video(params: dict[str, Any], token: CancellationToken) -> OperationSum
         settings=settings,
         cancellation_token=token,
         interactive_prompts=False,
+        start_timestamp=str(params.get("start_timestamp", "00:00")),
+        end_timestamp=str(params.get("end_timestamp", "")),
     )
     resolution = str(params.get("resolution", "best") or "best")
     if resolution.lower() == "ask":

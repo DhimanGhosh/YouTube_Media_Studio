@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from youtube_audio_video_downloader.services.library_recommendations import (
+    MAX_EVIDENCE_LOOKUPS,
     MAX_SEMANTIC_CANDIDATES,
     recommend_library_tracks,
 )
@@ -117,13 +118,13 @@ class LibraryRecommendationsTest(unittest.TestCase):
         self.assertEqual(
             chat_mock.call_args_list[1].kwargs["requested_model"], "global-model"
         )
-        self.assertEqual(len(supplied), MAX_SEMANTIC_CANDIDATES)
+        self.assertEqual(len(supplied), MAX_EVIDENCE_LOOKUPS)
         self.assertNotIn("path", supplied[0])
         self.assertEqual(
             set(supplied[0]), {"id", "title", "artists", "album", "year", "type"},
         )
         curator_catalog = chat_mock.call_args_list[2].kwargs["input_data"]["catalog"]
-        self.assertEqual(len(curator_catalog), MAX_SEMANTIC_CANDIDATES)
+        self.assertEqual(len(curator_catalog), MAX_EVIDENCE_LOOKUPS)
 
     def test_missing_prompt_or_global_model_is_rejected_before_network(self) -> None:
         with patch(
@@ -527,6 +528,210 @@ class LibraryRecommendationsTest(unittest.TestCase):
         self.assertEqual([value.item.title for value in result], ["Verified Slow Song"])
         self.assertNotIn("sleeping", result[0].reason.casefold())
         self.assertNotIn("ballad", result[0].reason.casefold())
+
+    def test_agent_can_map_sad_to_an_exact_melancholic_evidence_phrase(self) -> None:
+        items = [track("song.mp3", "Bojhabo Ki Kore", "Arijit Singh")]
+        semantic = response(
+            {
+                "matches": [
+                    {
+                        "id": 0,
+                        "matches": True,
+                        "confidence": 0.95,
+                        "matched_filters": ["Bengali", "sad"],
+                        "evidence_support": [
+                            {"filter": "sad", "phrase": "melancholic ballad"}
+                        ],
+                    }
+                ]
+            }
+        )
+        with (
+            patch(
+                "youtube_audio_video_downloader.services.library_recommendations."
+                "run_structured_agent",
+                side_effect=[
+                    plan(
+                        artists=["Arijit Singh"],
+                        languages=["Bengali"],
+                        semantic_filters=["sad"],
+                    ),
+                    semantic,
+                    response(
+                        {
+                            "judgments": [
+                                {
+                                    "id": 0,
+                                    "supports": True,
+                                    "confidence": 0.95,
+                                }
+                            ]
+                        }
+                    ),
+                    response({"ids": [0]}),
+                ],
+            ),
+            patch(
+                "youtube_audio_video_downloader.services.library_recommendations."
+                "_collect_catalog_evidence",
+                return_value={
+                    0: {
+                        "language": "Bengali",
+                        "web_search_excerpts": "A melancholic ballad about heartbreak.",
+                    }
+                },
+            ),
+        ):
+            result = recommend_library_tracks(
+                "arijit sad bengali", items, model="model"
+            )
+
+        self.assertEqual([value.item.title for value in result], ["Bojhabo Ki Kore"])
+
+    def test_agent_semantic_phrase_must_exist_in_supplied_evidence(self) -> None:
+        items = [track("song.mp3", "Upbeat Song", "Arijit Singh")]
+        semantic = response(
+            {
+                "matches": [
+                    {
+                        "id": 0,
+                        "matches": True,
+                        "confidence": 0.95,
+                        "matched_filters": ["Bengali", "sad"],
+                        "evidence_support": [
+                            {"filter": "sad", "phrase": "melancholic ballad"}
+                        ],
+                    }
+                ]
+            }
+        )
+        with (
+            patch(
+                "youtube_audio_video_downloader.services.library_recommendations."
+                "run_structured_agent",
+                side_effect=[
+                    plan(
+                        artists=["Arijit Singh"],
+                        languages=["Bengali"],
+                        semantic_filters=["sad"],
+                    ),
+                    semantic,
+                ],
+            ),
+            patch(
+                "youtube_audio_video_downloader.services.library_recommendations."
+                "_collect_catalog_evidence",
+                return_value={
+                    0: {
+                        "language": "Bengali",
+                        "web_search_excerpts": "An energetic upbeat Bengali song.",
+                    }
+                },
+            ),
+        ):
+            result = recommend_library_tracks(
+                "arijit sad bengali", items, model="model"
+            )
+
+        self.assertEqual(result, [])
+
+    def test_generic_cited_phrase_cannot_entail_a_sad_mood(self) -> None:
+        items = [track("song.mp3", "Aajke Raatey", "Arijit Singh")]
+        semantic = response(
+            {
+                "matches": [
+                    {
+                        "id": 0,
+                        "matches": True,
+                        "confidence": 0.95,
+                        "matched_filters": ["Bengali", "sad"],
+                        "evidence_support": [
+                            {"filter": "sad", "phrase": "Bengali song"}
+                        ],
+                    }
+                ]
+            }
+        )
+        with (
+            patch(
+                "youtube_audio_video_downloader.services.library_recommendations."
+                "run_structured_agent",
+                side_effect=[
+                    plan(
+                        artists=["Arijit Singh"],
+                        languages=["Bengali"],
+                        semantic_filters=["sad"],
+                    ),
+                    semantic,
+                    response(
+                        {
+                            "judgments": [
+                                {"id": 0, "supports": False, "confidence": 0.99}
+                            ]
+                        }
+                    ),
+                ],
+            ),
+            patch(
+                "youtube_audio_video_downloader.services.library_recommendations."
+                "_collect_catalog_evidence",
+                return_value={
+                    0: {
+                        "language": "Bengali",
+                        "web_search_excerpts": "A Bengali song from Bismillah.",
+                    }
+                },
+            ),
+        ):
+            result = recommend_library_tracks(
+                "arijit sad bengali", items, model="model"
+            )
+
+        self.assertEqual(result, [])
+
+    def test_empty_ranker_output_preserves_the_verified_candidate_set(self) -> None:
+        items = [track("song.mp3", "Bengali Sad Song", "Arijit Singh")]
+        with (
+            patch(
+                "youtube_audio_video_downloader.services.library_recommendations."
+                "run_structured_agent",
+                side_effect=[
+                    plan(
+                        artists=["Arijit Singh"],
+                        languages=["Bengali"],
+                        semantic_filters=["sad"],
+                    ),
+                    response(
+                        {
+                            "matches": [
+                                {
+                                    "id": 0,
+                                    "matches": True,
+                                    "confidence": 0.95,
+                                    "matched_filters": ["Bengali", "sad"],
+                                }
+                            ]
+                        }
+                    ),
+                    response({"ids": []}),
+                ],
+            ),
+            patch(
+                "youtube_audio_video_downloader.services.library_recommendations."
+                "_collect_catalog_evidence",
+                return_value={
+                    0: {
+                        "language": "Bengali",
+                        "web_search_excerpts": "A sad Bengali song.",
+                    }
+                },
+            ),
+        ):
+            result = recommend_library_tracks(
+                "arijit sad bengali", items, model="model"
+            )
+
+        self.assertEqual([value.item.title for value in result], ["Bengali Sad Song"])
 
     def test_mix_continuation_preserves_language_but_relaxes_mood(self) -> None:
         items = [track("bengali.mp3", "Another Bengali Song", "Singer B")]

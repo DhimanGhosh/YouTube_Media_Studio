@@ -10,6 +10,9 @@ from pathlib import Path
 from typing import Any
 
 from youtube_audio_video_downloader.services.audio_downloader import YouTubeAudioDownloader
+from youtube_audio_video_downloader.services.download_range import (
+    build_download_range_options,
+)
 from youtube_audio_video_downloader.core.exceptions import UserCancelledError
 from youtube_audio_video_downloader.loaders.json_loader import load_videos
 from youtube_audio_video_downloader.domain.models import (
@@ -83,13 +86,20 @@ class YouTubeVideoDownloader:
         settings: DownloadSettings | None = None,
         cancellation_token: CancellationToken | None = None,
         interactive_prompts: bool = True,
+        start_timestamp: str = "00:00",
+        end_timestamp: str = "",
     ) -> None:
         self.settings = settings or DownloadSettings()
         self.cancellation_token = cancellation_token or CancellationToken()
         self.interactive_prompts = interactive_prompts
+        self.download_range_options = build_download_range_options(
+            start_timestamp, end_timestamp
+        )
         self.audio_downloader = YouTubeAudioDownloader(
             settings=self.settings,
             cancellation_token=self.cancellation_token,
+            start_timestamp=start_timestamp,
+            end_timestamp=end_timestamp,
         )
 
     def cancel(self) -> None:
@@ -1094,6 +1104,7 @@ class YouTubeVideoDownloader:
             "no_warnings": False,
             "retries": self.settings.max_retries,
             "fragment_retries": self.settings.max_retries,
+            **self.download_range_options,
         }
 
     @staticmethod
