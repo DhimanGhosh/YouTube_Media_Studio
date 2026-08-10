@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from typing import Iterable, Mapping
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,9 +27,14 @@ def decode_playlists(value: object) -> dict[str, list[str]]:
         return {}
     try:
         payload = json.loads(str(value))
-    except (TypeError, ValueError, json.JSONDecodeError):
+    except (TypeError, ValueError) as exc:
+        LOGGER.warning("Could not decode saved Media Library playlists: %s", exc)
         return {}
     if not isinstance(payload, dict):
+        LOGGER.warning(
+            "Saved Media Library playlists are not a mapping (got %s)",
+            type(payload).__name__,
+        )
         return {}
     playlists: dict[str, list[str]] = {}
     for raw_name, raw_paths in payload.items():

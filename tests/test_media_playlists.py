@@ -39,6 +39,10 @@ def test_add_anyway_keeps_duplicate_track_links() -> None:
     assert result.paths == ["C:/Song.mp3", "c:/song.mp3"]
 
 
-def test_invalid_playlist_payload_is_ignored() -> None:
-    assert decode_playlists("not-json") == {}
-    assert decode_playlists('["not", "a", "mapping"]') == {}
+def test_invalid_playlist_payload_is_ignored_and_logged(caplog) -> None:
+    with caplog.at_level("WARNING"):
+        assert decode_playlists("not-json") == {}
+        assert decode_playlists('["not", "a", "mapping"]') == {}
+
+    assert "Could not decode saved Media Library playlists" in caplog.text
+    assert "not a mapping" in caplog.text
