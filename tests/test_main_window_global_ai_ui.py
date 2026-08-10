@@ -341,13 +341,13 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         )
         self.window.show()
         self.app.processEvents()
-        self.assertFalse(self.window.title_bar.minimize_button.isVisible())
+        self.assertIsNone(self.window.title_bar.minimize_button)
         self.window.resize(self.window.width() + 10, self.window.height() + 10)
         self.app.processEvents()
-        self.assertTrue(self.window._background._interactive_resize)
-        self.window._resize_idle_timer.stop()
-        self.window._background.set_interactive_resize(False)
-        self.assertTrue(self.window._background._timer.isActive())
+        self.assertIsNotNone(self.window._background)
+        self.assertTrue(self.window._background.is_interactive_resize)
+        self.window._set_background_interactive(False)
+        self.assertTrue(self.window._background.is_animating)
 
     def test_blank_click_clears_highlights_across_the_application(self) -> None:
         library = self.window.media_library

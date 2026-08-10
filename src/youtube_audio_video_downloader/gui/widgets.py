@@ -532,6 +532,14 @@ class LiquidBackground(QWidget):
             self._timer.start(32)
         self.update()
 
+    @property
+    def is_interactive_resize(self) -> bool:
+        return self._interactive_resize
+
+    @property
+    def is_animating(self) -> bool:
+        return self._timer.isActive()
+
     def _advance(self) -> None:
         self._phase = (self._phase + 0.008) % (math.pi * 2)
         self.update()

@@ -157,6 +157,18 @@ class TitleBar(QWidget):
         title_column.addWidget(title)
         title_column.addWidget(subtitle)
 
+        self.minimize_button: QPushButton | None = None
+        self.maximize_button: QPushButton | None = None
+        self.close_button: QPushButton | None = None
+        if native_frame:
+            layout = QHBoxLayout(self)
+            layout.setContentsMargins(18, 8, 12, 7)
+            layout.setSpacing(10)
+            layout.addWidget(brand)
+            layout.addLayout(title_column)
+            layout.addStretch(1)
+            return
+
         self.minimize_button = QPushButton("—")
         self.minimize_button.setObjectName("windowButton")
         self.minimize_button.setToolTip("Minimize")
@@ -179,18 +191,9 @@ class TitleBar(QWidget):
         layout.addWidget(brand)
         layout.addLayout(title_column)
         layout.addStretch(1)
-        if native_frame:
-            for button in (
-                self.minimize_button,
-                self.maximize_button,
-                self.close_button,
-            ):
-                button.setParent(self)
-                button.hide()
-        else:
-            layout.addWidget(self.minimize_button)
-            layout.addWidget(self.maximize_button)
-            layout.addWidget(self.close_button)
+        layout.addWidget(self.minimize_button)
+        layout.addWidget(self.maximize_button)
+        layout.addWidget(self.close_button)
 
     def mousePressEvent(self, event) -> None:  # noqa: N802
         if event.button() == Qt.MouseButton.LeftButton:
@@ -265,13 +268,15 @@ class MainWindow(QMainWindow):
         self._song_search_results: list[dict[str, Any]] = []
         self._song_search_intent: dict[str, str] = {}
         self._tool_ai_checks: dict[str, QCheckBox] = {}
+        self._background: LiquidBackground | None = None
+        self._resize_idle_timer: QTimer | None = None
 
         self._build_window()
         self._resize_idle_timer = QTimer(self)
         self._resize_idle_timer.setSingleShot(True)
         self._resize_idle_timer.setInterval(140)
         self._resize_idle_timer.timeout.connect(
-            lambda: self._background.set_interactive_resize(False)
+            lambda: self._set_background_interactive(False)
         )
         self._blank_click_selection_filter = BlankClickSelectionFilter(self)
         application = QApplication.instance()
@@ -293,8 +298,9 @@ class MainWindow(QMainWindow):
         root_layout = QGridLayout(root)
         root_layout.setContentsMargins(0, 0, 0, 0)
 
-        self._background = LiquidBackground(root)
-        root_layout.addWidget(self._background, 0, 0)
+        background = LiquidBackground(root)
+        self._background = background
+        root_layout.addWidget(background, 0, 0)
 
         shell = QWidget(root)
         shell.setObjectName("windowShell")
@@ -494,11 +500,14 @@ class MainWindow(QMainWindow):
     def resizeEvent(self, event) -> None:  # noqa: N802
         """Keep native edge resizing responsive while the window is being dragged."""
 
-        if hasattr(self, "_background"):
-            self._background.set_interactive_resize(True)
-        if hasattr(self, "_resize_idle_timer"):
-            self._resize_idle_timer.start()
+        self._set_background_interactive(True)
         super().resizeEvent(event)
+
+    def _set_background_interactive(self, interactive: bool) -> None:
+        if self._background is not None:
+            self._background.set_interactive_resize(interactive)
+        if interactive and self._resize_idle_timer is not None:
+            self._resize_idle_timer.start()
 
     # --------------------------------------------------------------- page base
     def _page_container(self, title: str, subtitle: str) -> tuple[QWidget, QVBoxLayout]:
@@ -2546,6 +2555,12 @@ class MainWindow(QMainWindow):
         self._set_page(index)
 
     def toggle_maximize(self) -> None:
+        if self.title_bar.maximize_button is None:
+            if self.isMaximized():
+                self.showNormal()
+            else:
+                self.showMaximized()
+            return
         if self.isMaximized():
             self.showNormal()
             self.title_bar.maximize_button.setText("□")
