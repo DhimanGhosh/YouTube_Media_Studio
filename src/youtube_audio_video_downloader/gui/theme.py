@@ -15,13 +15,8 @@ QMainWindow, QWidget#rootWindow {
 
 QWidget#windowShell {
     background: rgba(9, 14, 29, 218);
-    border: 1px solid rgba(255, 255, 255, 38);
-    border-radius: 24px;
-}
-
-QWidget#titleBar {
-    background: transparent;
     border: none;
+    border-radius: 0;
 }
 
 QLabel#appTitle {

@@ -109,8 +109,8 @@ flowchart LR
 ```
 
 The Media Library is a persistent page with its own background scanner, search worker,
-recommendation worker, queue, and `QMediaPlayer`. Playback continues while the user visits
-other pages.
+recommendation worker, path-based playlist store, queue, and `QMediaPlayer`. Playback
+continues while the user visits other pages.
 
 ## 5. Deployment view
 

@@ -10,8 +10,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
-from PyQt6.QtCore import QSize, QSettings, QStandardPaths, Qt, QThread, QTimer, QUrl
-from PyQt6.QtGui import QCloseEvent, QDesktopServices, QGuiApplication, QPixmap
+from PyQt6.QtCore import QSettings, QStandardPaths, Qt, QThread, QTimer, QUrl
+from PyQt6.QtGui import QCloseEvent, QDesktopServices, QGuiApplication
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -50,7 +50,6 @@ from youtube_audio_video_downloader.gui.ai_usage import operation_ai_usage
 from youtube_audio_video_downloader.gui.media_player import MediaLibraryPage
 from youtube_audio_video_downloader.gui.audio_visualizer import MusicVisualizer
 from youtube_audio_video_downloader.gui.crash_reporter import log_diagnostic
-from youtube_audio_video_downloader.gui.resources import application_icon_path
 from youtube_audio_video_downloader.config.settings import (
     MAX_PARALLEL_WORKERS,
     machine_parallel_workers,
@@ -120,92 +119,6 @@ from youtube_audio_video_downloader.services.serpapi_metadata import (
 )
 from youtube_audio_video_downloader.services.track_reorder import list_track_files
 from youtube_audio_video_downloader.version import application_version
-
-
-class TitleBar(QWidget):
-    """Branded application header with optional custom window controls."""
-
-    def __init__(self, window: "MainWindow", *, native_frame: bool = False) -> None:
-        super().__init__(window)
-        self.window = window
-        self.setObjectName("titleBar")
-        self.setFixedHeight(56)
-
-        brand = QLabel()
-        brand.setObjectName("appLogo")
-        brand.setFixedSize(40, 40)
-        brand.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        brand.setToolTip(APP_DISPLAY_NAME)
-        logo = QPixmap(str(application_icon_path()))
-        if not logo.isNull():
-            brand.setPixmap(
-                logo.scaled(
-                    QSize(36, 36),
-                    Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation,
-                )
-            )
-        title = QLabel(APP_DISPLAY_NAME)
-        title.setObjectName("appTitle")
-        subtitle = QLabel("Audio · Video · Album · Jukebox")
-        subtitle.setObjectName("appSubtitle")
-        for widget in (brand, title, subtitle):
-            widget.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-
-        title_column = QVBoxLayout()
-        title_column.setSpacing(0)
-        title_column.addWidget(title)
-        title_column.addWidget(subtitle)
-
-        self.minimize_button: QPushButton | None = None
-        self.maximize_button: QPushButton | None = None
-        self.close_button: QPushButton | None = None
-        if native_frame:
-            layout = QHBoxLayout(self)
-            layout.setContentsMargins(18, 8, 12, 7)
-            layout.setSpacing(10)
-            layout.addWidget(brand)
-            layout.addLayout(title_column)
-            layout.addStretch(1)
-            return
-
-        self.minimize_button = QPushButton("—")
-        self.minimize_button.setObjectName("windowButton")
-        self.minimize_button.setToolTip("Minimize")
-        self.minimize_button.clicked.connect(window.showMinimized)
-
-        self.maximize_button = QPushButton("□")
-        self.maximize_button.setObjectName("windowButton")
-        self.maximize_button.setToolTip("Maximize / Restore")
-        self.maximize_button.clicked.connect(window.toggle_maximize)
-
-        close_button = QPushButton("×")
-        close_button.setObjectName("closeButton")
-        close_button.setToolTip("Close")
-        close_button.clicked.connect(window.close)
-        self.close_button = close_button
-
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(18, 8, 12, 7)
-        layout.setSpacing(10)
-        layout.addWidget(brand)
-        layout.addLayout(title_column)
-        layout.addStretch(1)
-        layout.addWidget(self.minimize_button)
-        layout.addWidget(self.maximize_button)
-        layout.addWidget(self.close_button)
-
-    def mousePressEvent(self, event) -> None:  # noqa: N802
-        if event.button() == Qt.MouseButton.LeftButton:
-            handle = self.window.windowHandle()
-            if handle is not None:
-                handle.startSystemMove()
-        super().mousePressEvent(event)
-
-    def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.window.toggle_maximize()
-        super().mouseDoubleClickEvent(event)
 
 
 class MainWindow(QMainWindow):
@@ -309,12 +222,9 @@ class MainWindow(QMainWindow):
         shell_layout.setContentsMargins(0, 0, 0, 0)
         shell_layout.setSpacing(0)
 
-        self.title_bar = TitleBar(self, native_frame=True)
-        shell_layout.addWidget(self.title_bar)
-
         body = QWidget()
         body_layout = QHBoxLayout(body)
-        body_layout.setContentsMargins(14, 4, 14, 12)
+        body_layout.setContentsMargins(14, 14, 14, 12)
         body_layout.setSpacing(14)
 
         body_layout.addWidget(self._build_sidebar())
@@ -322,7 +232,7 @@ class MainWindow(QMainWindow):
         shell_layout.addWidget(body, 1)
         shell_layout.addWidget(self._build_activity_bar())
 
-        root_layout.setContentsMargins(10, 10, 10, 10)
+        root_layout.setContentsMargins(0, 0, 0, 0)
         root_layout.addWidget(shell, 0, 0)
         self.setCentralWidget(root)
 
@@ -1518,9 +1428,9 @@ class MainWindow(QMainWindow):
             "redownload actions can replace it or create a copy.",
         )
         self.edit_file_action = QComboBox()
-        self.edit_file_action.addItem("Reset / update metadata only", "metadata")
-        self.edit_file_action.addItem("Trim audio and update metadata", "trim")
-        self.edit_file_action.addItem("Redownload media and update metadata", "redownload")
+        self.edit_file_action.addItem("Update metadata only", "metadata")
+        self.edit_file_action.addItem("Trim the selected local file", "trim")
+        self.edit_file_action.addItem("Replace media from YouTube", "redownload")
         self.edit_file_input = PathPicker(
             placeholder="Select the existing media file", file_filter=media_filter
         )
@@ -1533,9 +1443,15 @@ class MainWindow(QMainWindow):
         self.edit_file_content.addItem("Audio only", "audio")
         self.edit_file_content.addItem("Video only", "video")
         self.edit_file_content.addItem("Audio and video", "both")
+        self.edit_file_download_start = QLineEdit("00:00")
+        self.edit_file_download_start.setPlaceholderText("00:00")
+        self.edit_file_download_end = QLineEdit()
+        self.edit_file_download_end.setPlaceholderText(
+            "Optional — download to the end"
+        )
         self.edit_file_start = QLineEdit("00:00")
         self.edit_file_end = QLineEdit()
-        self.edit_file_end.setPlaceholderText("Loaded duration, or full redownload")
+        self.edit_file_end.setPlaceholderText("Loaded local file duration")
         self.edit_file_mode = QComboBox()
         self.edit_file_mode.addItem("Save an edited copy", False)
         self.edit_file_mode.addItem("Replace the existing source file", True)
@@ -1551,6 +1467,8 @@ class MainWindow(QMainWindow):
         form.addRow("Media duration", self.edit_file_duration)
         form.addRow("YouTube link", self.edit_file_url)
         form.addRow("Download content", self.edit_file_content)
+        form.addRow("Download start", self.edit_file_download_start)
+        form.addRow("Download end", self.edit_file_download_end)
         form.addRow("Save behavior", self.edit_file_mode)
         form.addRow("Copy destination", self.edit_file_output)
         self.edit_file_action.currentIndexChanged.connect(self._edit_file_action_changed)
@@ -1582,14 +1500,18 @@ class MainWindow(QMainWindow):
         )
         self.edit_meta_remove_artwork = QCheckBox("Remove existing artwork")
         metadata_form.addRow("Loaded metadata", self.edit_meta_status)
+        self.edit_file_action_help = QLabel()
+        self.edit_file_action_help.setObjectName("mutedLabel")
+        self.edit_file_action_help.setWordWrap(True)
+        metadata_form.addRow("", self.edit_file_action_help)
         metadata_form.addRow("Title", self.edit_meta_title)
         metadata_form.addRow("Album", self.edit_meta_album)
         metadata_form.addRow("Artists", self.edit_meta_artists)
         metadata_form.addRow("Year / date", self.edit_meta_year)
         metadata_form.addRow("Track number", self.edit_meta_track)
         metadata_form.addRow("Track total", self.edit_meta_track_total)
-        metadata_form.addRow("Trim / download start", self.edit_file_start)
-        metadata_form.addRow("Trim / download end", self.edit_file_end)
+        metadata_form.addRow("Local trim start", self.edit_file_start)
+        metadata_form.addRow("Local trim end", self.edit_file_end)
         metadata_form.addRow("Artwork path or URL", self.edit_meta_artwork)
         metadata_form.addRow("Artwork behavior", self.edit_meta_remove_artwork)
 
@@ -1599,16 +1521,16 @@ class MainWindow(QMainWindow):
         clear_button = QPushButton("Clear")
         clear_button.setObjectName("secondaryButton")
         clear_button.clicked.connect(self._clear_edit_file)
-        run_button = QPushButton("Edit file")
-        run_button.setObjectName("primaryButton")
-        run_button.setMinimumWidth(170)
-        run_button.clicked.connect(
+        self.edit_file_run_button = QPushButton("Edit file")
+        self.edit_file_run_button.setObjectName("primaryButton")
+        self.edit_file_run_button.setMinimumWidth(170)
+        self.edit_file_run_button.clicked.connect(
             lambda: self._start_operation("edit_media", self._edit_file_params())
         )
         action_layout.addWidget(clear_button)
         action_layout.addStretch(1)
-        action_layout.addWidget(run_button)
-        self._form_runs["edit_media"] = run_button
+        action_layout.addWidget(self.edit_file_run_button)
+        self._form_runs["edit_media"] = self.edit_file_run_button
         metadata_outer.addWidget(action_row)
         layout.addWidget(card)
         layout.addWidget(metadata_card)
@@ -1667,16 +1589,36 @@ class MainWindow(QMainWindow):
         redownload = action == "redownload"
         if action == "trim" and self._edit_file_loaded_duration:
             self.edit_file_end.setText(self._edit_file_loaded_duration)
-        elif redownload and self.edit_file_end.text() == self._edit_file_loaded_duration:
-            self.edit_file_end.clear()
         self.edit_file_url.setEnabled(redownload)
         self.edit_file_content.setEnabled(redownload)
-        self.edit_file_start.setEnabled(not metadata_only)
-        self.edit_file_end.setEnabled(not metadata_only)
+        self.edit_file_download_start.setEnabled(redownload)
+        self.edit_file_download_end.setEnabled(redownload)
+        self.edit_file_start.setEnabled(action == "trim")
+        self.edit_file_end.setEnabled(action == "trim")
         self.edit_file_mode.setEnabled(not metadata_only)
         self.edit_file_output.setEnabled(
             not metadata_only and not bool(self.edit_file_mode.currentData())
         )
+        if action == "trim":
+            self.edit_file_action_help.setText(
+                "Trims the already-downloaded file selected above. No YouTube link or "
+                "new download is used. Choose a start/end range, then replace the source "
+                "or save a trimmed copy."
+            )
+            self.edit_file_run_button.setText("Trim local file")
+            self.edit_file_end.setPlaceholderText("Loaded file duration")
+        elif redownload:
+            self.edit_file_action_help.setText(
+                "Downloads replacement content from the YouTube link and optionally "
+                "limits it to the selected timestamp range."
+            )
+            self.edit_file_run_button.setText("Redownload and edit")
+        else:
+            self.edit_file_action_help.setText(
+                "Updates tags and artwork without changing the local file's audio. "
+                "Choose 'Trim the selected local file' to cut an existing download."
+            )
+            self.edit_file_run_button.setText("Update metadata")
         if metadata_only:
             self.edit_file_mode.setToolTip("Not applicable: metadata edits always replace the file")
             self.edit_file_output.setToolTip("Not applicable: metadata edits always replace the file")
@@ -1702,11 +1644,21 @@ class MainWindow(QMainWindow):
             "track_number": self.edit_meta_track.text(), "track_total": self.edit_meta_track_total.text(),
         }
         action = str(self.edit_file_action.currentData())
+        range_start = (
+            self.edit_file_download_start.text()
+            if action == "redownload"
+            else self.edit_file_start.text()
+        )
+        range_end = (
+            self.edit_file_download_end.text()
+            if action == "redownload"
+            else self.edit_file_end.text()
+        )
         return {
             "action": action, "input_path": self.edit_file_input.text(),
             "youtube_url": self.edit_file_url.text(),
             "media_mode": str(self.edit_file_content.currentData()),
-            "start_timestamp": self.edit_file_start.text(), "end_timestamp": self.edit_file_end.text(),
+            "start_timestamp": range_start, "end_timestamp": range_end,
             "overwrite_source": True if action == "metadata" else bool(self.edit_file_mode.currentData()),
             "output_path": "" if action == "metadata" else self.edit_file_output.text(),
             "metadata": metadata, "artwork_path": self.edit_meta_artwork.text(),
@@ -1719,6 +1671,8 @@ class MainWindow(QMainWindow):
         self.edit_file_action.setCurrentIndex(0)
         self.edit_file_url.clear()
         self.edit_file_content.setCurrentIndex(0)
+        self.edit_file_download_start.setText("00:00")
+        self.edit_file_download_end.clear()
         self.edit_file_start.setText("00:00")
         self.edit_file_end.clear()
         self.edit_file_mode.setCurrentIndex(0)
@@ -2555,18 +2509,10 @@ class MainWindow(QMainWindow):
         self._set_page(index)
 
     def toggle_maximize(self) -> None:
-        if self.title_bar.maximize_button is None:
-            if self.isMaximized():
-                self.showNormal()
-            else:
-                self.showMaximized()
-            return
         if self.isMaximized():
             self.showNormal()
-            self.title_bar.maximize_button.setText("□")
         else:
             self.showMaximized()
-            self.title_bar.maximize_button.setText("❐")
 
     # ----------------------------------------------------------- worker logic
     def _start_operation(self, operation: str, params: dict[str, Any]) -> None:
@@ -3407,6 +3353,7 @@ class MainWindow(QMainWindow):
             for key in (
                 "edit_file_input", "edit_file_output", "edit_file_artwork", "edit_file_action",
                 "edit_file_url", "edit_file_start", "edit_file_end", "edit_file_content",
+                "edit_file_download_start", "edit_file_download_end",
                 "edit_file_overwrite", "edit_file_metadata", "edit_file_remove_artwork",
                 "edit_album_folder", "edit_album_artwork", "edit_album_metadata",
                 "edit_album_remove_artwork",
@@ -3822,6 +3769,20 @@ class MainWindow(QMainWindow):
             self.edit_file_url.setText(
                 str(self.settings.value("workspace/edit_file_url", "") or "")
             )
+            self.edit_file_download_start.setText(
+                str(
+                    self.settings.value(
+                        "workspace/edit_file_download_start", "00:00"
+                    )
+                    or "00:00"
+                )
+            )
+            self.edit_file_download_end.setText(
+                str(
+                    self.settings.value("workspace/edit_file_download_end", "")
+                    or ""
+                )
+            )
             self.edit_file_start.setText(
                 str(self.settings.value("workspace/edit_file_start", "00:00") or "00:00")
             )
@@ -3944,6 +3905,14 @@ class MainWindow(QMainWindow):
         )
         self.settings.setValue("workspace/edit_file_action", self.edit_file_action.currentData())
         self.settings.setValue("workspace/edit_file_url", self.edit_file_url.text())
+        self.settings.setValue(
+            "workspace/edit_file_download_start",
+            self.edit_file_download_start.text(),
+        )
+        self.settings.setValue(
+            "workspace/edit_file_download_end",
+            self.edit_file_download_end.text(),
+        )
         self.settings.setValue("workspace/edit_file_start", self.edit_file_start.text())
         self.settings.setValue("workspace/edit_file_end", self.edit_file_end.text())
         self.settings.setValue("workspace/edit_file_content", self.edit_file_content.currentData())

@@ -217,7 +217,7 @@ edit, consolidate, inspect logs, configure defaults, and play the finished libra
 | **Search Song** | Find tracks, albums, release years, performers, and cover artwork |
 | **Metadata tools** | Inspect, repair, reorder, retag, trim, rename, and consolidate local media |
 | **Edit Album** | Change album name, year, track artist(s), and optional album artwork across every supported file in a folder |
-| **Media Library** | Browse, filter artists across tracks and albums, play, queue, and semantically curate local media |
+| **Media Library** | Browse, filter, create persistent path-based playlists, play, queue, and semantically curate local media |
 | **Utilities** | Normalize artist names and convert timestamps to splitter-ready JSON |
 | **Live Logs** | Follow background operations and diagnose failures without leaving the app |
 | **Automation** | Run the same core workflows through stable CLI commands and JSON job files |

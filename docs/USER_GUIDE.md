@@ -182,9 +182,14 @@ Splitter**, or **Jukebox Splitter**.
 
 1. Open **Edit File** and browse to the media file.
 2. Load its current duration and metadata.
-3. Set a start/end time only when trimming is required.
-4. Correct the title, album, artists, year, track position, or artwork as needed.
-5. Review the selected output behavior, save, and verify the result in **Live Logs**.
+3. Choose **Trim the selected local file** to cut an existing download without using
+   YouTube or downloading it again. Set **Local trim start/end** in **Song metadata**,
+   then choose whether to replace the source atomically or save a trimmed copy.
+4. Choose **Replace media from YouTube** only when the source content itself should be
+   downloaded again; **Download start/end** in the upper **File operation** section
+   limit that new download independently. The two timestamp ranges never share values.
+5. Correct the title, album, artists, year, track position, or artwork as needed.
+6. Run the action and verify the result in **Live Logs**.
 
 The Media Library can send a selected local track directly to this page with its
 metadata already loaded.
@@ -280,12 +285,19 @@ report the complete log block.
    tempo constraints. Use shuffle or repeat as required.
 5. Use file and album context actions to edit metadata, enrich an album, reorder tracks,
    or open the containing folder.
-6. Language, mood, style, activity, energy, and tempo are strict evidence gates: the
+6. Select **Playlists** in the page header to create, rename, delete, play, queue, or
+   edit saved collections. Playlists store exact links to local file paths and remain
+   available after restart. Use **Add to playlist** beside track and album actions, or
+   right-click a track, album, or artist. If a selected path is already present, choose
+   **Skip duplicates** to omit existing tracks and add the rest of an album/selection,
+   or **Add anyway** to retain another occurrence. Right-click playlist tracks for the
+   same Edit File and Add to playlist actions, or to remove them from that playlist.
+7. Language, mood, style, activity, energy, and tempo are strict evidence gates: the
    curator rejects a model claim when catalog or web evidence conflicts with or cannot
    corroborate it. Semantic synonyms are accepted only when the verifier quotes an exact
    supporting phrase from evidence for that recording. Only requested filters appear in
    result reasons.
-7. The curator never redirects automatically. If the local result is empty, select the
+8. The curator never redirects automatically. If the local result is empty, select the
    explicit **Search YouTube too** action only when you want an online search.
 
 The songs-and-videos table shows every matching scanned item; it does not truncate a

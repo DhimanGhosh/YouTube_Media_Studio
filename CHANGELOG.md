@@ -4,6 +4,23 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## Unreleased
+
+### Added
+
+- Add persistent path-based Media Library playlists with create, rename, delete,
+  play, queue, and track removal controls; add tracks from track, album, artist, and
+  playlist context menus or the main track/album action rows.
+- Warn when a destination playlist already contains a selected file and let the user
+  either skip duplicate paths while adding the remaining selection or add them anyway.
+
+### Changed
+
+- Give Edit File separate download-range and local-file trim-range fields, with an
+  explicit offline trim action and action-specific controls so the ranges cannot mix.
+- Present the desktop interface as one native window by removing the redundant inner
+  title header and rounded outer inset while preserving native all-edge resizing.
+
 ## [2.5.0] - 2026-08-11
 
 ### Added

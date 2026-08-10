@@ -390,6 +390,43 @@ class MediaPlayerPageTest(unittest.TestCase):
             Qt.ContextMenuPolicy.CustomContextMenu,
         )
 
+    def test_playlists_persist_paths_and_apply_duplicate_choice_to_full_album(self) -> None:
+        name = self.page.create_playlist("Bengali favourites")
+        self.assertEqual(name, "Bengali favourites")
+        self.assertEqual(
+            self.page.add_items_to_playlist(
+                list(self.page.items), name, duplicate_policy="skip"
+            ),
+            2,
+        )
+
+        extra = media("New album track", 2010, 120_000)
+        self.assertEqual(
+            self.page.add_items_to_playlist(
+                [self.page.items[0], extra], name, duplicate_policy="skip"
+            ),
+            1,
+        )
+        self.assertEqual(len(self.page.playlists[name]), 3)
+        self.assertIn("skipped 1 duplicate", self.page.playlist_track_status.text())
+
+        self.assertEqual(
+            self.page.add_items_to_playlist(
+                [self.page.items[0]], name, duplicate_policy="add"
+            ),
+            1,
+        )
+        self.assertEqual(len(self.page.playlists[name]), 4)
+        self.assertTrue(self.page.settings.value("library/playlists"))
+        self.assertEqual(
+            self.page.playlist_tracks.contextMenuPolicy(),
+            Qt.ContextMenuPolicy.CustomContextMenu,
+        )
+        self.assertEqual(
+            self.page.facets.contextMenuPolicy(),
+            Qt.ContextMenuPolicy.CustomContextMenu,
+        )
+
     def test_player_controls_have_visible_icons_and_mode_labels(self) -> None:
         self.assertTrue(self.page.play_button.text() == "")
         self.assertFalse(self.page.play_button.icon().isNull())

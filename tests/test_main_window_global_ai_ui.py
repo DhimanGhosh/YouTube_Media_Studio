@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (  # noqa: E402
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QWidget,
 )
 
 from youtube_audio_video_downloader.gui.main_window import MainWindow  # noqa: E402
@@ -329,25 +330,56 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
             )
         )
 
-    def test_title_bar_displays_the_application_logo(self) -> None:
-        logo = self.window.title_bar.findChild(QLabel, "appLogo")
-        self.assertIsNotNone(logo)
-        self.assertIsNotNone(logo.pixmap())
-        self.assertFalse(logo.pixmap().isNull())
-
-    def test_window_uses_native_edges_and_throttles_resize_animation(self) -> None:
+    def test_window_uses_one_native_frame_and_throttles_resize_animation(self) -> None:
         self.assertFalse(
             bool(self.window.windowFlags() & Qt.WindowType.FramelessWindowHint)
         )
+        self.assertIsNone(self.window.findChild(QWidget, "titleBar"))
+        self.assertEqual(self.window.centralWidget().layout().contentsMargins().left(), 0)
         self.window.show()
         self.app.processEvents()
-        self.assertIsNone(self.window.title_bar.minimize_button)
         self.window.resize(self.window.width() + 10, self.window.height() + 10)
         self.app.processEvents()
         self.assertIsNotNone(self.window._background)
         self.assertTrue(self.window._background.is_interactive_resize)
         self.window._set_background_interactive(False)
         self.assertTrue(self.window._background.is_animating)
+
+    def test_edit_file_exposes_offline_trim_as_an_explicit_local_action(self) -> None:
+        trim_index = self.window.edit_file_action.findData("trim")
+
+        self.window.edit_file_action.setCurrentIndex(trim_index)
+
+        self.assertFalse(self.window.edit_file_url.isEnabled())
+        self.assertFalse(self.window.edit_file_download_start.isEnabled())
+        self.assertFalse(self.window.edit_file_download_end.isEnabled())
+        self.assertTrue(self.window.edit_file_start.isEnabled())
+        self.assertTrue(self.window.edit_file_end.isEnabled())
+        self.assertIn("already-downloaded file", self.window.edit_file_action_help.text())
+        self.assertEqual(self.window.edit_file_run_button.text(), "Trim local file")
+        self.window.edit_file_start.setText("00:10")
+        self.window.edit_file_end.setText("01:20")
+        params = self.window._edit_file_params()
+        self.assertEqual(params["action"], "trim")
+        self.assertEqual(params["start_timestamp"], "00:10")
+        self.assertEqual(params["end_timestamp"], "01:20")
+
+    def test_edit_file_routes_separate_download_range_to_redownload(self) -> None:
+        redownload_index = self.window.edit_file_action.findData("redownload")
+        self.window.edit_file_start.setText("00:30")
+        self.window.edit_file_end.setText("01:30")
+        self.window.edit_file_download_start.setText("02:00")
+        self.window.edit_file_download_end.setText("03:00")
+
+        self.window.edit_file_action.setCurrentIndex(redownload_index)
+
+        self.assertTrue(self.window.edit_file_download_start.isEnabled())
+        self.assertTrue(self.window.edit_file_download_end.isEnabled())
+        self.assertFalse(self.window.edit_file_start.isEnabled())
+        self.assertFalse(self.window.edit_file_end.isEnabled())
+        params = self.window._edit_file_params()
+        self.assertEqual(params["start_timestamp"], "02:00")
+        self.assertEqual(params["end_timestamp"], "03:00")
 
     def test_blank_click_clears_highlights_across_the_application(self) -> None:
         library = self.window.media_library
