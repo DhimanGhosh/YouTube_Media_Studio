@@ -760,7 +760,7 @@ def _evidence_supports_semantic_filter(
 
 
 def _adjudicate_semantic_evidence(
-    matches: object,
+    matches: list[_SemanticMatch],
     evidence: dict[int, dict[str, str]],
     requested: tuple[str, ...],
     *,
@@ -769,33 +769,7 @@ def _adjudicate_semantic_evidence(
 ) -> dict[int, set[str]]:
     """Independently judge whether cited phrases actually entail requested traits."""
 
-    claims: list[dict[str, object]] = []
-    claim_targets: dict[int, tuple[int, str]] = {}
-    for row in matches if isinstance(matches, list) else []:
-        candidate_id = getattr(row, "id", -1)
-        if not isinstance(candidate_id, int) or candidate_id not in evidence:
-            continue
-        facts = evidence[candidate_id]
-        corroboration = _evidence_corroboration_text(facts)
-        support = getattr(row, "evidence_support", ())
-        if not isinstance(support, (list, tuple)):
-            continue
-        for value in requested:
-            key = _text_key(value)
-            if not key or _evidence_supports_semantic_filter(facts, value):
-                continue
-            for cited in support:
-                cited_filter = _text_key(getattr(cited, "filter", ""))
-                phrase = _text_key(getattr(cited, "phrase", ""))
-                if (
-                    not _values_overlap(key, cited_filter)
-                    or not _phrase_in(phrase, corroboration)
-                ):
-                    continue
-                claim_id = len(claims)
-                claims.append({"id": claim_id, "filter": value, "phrase": phrase})
-                claim_targets[claim_id] = (candidate_id, key)
-                break
+    claims, claim_targets = _extract_semantic_claims(matches, evidence, requested)
     if not claims:
         return {}
     try:
@@ -827,6 +801,43 @@ def _adjudicate_semantic_evidence(
         candidate_id, key = target
         approved.setdefault(candidate_id, set()).add(key)
     return approved
+
+
+def _extract_semantic_claims(
+    matches: list[_SemanticMatch],
+    evidence: dict[int, dict[str, str]],
+    requested: tuple[str, ...],
+) -> tuple[list[dict[str, object]], dict[int, tuple[int, str]]]:
+    """Build compact cited-phrase claims for independent entailment review."""
+
+    claims: list[dict[str, object]] = []
+    claim_targets: dict[int, tuple[int, str]] = {}
+    for row in matches:
+        candidate_id = getattr(row, "id", -1)
+        if not isinstance(candidate_id, int) or candidate_id not in evidence:
+            continue
+        facts = evidence[candidate_id]
+        corroboration = _evidence_corroboration_text(facts)
+        support = getattr(row, "evidence_support", ())
+        if not isinstance(support, (list, tuple)):
+            continue
+        for value in requested:
+            key = _text_key(value)
+            if not key or _evidence_supports_semantic_filter(facts, value):
+                continue
+            for cited in support:
+                cited_filter = _text_key(getattr(cited, "filter", ""))
+                phrase = _text_key(getattr(cited, "phrase", ""))
+                if (
+                    not _values_overlap(key, cited_filter)
+                    or not _phrase_in(phrase, corroboration)
+                ):
+                    continue
+                claim_id = len(claims)
+                claims.append({"id": claim_id, "filter": value, "phrase": phrase})
+                claim_targets[claim_id] = (candidate_id, key)
+                break
+    return claims, claim_targets
 
 
 def _evidence_corroboration_text(evidence: dict[str, str]) -> str:

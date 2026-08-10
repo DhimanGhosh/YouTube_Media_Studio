@@ -1175,6 +1175,8 @@ class MainWindow(QMainWindow):
         self.audio_start = QLineEdit("00:00")
         self.audio_end = QLineEdit()
         self.audio_end.setPlaceholderText("Optional — download to the end")
+        for field in (self.audio_start, self.audio_end):
+            field.setToolTip("Accepted formats: SS, MM:SS, or HH:MM:SS (decimals allowed)")
         form.addRow("Songs", self.audio_input)
         form.addRow("Mode", self.audio_mode)
         form.addRow("Output folder", self.audio_output)
@@ -1208,7 +1210,11 @@ class MainWindow(QMainWindow):
         enabled = str(self.audio_mode.currentData()) == "download"
         self.audio_start.setEnabled(enabled)
         self.audio_end.setEnabled(enabled)
-        tooltip = "" if enabled else "Trimming applies only when downloading media"
+        tooltip = (
+            "Accepted formats: SS, MM:SS, or HH:MM:SS (decimals allowed)"
+            if enabled
+            else "Trimming applies only when downloading media"
+        )
         self.audio_start.setToolTip(tooltip)
         self.audio_end.setToolTip(tooltip)
 
@@ -1236,6 +1242,8 @@ class MainWindow(QMainWindow):
         self.video_start = QLineEdit("00:00")
         self.video_end = QLineEdit()
         self.video_end.setPlaceholderText("Optional — download to the end")
+        for field in (self.video_start, self.video_end):
+            field.setToolTip("Accepted formats: SS, MM:SS, or HH:MM:SS (decimals allowed)")
         form.addRow("Videos", self.video_input)
         form.addRow("When MP3 is selected", self.video_mp3_mode)
         form.addRow("Video output", self.video_output)
