@@ -22,7 +22,7 @@
 
 **One AI-powered studio for the entire media workflow.** YouTube Media Studio combines a modern
 PyQt6 desktop application with a scriptable command line to download permitted media,
-write metadata and artwork, split albums and jukeboxes, edit files, detect duplicates,
+write metadata and artwork, split albums and jukeboxes, edit files,
 and manage a local playback library.
 
 > **Everything required by the desktop app travels with the installer.** Python,
@@ -209,15 +209,15 @@ edit, consolidate, inspect logs, configure defaults, and play the finished libra
 
 | Workspace | Capability |
 | --- | --- |
-| **Audio Downloader** | Download permitted audio, write tags, embed artwork, and normalize filenames |
-| **Video Downloader** | Inspect formats and download video or audio at a selected quality |
+| **Audio Downloader** | Download permitted full audio or a start/end range, write tags, embed artwork, and normalize filenames |
+| **Video Downloader** | Inspect formats and download full or timestamp-bounded video/audio at a selected quality |
 | **Album Splitter** | Turn a full-album source and timestamps into individual tagged tracks |
 | **Jukebox Splitter** | Split compilation videos and organize the resulting songs |
 | **Search Song** | Find tracks, albums, release years, performers, and cover artwork |
 | **Metadata tools** | Inspect, repair, reorder, retag, trim, rename, and consolidate local media |
 | **Edit Album** | Change album name, year, and the track artist(s) across every supported file in a folder |
-| **Media Library** | Browse, play, manage, and semantically curate local audio and video |
-| **Utilities** | Detect duplicate links, normalize artist names, and convert timestamps to JSON |
+| **Media Library** | Browse, filter artists across tracks and albums, play, queue, and semantically curate local media |
+| **Utilities** | Normalize artist names and convert timestamps to splitter-ready JSON |
 | **Live Logs** | Follow background operations and diagnose failures without leaving the app |
 | **Automation** | Run the same core workflows through stable CLI commands and JSON job files |
 
@@ -249,6 +249,8 @@ such as `return 10 results`. **Start mix** queues the exact mood/style matches f
 uses a second evidence-grounded pass to continue with other local tracks in the requested
 language. Language, mood, style, activity, energy, and tempo labels must agree with catalog
 or web evidence; a model assertion alone cannot admit a track or invent extra result traits.
+When a related term such as `melancholic` supports `sad`, the verifier must cite that
+exact phrase from the bounded evidence for the same recording.
 
 Provider keys are stored separately: switching providers does not copy one provider's
 credential into another, and clearing a key remains cleared after **Save and apply

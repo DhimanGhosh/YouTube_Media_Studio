@@ -4,6 +4,35 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [Unreleased]
+
+### Added
+
+- Add optional start and end timestamps to Audio Downloader and Video Downloader,
+  using one validated native download range for both video and optional MP3 output.
+- Add compact removable Media Library folder chips, explicit track-filter navigation,
+  a clear-search action, and a resizable track/album browser with more album space.
+
+### Changed
+
+- Move Edit File trim timestamps into Song metadata, collapse Smart Library Curator
+  until needed, and move library refresh to the page header.
+- Remove the Duplicate links tab from desktop Utilities while preserving the existing
+  command-line compatibility tool.
+
+### Fixed
+
+- Let the curator accept a semantic synonym only when its verifier cites an exact phrase
+  from that song's bounded public evidence, avoiding false empty results for requests
+  such as `Arijit sad Bengali` without weakening strict language validation.
+- Rank query tokens as whole words, give every semantic candidate the same bounded
+  evidence opportunity, and describe an empty result as inconclusive verification
+  instead of claiming the local library contains no matching track.
+- Preserve an artist selection when a user selects or plays a track, and apply that
+  artist filter to both the track table and album browser until explicitly cleared.
+- Skip the macOS symlink-only DMG assertion on Windows, where creating that alias
+  requires an unrelated elevated developer privilege.
+
 ## [2.3.3] - 2026-08-10
 
 ### Fixed

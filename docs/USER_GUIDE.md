@@ -136,15 +136,15 @@ item unchanged.
 | --- | --- | --- |
 | **Dashboard** | Shows current activity, session totals, and recent operations. | Start work on another page, then return here to see progress and results. **Clear** removes displayed session history, not media files. |
 | **Search Song** | Finds a song, album, movie track, video, or jukebox from plain language. | Enter a description, review and preview the matches, choose a row and destination workflow, then select **Use selected result**. |
-| **Audio Downloader** | Downloads permitted audio with a normalized filename, tags, and cover artwork. | Add or import track details, verify title/album/artists/year and output location, then run the download. |
-| **Video Downloader** | Inspects available formats and downloads video or audio. | Enter the source URL, inspect formats, choose quality and output, then start the download. |
+| **Audio Downloader** | Downloads permitted full audio or a timestamp range with a normalized filename, tags, and cover artwork. | Add or import track details, optionally set start/end, verify metadata and output, then run the download. |
+| **Video Downloader** | Inspects available formats and downloads full or timestamp-bounded video or audio. | Enter the source URL, optionally set start/end, choose output, then start the download. |
 | **Album Splitter** | Turns one full-album source into separate tagged songs. | Add the source and timestamped track list, verify the rows and shared album metadata, then split. |
 | **Jukebox Splitter** | Splits a compilation containing tracks from different albums or artists. | Add the source, review each timestamped track and its individual metadata, then split and organize. |
 | **Track Reorder** | Applies a verified album order to existing local tracks. | Select an album folder, preview the proposed sequence, and apply it only after checking the matches. |
 | **Edit File** | Trims a local file and repairs its filename, tags, track number, or artwork. | Select a file, load its current values, change only the required fields or trim range, then save. |
 | **Edit Album** | Applies one album name, year, and track artist value to every supported media file in a folder. | Browse an album folder, enter comma-separated artists, inspect the file count/current values, then confirm. Titles, track numbers, artwork, and the dedicated album-artist tag are preserved; filenames are safely rebuilt as `Title - Album (Year) - Artists`. |
 | **Album Consolidator** | Enriches local metadata and routes verified files into album folders. | Select the source, run the enricher, inspect review items, select a destination, then move verified tracks. |
-| **Utilities** | Checks duplicate source links, formats artist names, and converts timestamp text. | Choose the relevant tab, paste or load input, run the tool, then copy or save its result. |
+| **Utilities** | Formats artist names and converts timestamp text. | Choose the relevant tab, paste or load input, run the tool, then copy or save its result. |
 | **Live Logs** | Explains what an operation changed, skipped, or could not verify. | Filter or copy the relevant block when troubleshooting or reporting a bug. |
 | **Global Settings** | Controls output defaults, concurrency, retries, networking, audio, optional AI providers, and optional SerpApi search. | Paste your own provider credential into its password-masked field and select **Save and apply defaults**. A key is needed only for that provider. |
 | **Media Library** | Scans, browses, searches, plays, queues, and manages local media. | Add library locations, search by track/artist/album, then use the player or context actions. |
@@ -158,7 +158,7 @@ item unchanged.
 4. Set **Send selected result to** to **Audio Downloader (MP3 + metadata)** and select
    **Use selected result**.
 5. In **Audio Downloader**, review the populated title, album, artists, year, artwork,
-   and output folder. Do not assume the first result is correct.
+   output folder, and optional start/end range. Do not assume the first result is correct.
 6. Start the download and check **Live Logs** for the final saved path.
 
 The same result-routing control can send a match to **Video Downloader**, **Album
@@ -191,12 +191,13 @@ metadata already loaded.
 ## Edit an album folder
 
 1. Open **Edit Album**, browse to one album folder, and select **Load album**.
-2. Review the detected file count and existing album, year, and album-artist values.
+2. Review the detected file count and existing album, year, and track-artist values.
    Mixed values are shown as such instead of being silently chosen.
 3. Enter the three shared values. Album is required; year must be four digits or blank.
 4. Select **Apply to all files** and confirm the folder-level change.
-5. Review **Live Logs**. Successfully written files remain in place with their title,
-   performers, track number, artwork, and filename preserved; any failed file is listed.
+5. Review **Live Logs**. Every successful file receives the shared album, year, and
+   track Artist(s); its title, track number, and artwork are preserved, and its filename
+   is rebuilt from the updated shared identity. Any failed file is listed.
 
 From an album in **Media Library**, right-click and choose **Edit album metadata**.
 The same menu also retains **Consolidate / Album enricher** and **Track reorder**.
@@ -258,11 +259,12 @@ report the complete log block.
 
 ## Use the local media library
 
-1. Open **Media Library** and add or scan the folders containing audio/video.
-2. Search by title, performer, or album; use artist and album views to narrow a large
-   collection.
-3. For a natural-language request such as `latest Arijit Singh Hindi dance songs` or
-   `old Bengali songs`, enable **Smart Library Curator** and select **Find in my
+1. Open **Media Library** and use **+** to add folders. Each compact folder chip has an
+   **×** removal action; **Refresh** in the page header rescans every configured folder.
+2. Search by title, performer, or album; **Clear** resets the search text. Selecting an
+   artist filters both tracks and albums until **All tracks** or **All albums** is used.
+3. Expand **Smart Library Curator** for a natural-language request such as `latest
+   Arijit Singh Hindi dance songs` or `old Bengali songs`, enable AI, and select **Find in my
    library**. Agno plans the constraints, filters local artist/language/time metadata,
    gathers bounded public evidence when a semantic quality such as dance energy needs
    verification, and ranks only IDs in the scanned library.
@@ -274,7 +276,9 @@ report the complete log block.
    or open the containing folder.
 6. Language, mood, style, activity, energy, and tempo are strict evidence gates: the
    curator rejects a model claim when catalog or web evidence conflicts with or cannot
-   corroborate it. Only filters actually requested by the user appear in result reasons.
+   corroborate it. Semantic synonyms are accepted only when the verifier quotes an exact
+   supporting phrase from evidence for that recording. Only requested filters appear in
+   result reasons.
 7. The curator never redirects automatically. If the local result is empty, select the
    explicit **Search YouTube too** action only when you want an online search.
 

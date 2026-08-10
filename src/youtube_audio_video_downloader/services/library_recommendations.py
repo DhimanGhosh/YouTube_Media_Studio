@@ -76,12 +76,38 @@ class _SemanticMatch(BaseModel):
     matches: bool
     confidence: float = Field(ge=0, le=1)
     matched_filters: list[str] = Field(max_length=MAX_MATCHED_FILTERS)
+    evidence_support: list["_FilterEvidence"] = Field(
+        default_factory=list, max_length=MAX_MATCHED_FILTERS
+    )
+
+
+class _FilterEvidence(BaseModel):
+    """One exact evidence phrase supporting one requested semantic filter."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    filter: str
+    phrase: str
 
 
 class _SemanticOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     matches: list[_SemanticMatch] = Field(max_length=MAX_SEMANTIC_CANDIDATES)
+
+
+class _EvidenceJudgment(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    supports: bool
+    confidence: float = Field(ge=0, le=1)
+
+
+class _EvidenceJudgmentOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    judgments: list[_EvidenceJudgment] = Field(max_length=MAX_SEMANTIC_CANDIDATES)
 
 
 class _CuratorOutput(BaseModel):
@@ -146,7 +172,10 @@ def recommend_library_tracks(
 
     semantic_filters = (*plan.languages, *plan.semantic_filters)
     reasons: dict[int, tuple[str, ...]] = {}
-    semantic_candidates = candidates[:MAX_SEMANTIC_CANDIDATES]
+    # Every constrained candidate must have the same opportunity for independent
+    # evidence. Sending additional, unevidenced rows to the verifier made valid
+    # results depend on which agent happened to approve which subset.
+    semantic_candidates = candidates[:MAX_EVIDENCE_LOOKUPS]
     evidence = (
         _collect_catalog_evidence(semantic_candidates, semantic_filters)
         if plan.use_web_evidence or semantic_filters else {}
@@ -355,7 +384,14 @@ def _verify_semantics(
                 "general popularity. Judge activity, energy, and tempo from the music itself—not video "
                 "choreography, actors dancing, search-result SEO, or the presence of a word in "
                 "a title. matched_filters must list every provided filter plus every explicit "
-                "request descriptor that the item meets."
+                "request descriptor that the item meets. For every non-language filter, add an "
+                "evidence_support entry containing the filter and the shortest exact phrase "
+                "copied from that item's supplied internet evidence which supports it. A close "
+                "musical synonym such as 'melancholic' may support 'sad', but the phrase must "
+                "appear verbatim in the supplied evidence. Do not cite titles, artist names, "
+                "album names, or unsupported knowledge as semantic evidence. Return rows only "
+                "for items where matches is true; omit rejected items so the bounded structured "
+                "response remains concise."
             ),
             input_data={"request": request_text, "filters": filters, "catalog": catalog},
             output_schema=_SemanticOutput,
@@ -367,6 +403,14 @@ def _verify_semantics(
     except Exception as exc:
         print(f"[AI-STATIC-FALLBACK] Library semantic verifier | {exc}")
         return None
+
+    approved_synonyms = _adjudicate_semantic_evidence(
+        payload.matches,
+        evidence,
+        semantic_filters,
+        model=model,
+        timeout=timeout,
+    )
 
     selected: list[LibraryItem] = []
     reasons: dict[int, tuple[str, ...]] = {}
@@ -388,8 +432,9 @@ def _verify_semantics(
             evidence.get(candidate_id, {}), languages
         ):
             continue
-        if semantic_filters and not _evidence_supports_semantic_filters(
-            evidence.get(candidate_id, {}), semantic_filters
+        if semantic_filters and not _agent_evidence_supports_semantic_filters(
+            evidence.get(candidate_id, {}), semantic_filters,
+            approved_synonyms.get(candidate_id, set()),
         ):
             continue
         seen.add(candidate_id)
@@ -471,7 +516,10 @@ def _curate_candidates(
         selected.append(candidates[candidate_id])
         if len(selected) >= limit:
             break
-    return selected
+    # Ranking may reorder or diversify a verified set, but it must never erase it.
+    # Some local models return an empty structured ID list even after the preceding
+    # evidence gates have produced valid candidates.
+    return selected or candidates[:limit]
 
 
 def _collect_catalog_evidence(
@@ -540,7 +588,7 @@ def _bounded_candidates(
 
     def rank(item: LibraryItem) -> tuple[int, str, str]:
         metadata = _text_key(f"{item.title} {item.artists} {item.album}")
-        matches = sum(token in metadata for token in tokens)
+        matches = sum(_phrase_in(token, metadata) for token in tokens)
         return (-matches, item.artists.casefold(), item.title.casefold())
 
     return sorted(unique.values(), key=rank)[:MAX_LIBRARY_CANDIDATES]
@@ -685,6 +733,100 @@ def _evidence_supports_semantic_filters(
         for value in requested
         if _text_key(value)
     )
+
+
+def _agent_evidence_supports_semantic_filters(
+    evidence: dict[str, str],
+    requested: tuple[str, ...],
+    approved_synonyms: set[str],
+) -> bool:
+    """Accept literal traits or agent-mapped synonyms quoted from exact-song evidence."""
+
+    return all(
+        _evidence_supports_semantic_filter(evidence, value)
+        or key in approved_synonyms
+        for value in requested
+        if (key := _text_key(value))
+    )
+
+
+def _evidence_supports_semantic_filter(
+    evidence: dict[str, str], requested: str
+) -> bool:
+    corroboration = _evidence_corroboration_text(evidence)
+    words = set(corroboration.split())
+    key = _text_key(requested)
+    return bool(words and key and set(key.split()).issubset(words))
+
+
+def _adjudicate_semantic_evidence(
+    matches: object,
+    evidence: dict[int, dict[str, str]],
+    requested: tuple[str, ...],
+    *,
+    model: str,
+    timeout: float,
+) -> dict[int, set[str]]:
+    """Independently judge whether cited phrases actually entail requested traits."""
+
+    claims: list[dict[str, object]] = []
+    claim_targets: dict[int, tuple[int, str]] = {}
+    for row in matches if isinstance(matches, list) else []:
+        candidate_id = getattr(row, "id", -1)
+        if not isinstance(candidate_id, int) or candidate_id not in evidence:
+            continue
+        facts = evidence[candidate_id]
+        corroboration = _evidence_corroboration_text(facts)
+        support = getattr(row, "evidence_support", ())
+        if not isinstance(support, (list, tuple)):
+            continue
+        for value in requested:
+            key = _text_key(value)
+            if not key or _evidence_supports_semantic_filter(facts, value):
+                continue
+            for cited in support:
+                cited_filter = _text_key(getattr(cited, "filter", ""))
+                phrase = _text_key(getattr(cited, "phrase", ""))
+                if (
+                    not _values_overlap(key, cited_filter)
+                    or not _phrase_in(phrase, corroboration)
+                ):
+                    continue
+                claim_id = len(claims)
+                claims.append({"id": claim_id, "filter": value, "phrase": phrase})
+                claim_targets[claim_id] = (candidate_id, key)
+                break
+    if not claims:
+        return {}
+    try:
+        payload = run_structured_agent(
+            name="Library evidence entailment verifier",
+            role="Judge whether short quoted music-evidence phrases entail requested traits.",
+            instructions=(
+                "Judge each phrase by its literal ordinary musical meaning only. supports may "
+                "be true only when the phrase itself clearly describes or entails the requested "
+                "mood, style, activity, energy, or tempo. Reject generic identity phrases such "
+                "as language, artist, song, soundtrack, release, or album; reject titles and "
+                "ambiguous promotional wording. Do not use outside knowledge. Return every ID."
+            ),
+            input_data={"claims": claims},
+            output_schema=_EvidenceJudgmentOutput,
+            requested_model=model,
+            timeout=timeout,
+            temperature=0,
+            max_tokens=1000,
+        )
+    except Exception as exc:
+        print(f"[AI-STATIC-FALLBACK] Library evidence entailment verifier | {exc}")
+        return {}
+    approved: dict[int, set[str]] = {}
+    for judgment in payload.judgments:
+        target = claim_targets.get(judgment.id)
+        if target is None or not judgment.supports or judgment.confidence < 0.7:
+            continue
+        candidate_id, key = target
+        approved.setdefault(candidate_id, set()).add(key)
+    return approved
 
 
 def _evidence_corroboration_text(evidence: dict[str, str]) -> str:

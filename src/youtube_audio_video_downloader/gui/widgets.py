@@ -131,7 +131,7 @@ class BlankClickSelectionFilter(QObject):
         self, *, except_view: QAbstractItemView | None = None
     ) -> None:
         for view in self.root.findChildren(QAbstractItemView):
-            if view is except_view:
+            if view is except_view or bool(view.property("persistentFilterSelection")):
                 continue
             selection_model = view.selectionModel()
             if selection_model is not None:

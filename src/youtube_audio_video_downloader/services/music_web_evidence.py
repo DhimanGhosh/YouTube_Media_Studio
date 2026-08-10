@@ -41,7 +41,10 @@ def find_music_web_evidence(
             continue
         excerpts = _identity_matched_excerpts(rows, title_key)
         if excerpts:
-            return " | ".join(excerpts)[:1800]
+            # Keep the complete multi-song verifier prompt inside the local 16K
+            # context budget; exact-song identity and useful semantic phrases occur
+            # near the beginning of each bounded search excerpt.
+            return " | ".join(excerpts)[:900]
     return ""
 
 
