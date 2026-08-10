@@ -1,6 +1,7 @@
 # Privacy Policy
 
-**Effective date:** August 11, 2026
+**Effective date:** August 11, 2026, upon publication in the first release containing
+this policy
 
 This Privacy Policy explains how **YouTube Media Studio** (the "Application"),
 maintained under the **DhimanTools** project identity, handles information when you use
@@ -42,8 +43,8 @@ revocable API keys where providers support them.
 
 The Application does not automatically transmit locally stored information to
 DhimanTools. Diagnostic reports are disabled by default, remain on the device, and are
-shared only if you choose to provide them. When enabled, the Application retains up to
-twelve recent diagnostic reports and removes older reports automatically.
+shared only if you choose to provide them. In the current release, the Application
+retains up to twelve recent diagnostic reports and removes older reports automatically.
 
 ## Information sent to third-party services
 
@@ -65,7 +66,11 @@ text-based agent workflows. A custom provider or a future provider-specific capa
 may behave according to its own configuration and policy, so review the destination
 before enabling it.
 
-The Application can interact with services in the following categories:
+The Application can interact with services in the following categories. The examples
+reflect integrations available on the effective date and may change as providers are
+added, removed, or renamed in later releases. Material changes will be reflected in this
+policy; the current hosted-AI definitions are also visible in the public
+[provider registry](src/youtube_audio_video_downloader/services/ai_provider_registry.py).
 
 | Category | Examples | Relevant privacy information |
 | --- | --- | --- |
