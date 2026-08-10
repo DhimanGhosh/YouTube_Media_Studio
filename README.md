@@ -17,7 +17,8 @@
   <a href="#how-ai-helps"><b>AI</b></a> ·
   <a href="#command-line"><b>CLI</b></a> ·
   <a href="#develop"><b>Develop</b></a> ·
-  <a href="CHANGELOG.md"><b>Changelog</b></a>
+  <a href="CHANGELOG.md"><b>Changelog</b></a> ·
+  <a href="PRIVACY.md"><b>Privacy</b></a>
 </p>
 
 **One AI-powered studio for the entire media workflow.** YouTube Media Studio combines a modern
