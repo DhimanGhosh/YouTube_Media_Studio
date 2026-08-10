@@ -4,6 +4,18 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## Unreleased
+
+### Added
+
+- Add album-wide artwork replacement and removal controls to Edit Album, including
+  embedded-artwork coverage reporting and preserved-artwork behavior when unchanged.
+
+### Fixed
+
+- Restore native edge and corner window resizing on Windows, macOS, and Linux, and pause
+  animated background effects during resize to prevent Windows flicker and UI stalls.
+
 ## [2.4.3] - 2026-08-11
 
 ### Added

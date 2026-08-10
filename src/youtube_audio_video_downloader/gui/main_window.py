@@ -34,7 +34,6 @@ from PyQt6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QScrollArea,
-    QSizeGrip,
     QSlider,
     QSpinBox,
     QStackedWidget,
@@ -124,9 +123,9 @@ from youtube_audio_video_downloader.version import application_version
 
 
 class TitleBar(QWidget):
-    """Custom draggable title bar for the frameless window."""
+    """Branded application header with optional custom window controls."""
 
-    def __init__(self, window: "MainWindow") -> None:
+    def __init__(self, window: "MainWindow", *, native_frame: bool = False) -> None:
         super().__init__(window)
         self.window = window
         self.setObjectName("titleBar")
@@ -172,6 +171,7 @@ class TitleBar(QWidget):
         close_button.setObjectName("closeButton")
         close_button.setToolTip("Close")
         close_button.clicked.connect(window.close)
+        self.close_button = close_button
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(18, 8, 12, 7)
@@ -179,9 +179,18 @@ class TitleBar(QWidget):
         layout.addWidget(brand)
         layout.addLayout(title_column)
         layout.addStretch(1)
-        layout.addWidget(self.minimize_button)
-        layout.addWidget(self.maximize_button)
-        layout.addWidget(close_button)
+        if native_frame:
+            for button in (
+                self.minimize_button,
+                self.maximize_button,
+                self.close_button,
+            ):
+                button.setParent(self)
+                button.hide()
+        else:
+            layout.addWidget(self.minimize_button)
+            layout.addWidget(self.maximize_button)
+            layout.addWidget(self.close_button)
 
     def mousePressEvent(self, event) -> None:  # noqa: N802
         if event.button() == Qt.MouseButton.LeftButton:
@@ -211,11 +220,10 @@ class MainWindow(QMainWindow):
         self.resize(1380, 860)
         self.setWindowFlags(
             Qt.WindowType.Window
-            | Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowSystemMenuHint
             | Qt.WindowType.WindowMinMaxButtonsHint
+            | Qt.WindowType.WindowCloseButtonHint
         )
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.settings = settings or QSettings(
             ORGANIZATION_NAME, SETTINGS_APPLICATION_NAME
         )
@@ -259,6 +267,12 @@ class MainWindow(QMainWindow):
         self._tool_ai_checks: dict[str, QCheckBox] = {}
 
         self._build_window()
+        self._resize_idle_timer = QTimer(self)
+        self._resize_idle_timer.setSingleShot(True)
+        self._resize_idle_timer.setInterval(140)
+        self._resize_idle_timer.timeout.connect(
+            lambda: self._background.set_interactive_resize(False)
+        )
         self._blank_click_selection_filter = BlankClickSelectionFilter(self)
         application = QApplication.instance()
         if application is not None:
@@ -279,8 +293,8 @@ class MainWindow(QMainWindow):
         root_layout = QGridLayout(root)
         root_layout.setContentsMargins(0, 0, 0, 0)
 
-        background = LiquidBackground(root)
-        root_layout.addWidget(background, 0, 0)
+        self._background = LiquidBackground(root)
+        root_layout.addWidget(self._background, 0, 0)
 
         shell = QWidget(root)
         shell.setObjectName("windowShell")
@@ -289,7 +303,7 @@ class MainWindow(QMainWindow):
         shell_layout.setContentsMargins(0, 0, 0, 0)
         shell_layout.setSpacing(0)
 
-        self.title_bar = TitleBar(self)
+        self.title_bar = TitleBar(self, native_frame=True)
         shell_layout.addWidget(self.title_bar)
 
         body = QWidget()
@@ -469,17 +483,22 @@ class MainWindow(QMainWindow):
         self.cancel_button.setObjectName("dangerButton")
         self.cancel_button.setEnabled(False)
         self.cancel_button.clicked.connect(self._cancel_active_operation)
-        grip = QSizeGrip(self.shell)
-        grip.setFixedSize(18, 18)
-
         layout.addWidget(self.activity_progress, 0, 0, 1, 3)
         layout.addWidget(self.pulse_dot, 1, 0)
         layout.addWidget(self.activity_label, 1, 1)
         layout.addWidget(self.ai_status_badge, 1, 2, Qt.AlignmentFlag.AlignRight)
         layout.addWidget(self.cancel_button, 0, 3, 2, 1)
-        layout.addWidget(grip, 0, 4, 2, 1, Qt.AlignmentFlag.AlignBottom)
         layout.setColumnStretch(1, 1)
         return bar
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        """Keep native edge resizing responsive while the window is being dragged."""
+
+        if hasattr(self, "_background"):
+            self._background.set_interactive_resize(True)
+        if hasattr(self, "_resize_idle_timer"):
+            self._resize_idle_timer.start()
+        super().resizeEvent(event)
 
     # --------------------------------------------------------------- page base
     def _page_container(self, title: str, subtitle: str) -> tuple[QWidget, QVBoxLayout]:
@@ -1716,9 +1735,9 @@ class MainWindow(QMainWindow):
         )
         card, outer, form = self._form_card(
             "Album-wide metadata",
-            "Titles, track numbers, artwork, and folder names are preserved. Album, year, "
-            "and Artist(s) replace those tags on every file; filenames are rebuilt from the "
-            "preserved title and new shared values, including nested folders.",
+            "Titles, track numbers, and folder names are preserved. Album, year, Artist(s), "
+            "and optional album artwork are applied to every file; filenames are rebuilt "
+            "from the preserved title and new shared values, including nested folders.",
         )
         self.edit_album_folder = PathPicker(
             placeholder="Select the complete album folder",
@@ -1731,6 +1750,11 @@ class MainWindow(QMainWindow):
         self.edit_album_year.setPlaceholderText("Four-digit release year")
         self.edit_album_artist = QLineEdit()
         self.edit_album_artist.setPlaceholderText("Comma-separated artists for every track")
+        self.edit_album_artwork = PathPicker(
+            placeholder="Optional local JPEG/PNG path or https:// image URL",
+            file_filter="Images (*.jpg *.jpeg *.png);;All files (*)",
+        )
+        self.edit_album_remove_artwork = QCheckBox("Remove artwork from every album file")
         self.edit_album_status = QLabel("Select an album folder to inspect its shared metadata.")
         self.edit_album_status.setObjectName("mutedLabel")
         self.edit_album_status.setWordWrap(True)
@@ -1738,6 +1762,8 @@ class MainWindow(QMainWindow):
         form.addRow("Album name", self.edit_album_name)
         form.addRow("Release year", self.edit_album_year)
         form.addRow("Artist(s)", self.edit_album_artist)
+        form.addRow("Album artwork", self.edit_album_artwork)
+        form.addRow("Artwork behavior", self.edit_album_remove_artwork)
         form.addRow("Folder status", self.edit_album_status)
 
         self._edit_album_load_timer = QTimer(self)
@@ -1788,12 +1814,22 @@ class MainWindow(QMainWindow):
         self.edit_album_name.setText(summary.album)
         self.edit_album_year.setText(summary.year)
         self.edit_album_artist.setText(summary.artists)
+        self.edit_album_artwork.set_text("")
+        self.edit_album_remove_artwork.setChecked(False)
         mixed = (
             " · mixed values: " + ", ".join(field.replace("_", " ") for field in summary.mixed_fields)
             if summary.mixed_fields
             else " · shared metadata detected"
         )
-        self.edit_album_status.setText(f"{len(summary.files)} supported file(s){mixed}")
+        if summary.artwork_files == len(summary.files):
+            artwork = "artwork embedded in every file"
+        elif summary.artwork_files:
+            artwork = f"artwork embedded in {summary.artwork_files}/{len(summary.files)} files"
+        else:
+            artwork = "no embedded artwork"
+        self.edit_album_status.setText(
+            f"{len(summary.files)} supported file(s){mixed} · {artwork}"
+        )
 
     def _start_edit_album(self) -> None:
         self._edit_album_load_timer.stop()
@@ -1820,12 +1856,28 @@ class MainWindow(QMainWindow):
                 self, "Invalid release year", "Release year must contain four digits or be blank."
             )
             return
+        artwork_path = self.edit_album_artwork.text()
+        remove_artwork = self.edit_album_remove_artwork.isChecked()
+        if artwork_path and remove_artwork:
+            QMessageBox.warning(
+                self,
+                "Choose artwork behavior",
+                "Select replacement artwork or remove existing artwork, not both.",
+            )
+            return
+        artwork_action = (
+            f"replace from {artwork_path}"
+            if artwork_path
+            else "remove from every file"
+            if remove_artwork
+            else "preserve existing artwork"
+        )
         answer = QMessageBox.question(
             self,
             "Apply album metadata?",
             f"Update album metadata in {len(summary.files)} file(s) inside:\n"
             f"{summary.folder}\n\nAlbum: {album}\nYear: {year or '(clear)'}\n"
-            f"Artist(s) on every track: {artists}",
+            f"Artist(s) on every track: {artists}\nArtwork: {artwork_action}",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -1840,6 +1892,8 @@ class MainWindow(QMainWindow):
                     "year": year,
                     "artists": artists,
                 },
+                "artwork_path": artwork_path,
+                "remove_artwork": remove_artwork,
                 "ai_enabled": False,
             },
         )
@@ -1850,6 +1904,8 @@ class MainWindow(QMainWindow):
         self.edit_album_name.clear()
         self.edit_album_year.clear()
         self.edit_album_artist.clear()
+        self.edit_album_artwork.set_text("")
+        self.edit_album_remove_artwork.setChecked(False)
         self.edit_album_status.setText(
             "Select an album folder to inspect its shared metadata."
         )
@@ -3337,7 +3393,8 @@ class MainWindow(QMainWindow):
                 "edit_file_input", "edit_file_output", "edit_file_artwork", "edit_file_action",
                 "edit_file_url", "edit_file_start", "edit_file_end", "edit_file_content",
                 "edit_file_overwrite", "edit_file_metadata", "edit_file_remove_artwork",
-                "edit_album_folder", "edit_album_metadata",
+                "edit_album_folder", "edit_album_artwork", "edit_album_metadata",
+                "edit_album_remove_artwork",
                 "album_consolidator_source", "album_consolidator_destination",
                 "album_enrich_destination_enabled",
                 "album_move_perform_enrichment",
@@ -3719,6 +3776,7 @@ class MainWindow(QMainWindow):
                 "edit_file_output": self.edit_file_output,
                 "edit_file_artwork": self.edit_meta_artwork,
                 "edit_album_folder": self.edit_album_folder,
+                "edit_album_artwork": self.edit_album_artwork,
                 "album_consolidator_source": self.album_consolidator_source,
                 "album_consolidator_destination": self.album_consolidator_destination,
             }
@@ -3775,6 +3833,9 @@ class MainWindow(QMainWindow):
                     widget.setText(str(saved_metadata.get(key, "") or ""))
             self.edit_meta_remove_artwork.setChecked(
                 self._setting_bool("workspace/edit_file_remove_artwork", False)
+            )
+            self.edit_album_remove_artwork.setChecked(
+                self._setting_bool("workspace/edit_album_remove_artwork", False)
             )
             album_metadata_raw = str(
                 self.settings.value("workspace/edit_album_metadata", "") or ""
@@ -3848,6 +3909,7 @@ class MainWindow(QMainWindow):
             "edit_file_output": self.edit_file_output,
             "edit_file_artwork": self.edit_meta_artwork,
             "edit_album_folder": self.edit_album_folder,
+            "edit_album_artwork": self.edit_album_artwork,
             "album_consolidator_source": self.album_consolidator_source,
             "album_consolidator_destination": self.album_consolidator_destination,
         }
@@ -3890,6 +3952,10 @@ class MainWindow(QMainWindow):
                 },
                 ensure_ascii=False,
             ),
+        )
+        self.settings.setValue(
+            "workspace/edit_album_remove_artwork",
+            self.edit_album_remove_artwork.isChecked(),
         )
         self.settings.setValue(
             "workspace/album_statuses", json.dumps(self._album_statuses, ensure_ascii=False)

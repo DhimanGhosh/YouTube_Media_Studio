@@ -515,11 +515,22 @@ class LiquidBackground(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._phase = 0.0
+        self._interactive_resize = False
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         timer = QTimer(self)
         timer.timeout.connect(self._advance)
         timer.start(32)
         self._timer = timer
+
+    def set_interactive_resize(self, active: bool) -> None:
+        """Use a cheap static background while the native window is resizing."""
+
+        self._interactive_resize = active
+        if active:
+            self._timer.stop()
+        elif not self._timer.isActive():
+            self._timer.start(32)
+        self.update()
 
     def _advance(self) -> None:
         self._phase = (self._phase + 0.008) % (math.pi * 2)
@@ -534,6 +545,9 @@ class LiquidBackground(QWidget):
         base.setColorAt(0.46, QColor(13, 17, 38))
         base.setColorAt(1.0, QColor(7, 20, 30))
         painter.fillRect(self.rect(), base)
+
+        if self._interactive_resize:
+            return
 
         blobs = (
             (

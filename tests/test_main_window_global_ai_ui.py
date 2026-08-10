@@ -335,6 +335,20 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         self.assertIsNotNone(logo.pixmap())
         self.assertFalse(logo.pixmap().isNull())
 
+    def test_window_uses_native_edges_and_throttles_resize_animation(self) -> None:
+        self.assertFalse(
+            bool(self.window.windowFlags() & Qt.WindowType.FramelessWindowHint)
+        )
+        self.window.show()
+        self.app.processEvents()
+        self.assertFalse(self.window.title_bar.minimize_button.isVisible())
+        self.window.resize(self.window.width() + 10, self.window.height() + 10)
+        self.app.processEvents()
+        self.assertTrue(self.window._background._interactive_resize)
+        self.window._resize_idle_timer.stop()
+        self.window._background.set_interactive_resize(False)
+        self.assertTrue(self.window._background._timer.isActive())
+
     def test_blank_click_clears_highlights_across_the_application(self) -> None:
         library = self.window.media_library
         library.folder_list.addItem("C:/Music")
@@ -444,6 +458,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         self.window.edit_album_name.setText("New Album")
         self.window.edit_album_year.setText("2026")
         self.window.edit_album_artist.setText("New Artist, Guest Artist")
+        self.window.edit_album_artwork.set_text("https://example.test/cover.jpg")
         with (
             patch(
                 "youtube_audio_video_downloader.gui.main_window.inspect_album_folder",
@@ -469,6 +484,8 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
                 "artists": "New Artist, Guest Artist",
             },
         )
+        self.assertEqual(params["artwork_path"], "https://example.test/cover.jpg")
+        self.assertFalse(params["remove_artwork"])
         self.assertFalse(params["ai_enabled"])
 
     def test_album_enricher_name_is_used_in_the_workspace(self) -> None:
