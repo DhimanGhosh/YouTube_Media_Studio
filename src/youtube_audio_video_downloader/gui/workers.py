@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import io
 import re
+import sys
 import threading
 import traceback
 from pathlib import Path
@@ -143,6 +144,101 @@ class SignalTextStream(io.TextIOBase):
                 self._buffers.pop(thread_id, None)
 
 
+class _ThreadOutputRouter(io.TextIOBase):
+    """Route concurrent worker output without nesting global stream redirects."""
+
+    def __init__(self, fallback: io.TextIOBase) -> None:
+        super().__init__()
+        self.fallback = fallback
+        self._captures: list[tuple[int, SignalTextStream]] = []
+        self._lock = threading.RLock()
+
+    @property
+    def encoding(self) -> str | None:
+        return getattr(self.fallback, "encoding", None)
+
+    def writable(self) -> bool:
+        return True
+
+    def register(self, stream: SignalTextStream) -> None:
+        with self._lock:
+            self._captures.append((threading.get_ident(), stream))
+
+    def unregister(self, stream: SignalTextStream) -> None:
+        thread_id = threading.get_ident()
+        with self._lock:
+            for index in range(len(self._captures) - 1, -1, -1):
+                if self._captures[index] == (thread_id, stream):
+                    self._captures.pop(index)
+                    break
+
+    def is_idle(self) -> bool:
+        with self._lock:
+            return not self._captures
+
+    def _target_unlocked(self) -> io.TextIOBase:
+        thread_id = threading.get_ident()
+        for owner_id, stream in reversed(self._captures):
+            if owner_id == thread_id:
+                return stream
+        # Service operations may create child executor threads. Preserve
+        # their historical behavior by routing them to the newest live
+        # worker rather than dropping their progress messages.
+        return self._captures[-1][1] if self._captures else self.fallback
+
+    def write(self, text: str) -> int:
+        # Keep unregister/delete from racing between target selection and the
+        # write into that target's Qt signal.
+        with self._lock:
+            return self._target_unlocked().write(text)
+
+    def flush(self) -> None:
+        with self._lock:
+            self._target_unlocked().flush()
+
+    def isatty(self) -> bool:
+        return bool(getattr(self.fallback, "isatty", lambda: False)())
+
+    def fileno(self) -> int:
+        return self.fallback.fileno()
+
+
+# Router-local locks protect writes and capture membership. This separate lock
+# makes the process-global stdout/stderr installation and restoration atomic.
+_OUTPUT_ROUTER_LOCK = threading.RLock()
+
+
+def _install_output_router(name: str) -> _ThreadOutputRouter:
+    current = getattr(sys, name)
+    if isinstance(current, _ThreadOutputRouter):
+        return current
+    router = _ThreadOutputRouter(current)
+    setattr(sys, name, router)
+    return router
+
+
+@contextlib.contextmanager
+def _capture_worker_output(stream: SignalTextStream):
+    """Capture this worker's output while safely supporting overlapping jobs."""
+
+    with _OUTPUT_ROUTER_LOCK:
+        stdout_router = _install_output_router("stdout")
+        stderr_router = _install_output_router("stderr")
+        stdout_router.register(stream)
+        stderr_router.register(stream)
+    try:
+        yield
+    finally:
+        stream.flush()
+        with _OUTPUT_ROUTER_LOCK:
+            stdout_router.unregister(stream)
+            stderr_router.unregister(stream)
+            if stdout_router.is_idle() and sys.stdout is stdout_router:
+                sys.stdout = stdout_router.fallback
+            if stderr_router.is_idle() and sys.stderr is stderr_router:
+                sys.stderr = stderr_router.fallback
+
+
 class OperationWorker(QObject):
     """Run one service operation away from the GUI thread."""
 
@@ -175,8 +271,7 @@ class OperationWorker(QObject):
         try:
             self.log.emit(f"[START] {operation_display_name(self.operation)}")
             with (
-                contextlib.redirect_stdout(stream),
-                contextlib.redirect_stderr(stream),
+                _capture_worker_output(stream),
                 file_in_use_handler(self._wait_for_file_release),
             ):
                 summary = self._execute_with_retries()
