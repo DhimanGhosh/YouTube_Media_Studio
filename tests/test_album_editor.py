@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from mutagen.id3 import ID3, TIT2
 
 from youtube_audio_video_downloader.core.cancellation import CancellationToken
 from youtube_audio_video_downloader.gui.operations import execute_operation
@@ -16,7 +19,10 @@ from youtube_audio_video_downloader.services.album_editor import (
     edit_album_folder,
     inspect_album_folder,
 )
-from youtube_audio_video_downloader.services.media_metadata import EditableMediaMetadata
+from youtube_audio_video_downloader.services.media_metadata import (
+    EditableMediaMetadata,
+    read_media_metadata,
+)
 
 
 def test_inspection_reports_shared_and_mixed_album_fields() -> None:
@@ -33,6 +39,7 @@ def test_inspection_reports_shared_and_mixed_album_fields() -> None:
                 album="Shared Album",
                 year="1999" if Path(path).name == "one.mp3" else "2000",
                 artists="Shared Artist",
+                artwork_present=Path(path).name == "one.mp3",
             )
 
         with patch(
@@ -46,6 +53,7 @@ def test_inspection_reports_shared_and_mixed_album_fields() -> None:
         assert result.year == ""
         assert result.artists == "Shared Artist"
         assert result.mixed_fields == ("year",)
+        assert result.artwork_files == 1
 
 
 def test_edit_updates_only_requested_album_level_fields_for_every_file() -> None:
@@ -82,6 +90,89 @@ def test_edit_updates_only_requested_album_level_fields_for_every_file() -> None
             == {"album": "New Album", "year": "2026", "artists": "Solo Artist, Guest"}
             for call in replace_mock.call_args_list
         )
+
+
+def test_edit_applies_one_artwork_image_to_every_file() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        first = root / "one.mp3"
+        second = root / "two.flac"
+        artwork = root / "cover.jpg"
+        for path in (first, second, artwork):
+            path.touch()
+        with (
+            patch(
+                "youtube_audio_video_downloader.services.album_editor.read_media_metadata",
+                return_value=EditableMediaMetadata(title="Song"),
+            ),
+            patch(
+                "youtube_audio_video_downloader.services.album_editor.replace_media_metadata"
+            ) as replace_mock,
+            patch(
+                "youtube_audio_video_downloader.services.album_editor._rename_album_file",
+                side_effect=lambda path, _title, _values: path,
+            ),
+        ):
+            edit_album_folder(
+                root,
+                {"album": "Album", "year": "2026", "artists": "Artist"},
+                artwork_path=artwork,
+            )
+
+        assert replace_mock.call_count == 2
+        assert all(
+            call.kwargs == {"artwork_path": str(artwork), "remove_artwork": False}
+            for call in replace_mock.call_args_list
+        )
+
+
+def test_edit_rejects_replacement_and_removal_together() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        source = Path(directory) / "song.mp3"
+        source.touch()
+        with pytest.raises(ValueError, match="replacement artwork"):
+            edit_album_folder(
+                directory,
+                {"album": "Album", "artists": "Artist"},
+                artwork_path="cover.jpg",
+                remove_artwork=True,
+            )
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="needs FFmpeg")
+def test_edit_embeds_artwork_and_shared_tags_in_real_album_files() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        sources = [root / "one.mp3", root / "two.mp3"]
+        for index, source in enumerate(sources, start=1):
+            subprocess.run(
+                [
+                    "ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+                    "-i", f"sine=frequency={400 + index}:duration=0.1",
+                    "-codec:a", "libmp3lame", str(source),
+                ],
+                check=True,
+            )
+            tags = ID3(source)
+            tags.add(TIT2(encoding=3, text=f"Song {index}"))
+            tags.save(source)
+        artwork = root / "cover.jpg"
+        artwork.write_bytes(b"\xff\xd8\xff\xd9")
+
+        result = edit_album_folder(
+            root,
+            {"album": "Shared Album", "year": "2026", "artists": "Shared Artist"},
+            artwork_path=artwork,
+        )
+
+        assert result.failed == ()
+        assert len(result.updated) == 2
+        for updated_path in result.updated:
+            loaded = read_media_metadata(updated_path)
+            assert loaded.album == "Shared Album"
+            assert loaded.year == "2026"
+            assert loaded.artists == "Shared Artist"
+            assert loaded.artwork_present
 
 
 def test_edit_renames_each_file_from_title_and_new_album_year_and_artists() -> None:
@@ -157,6 +248,8 @@ def test_gui_operation_reports_album_edit_results(edit_mock) -> None:
         {
             "folder": "album",
             "metadata": {"album": "Album", "year": "2026", "artists": "Artist"},
+            "artwork_path": "https://example.test/cover.jpg",
+            "remove_artwork": False,
             "ai_enabled": False,
         },
         CancellationToken(),
@@ -166,3 +259,4 @@ def test_gui_operation_reports_album_edit_results(edit_mock) -> None:
     assert summary.tagged == 2
     assert summary.failed == 1
     assert summary.failed_items == ("broken.mp3",)
+    assert edit_mock.call_args.kwargs["artwork_path"] == "https://example.test/cover.jpg"

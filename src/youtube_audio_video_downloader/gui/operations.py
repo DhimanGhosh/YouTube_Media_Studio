@@ -651,6 +651,8 @@ def _run_edit_album(params: dict[str, Any], token: CancellationToken) -> Operati
     result = edit_album_folder(
         str(params.get("folder", "") or ""),
         metadata,
+        artwork_path=str(params.get("artwork_path", "") or "") or None,
+        remove_artwork=bool(params.get("remove_artwork", False)),
         cancellation_token=token,
     )
     return OperationSummary(

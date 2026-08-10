@@ -25,6 +25,7 @@ class AlbumFolderMetadata:
     year: str
     artists: str
     mixed_fields: tuple[str, ...] = ()
+    artwork_files: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,12 +43,15 @@ def inspect_album_folder(folder: str | Path) -> AlbumFolderMetadata:
         raise ValueError("The selected folder contains no supported media files.")
     values: dict[str, set[str]] = {"album": set(), "year": set(), "artists": set()}
     readable: list[Path] = []
+    artwork_files = 0
     for path in files:
         try:
             metadata = read_media_metadata(path)
         except (OSError, RuntimeError, ValueError):
             continue
         readable.append(path)
+        if metadata.artwork_present:
+            artwork_files += 1
         for field in values:
             text = str(getattr(metadata, field) or "").strip()
             if text:
@@ -62,6 +66,7 @@ def inspect_album_folder(folder: str | Path) -> AlbumFolderMetadata:
         year=_single_value(values["year"]),
         artists=_single_value(values["artists"]),
         mixed_fields=mixed,
+        artwork_files=artwork_files,
     )
 
 
@@ -69,9 +74,11 @@ def edit_album_folder(
     folder: str | Path,
     metadata: dict[str, Any],
     *,
+    artwork_path: str | Path | None = None,
+    remove_artwork: bool = False,
     cancellation_token: CancellationToken | None = None,
 ) -> AlbumEditResult:
-    """Apply album, year, and the same track-artist tags to every supported file."""
+    """Apply shared album tags and optional artwork to every supported file."""
 
     root = _album_folder(folder)
     files = _media_files(root)
@@ -88,6 +95,9 @@ def edit_album_folder(
         raise ValueError("Artist(s) is required.")
     if values["year"] and not re.fullmatch(r"\d{4}", values["year"]):
         raise ValueError("Release year must be a four-digit year or blank.")
+    selected_artwork = str(artwork_path or "").strip()
+    if selected_artwork and remove_artwork:
+        raise ValueError("Choose replacement artwork or remove existing artwork, not both.")
     token = cancellation_token or CancellationToken()
     updated: list[Path] = []
     failed: list[tuple[Path, str]] = []
@@ -95,7 +105,12 @@ def edit_album_folder(
         token.raise_if_cancelled()
         try:
             current = read_media_metadata(path)
-            replace_media_metadata(path, values)
+            replace_media_metadata(
+                path,
+                values,
+                artwork_path=selected_artwork or None,
+                remove_artwork=remove_artwork,
+            )
             updated_path = _rename_album_file(path, current.title, values)
         except (OSError, RuntimeError, ValueError) as exc:
             failed.append((path, str(exc)))
