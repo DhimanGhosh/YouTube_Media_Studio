@@ -54,11 +54,13 @@ from PyQt6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QHeaderView,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMenu,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -81,6 +83,11 @@ from youtube_audio_video_downloader.services.media_library import (
     filter_library,
     scan_library,
     split_artists,
+)
+from youtube_audio_video_downloader.services.media_playlists import (
+    add_playlist_paths,
+    decode_playlists,
+    encode_playlists,
 )
 from youtube_audio_video_downloader.services.library_recommendations import (
     LibraryRecommendation,
@@ -524,6 +531,12 @@ class MediaLibraryPage(QWidget):
         self.queue: list[LibraryItem] = []
         self._queue_source: list[LibraryItem] = []
         self.queue_index = -1
+        self.playlists = decode_playlists(
+            self.settings.value("library/playlists", "")
+        )
+        self._active_playlist = str(
+            self.settings.value("library/active_playlist", "") or ""
+        )
         repeat_mode = str(self.settings.value("library/repeat_mode", "off"))
         self._repeat_mode = (
             repeat_mode if repeat_mode in {"off", "all", "one"} else "off"
@@ -591,6 +604,12 @@ class MediaLibraryPage(QWidget):
         self.library_refresh_button.setToolTip("Rescan every configured library folder")
         self.library_refresh_button.clicked.connect(self.refresh_library)
         header.addWidget(self.library_refresh_button)
+        self.playlist_toggle_button = QPushButton("Playlists (0) ‹")
+        self.playlist_toggle_button.setObjectName("secondaryButton")
+        self.playlist_toggle_button.setCheckable(True)
+        self.playlist_toggle_button.setToolTip("Create and browse saved local playlists")
+        self.playlist_toggle_button.toggled.connect(self._toggle_playlist_drawer)
+        header.addWidget(self.playlist_toggle_button)
         self.queue_toggle_button = QPushButton("Queue (0) ›")
         self.queue_toggle_button.setObjectName("secondaryButton")
         self.queue_toggle_button.setCheckable(True)
@@ -615,11 +634,15 @@ class MediaLibraryPage(QWidget):
         self.library_splitter.setSizes([320, 430])
         main_layout.addWidget(self.library_splitter, 1)
         main_layout.addWidget(self._build_player())
+        self.playlist_drawer = self._build_playlist_drawer()
+        self.playlist_drawer.setVisible(False)
+        layout.addWidget(self.playlist_drawer)
         layout.addWidget(main, 1)
         self.queue_drawer = self._build_queue_drawer()
         self.queue_drawer.setVisible(False)
         layout.addWidget(self.queue_drawer)
         self._sync_queue_drawer()
+        self._render_playlists()
 
     def _build_folder_card(self) -> QWidget:
         card = GlassCard()
@@ -1075,6 +1098,8 @@ class MediaLibraryPage(QWidget):
         self.queue.clear()
         self._queue_source.clear()
         self.queue_index = -1
+        self.playlists.clear()
+        self._active_playlist = ""
         self._open_album_items.clear()
         self._open_album_name = ""
         self._open_album_artists.clear()
@@ -1092,6 +1117,7 @@ class MediaLibraryPage(QWidget):
         self.elapsed.setText("0:00 / 0:00")
         self.now_playing_art.clear()
         self.settings.remove("library")
+        self._render_playlists()
         self._search_debounce.stop()
         return True
 
@@ -1122,6 +1148,10 @@ class MediaLibraryPage(QWidget):
         self.facets.setProperty("persistentFilterSelection", True)
         self.facets.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.facets.itemSelectionChanged.connect(self._schedule_search)
+        self.facets.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.facets.customContextMenuRequested.connect(
+            self._show_artist_context_menu
+        )
         grid.addWidget(self.facets, 1, 0)
 
         actions = QHBoxLayout()
@@ -1137,6 +1167,15 @@ class MediaLibraryPage(QWidget):
         self.match_status.setObjectName("mutedLabel")
         actions.addWidget(self.match_status)
         actions.addStretch(1)
+        self.add_selected_to_playlist_button = QPushButton("Add to playlist")
+        self.add_selected_to_playlist_button.setObjectName("secondaryButton")
+        self.add_selected_to_playlist_button.setToolTip(
+            "Add the selected tracks to a saved playlist"
+        )
+        self.add_selected_to_playlist_button.clicked.connect(
+            self.add_selected_tracks_to_playlist
+        )
+        actions.addWidget(self.add_selected_to_playlist_button)
         for text, handler, primary in (
             ("Play selected", self.play_selected, True),
             ("Queue selected", self.enqueue_selected, False),
@@ -1183,6 +1222,15 @@ class MediaLibraryPage(QWidget):
         helper = QLabel("Open an album to select individual tracks")
         helper.setObjectName("mutedLabel")
         heading.addWidget(helper)
+        self.add_album_to_playlist_button = QPushButton("Add album to playlist")
+        self.add_album_to_playlist_button.setObjectName("secondaryButton")
+        self.add_album_to_playlist_button.setToolTip(
+            "Add every track from the selected album to a playlist"
+        )
+        self.add_album_to_playlist_button.clicked.connect(
+            self.add_selected_album_to_playlist
+        )
+        heading.addWidget(self.add_album_to_playlist_button)
         browser_layout.addLayout(heading)
         self.albums = AlbumGridListWidget()
         self.albums.setViewMode(QListWidget.ViewMode.IconMode)
@@ -1222,9 +1270,27 @@ class MediaLibraryPage(QWidget):
         self.album_detail_context.setObjectName("mutedLabel")
         detail_header.addWidget(self.album_detail_context)
         detail_header.addStretch(1)
+        for text, mode in (
+            ("Play all", "play"),
+            ("Shuffle all", "shuffle"),
+        ):
+            button = QPushButton(text)
+            button.setObjectName("primaryButton" if text == "Play all" else "secondaryButton")
+            button.clicked.connect(
+                lambda _checked=False, queue_mode=mode:
+                self.play_album_tracks(queue_mode, False)
+            )
+            detail_header.addWidget(button)
+        self.add_open_album_to_playlist_button = QPushButton("Add to playlist")
+        self.add_open_album_to_playlist_button.setObjectName("secondaryButton")
+        self.add_open_album_to_playlist_button.setToolTip(
+            "Add selected album tracks, or the full album when none are selected"
+        )
+        self.add_open_album_to_playlist_button.clicked.connect(
+            self.add_open_album_tracks_to_playlist
+        )
+        detail_header.addWidget(self.add_open_album_to_playlist_button)
         for text, mode, selected in (
-            ("Play all", "play", False),
-            ("Shuffle all", "shuffle", False),
             ("Play selected", "play", True),
             ("Queue selected", "queue", True),
             ("Shuffle selected", "shuffle", True),
@@ -1249,6 +1315,356 @@ class MediaLibraryPage(QWidget):
         detail_layout.addWidget(self.album_tracks, 1)
         self.album_stack.addWidget(details)
         return self.album_stack
+
+    def _build_playlist_drawer(self) -> QWidget:
+        drawer = GlassCard()
+        drawer.setObjectName("playlistDrawer")
+        drawer.setMinimumWidth(320)
+        drawer.setMaximumWidth(390)
+        layout = QVBoxLayout(drawer)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
+
+        header = QHBoxLayout()
+        heading = QLabel("Playlists")
+        heading.setObjectName("sectionTitle")
+        header.addWidget(heading)
+        header.addStretch(1)
+        close_button = QPushButton("‹")
+        close_button.setObjectName("secondaryButton")
+        close_button.setToolTip("Collapse playlists")
+        close_button.clicked.connect(
+            lambda: self.playlist_toggle_button.setChecked(False)
+        )
+        header.addWidget(close_button)
+        layout.addLayout(header)
+
+        self.playlist_list = QListWidget()
+        self.playlist_list.setAccessibleName("Saved playlists")
+        self.playlist_list.itemSelectionChanged.connect(
+            self._playlist_selection_changed
+        )
+        layout.addWidget(self.playlist_list, 1)
+
+        playlist_actions = QHBoxLayout()
+        for text, handler in (
+            ("New", self.create_playlist),
+            ("Rename", self.rename_playlist),
+            ("Delete", self.delete_playlist),
+        ):
+            button = QPushButton(text)
+            button.setObjectName("secondaryButton")
+            button.clicked.connect(handler)
+            playlist_actions.addWidget(button)
+        layout.addLayout(playlist_actions)
+
+        self.playlist_track_status = QLabel("Select or create a playlist")
+        self.playlist_track_status.setObjectName("mutedLabel")
+        self.playlist_track_status.setWordWrap(True)
+        layout.addWidget(self.playlist_track_status)
+        self.playlist_tracks = QListWidget()
+        self.playlist_tracks.setSelectionMode(
+            QAbstractItemView.SelectionMode.ExtendedSelection
+        )
+        self.playlist_tracks.setAccessibleName("Tracks in selected playlist")
+        self.playlist_tracks.itemDoubleClicked.connect(
+            lambda _entry: self.play_selected_playlist_tracks()
+        )
+        self.playlist_tracks.setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu
+        )
+        self.playlist_tracks.customContextMenuRequested.connect(
+            self._show_playlist_track_context_menu
+        )
+        layout.addWidget(self.playlist_tracks, 3)
+
+        track_actions = QHBoxLayout()
+        for text, handler, primary in (
+            ("Play", self.play_selected_playlist_tracks, True),
+            ("Queue", self.queue_selected_playlist_tracks, False),
+            ("Remove", self.remove_selected_playlist_tracks, False),
+        ):
+            button = QPushButton(text)
+            button.setObjectName("primaryButton" if primary else "secondaryButton")
+            button.clicked.connect(handler)
+            track_actions.addWidget(button)
+        layout.addLayout(track_actions)
+        return drawer
+
+    def _toggle_playlist_drawer(self, visible: bool) -> None:
+        self.playlist_drawer.setVisible(bool(visible))
+        arrow = "›" if visible else "‹"
+        self.playlist_toggle_button.setText(
+            f"Playlists ({len(self.playlists)}) {arrow}"
+        )
+
+    def _save_playlists(self) -> None:
+        self.settings.setValue(
+            "library/playlists", encode_playlists(self.playlists)
+        )
+        self.settings.setValue("library/active_playlist", self._active_playlist)
+        self.settings.sync()
+
+    def _render_playlists(self) -> None:
+        self.playlist_list.blockSignals(True)
+        self.playlist_list.clear()
+        selected_row = -1
+        for row, name in enumerate(sorted(self.playlists, key=str.casefold)):
+            entry = QListWidgetItem(
+                f"{name}  ·  {len(self.playlists[name])} track(s)"
+            )
+            entry.setData(Qt.ItemDataRole.UserRole, name)
+            self.playlist_list.addItem(entry)
+            if name == self._active_playlist:
+                selected_row = row
+        if selected_row < 0 and self.playlist_list.count():
+            selected_row = 0
+            self._active_playlist = str(
+                self.playlist_list.item(0).data(Qt.ItemDataRole.UserRole)
+            )
+        if selected_row >= 0:
+            self.playlist_list.setCurrentRow(selected_row)
+        self.playlist_list.blockSignals(False)
+        self._render_playlist_tracks()
+        arrow = "›" if self.playlist_drawer.isVisible() else "‹"
+        self.playlist_toggle_button.setText(
+            f"Playlists ({len(self.playlists)}) {arrow}"
+        )
+
+    def _playlist_selection_changed(self) -> None:
+        selected = self.playlist_list.currentItem()
+        self._active_playlist = (
+            str(selected.data(Qt.ItemDataRole.UserRole)) if selected else ""
+        )
+        self._save_playlists()
+        self._render_playlist_tracks()
+
+    def _library_item_for_path(self, path: str) -> LibraryItem:
+        wanted = path.casefold()
+        indexed = next(
+            (item for item in self.items if item.path.casefold() == wanted), None
+        )
+        if indexed is not None:
+            return indexed
+        source = Path(path)
+        return LibraryItem(
+            path=path,
+            title=source.stem or source.name,
+            album="File not currently indexed",
+            artists="Unknown artist",
+            year=None,
+            duration_ms=0,
+            media_type="video" if source.suffix.casefold() in {
+                ".mp4", ".mkv", ".webm", ".mov", ".avi", ".m4v"
+            } else "audio",
+            modified_ns=0,
+        )
+
+    def _active_playlist_items(self) -> list[LibraryItem]:
+        return [
+            self._library_item_for_path(path)
+            for path in self.playlists.get(self._active_playlist, [])
+        ]
+
+    def _render_playlist_tracks(self) -> None:
+        self.playlist_tracks.clear()
+        paths = self.playlists.get(self._active_playlist, [])
+        if not self._active_playlist:
+            self.playlist_track_status.setText("Select or create a playlist")
+            return
+        self.playlist_track_status.setText(
+            f"{self._active_playlist} · {len(paths)} track(s)"
+        )
+        for item in self._active_playlist_items():
+            exists = Path(item.path).is_file()
+            prefix = "" if exists else "[Missing] "
+            entry = QListWidgetItem(
+                f"{prefix}{item.title}\n{item.artists} · {item.album}"
+            )
+            entry.setData(Qt.ItemDataRole.UserRole, item.path)
+            entry.setToolTip(item.path)
+            self.playlist_tracks.addItem(entry)
+
+    def create_playlist(self, name: str | None = None) -> str:
+        if name is None:
+            name, accepted = QInputDialog.getText(
+                self, "Create playlist", "Playlist name"
+            )
+            if not accepted:
+                return ""
+        name = str(name).strip()
+        if not name:
+            return ""
+        existing = next(
+            (value for value in self.playlists if value.casefold() == name.casefold()),
+            "",
+        )
+        if existing:
+            self._active_playlist = existing
+        else:
+            self.playlists[name] = []
+            self._active_playlist = name
+        self._save_playlists()
+        self._render_playlists()
+        return self._active_playlist
+
+    def rename_playlist(self) -> None:
+        if not self._active_playlist:
+            return
+        name, accepted = QInputDialog.getText(
+            self,
+            "Rename playlist",
+            "Playlist name",
+            text=self._active_playlist,
+        )
+        name = name.strip()
+        if not accepted or not name or name == self._active_playlist:
+            return
+        if any(
+            existing.casefold() == name.casefold()
+            for existing in self.playlists
+            if existing != self._active_playlist
+        ):
+            QMessageBox.warning(self, "Playlist exists", "That playlist already exists.")
+            return
+        paths = self.playlists.pop(self._active_playlist)
+        self.playlists[name] = paths
+        self._active_playlist = name
+        self._save_playlists()
+        self._render_playlists()
+
+    def delete_playlist(self) -> None:
+        if not self._active_playlist:
+            return
+        answer = QMessageBox.question(
+            self,
+            "Delete playlist",
+            f'Delete "{self._active_playlist}"? No media files will be deleted.',
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        del self.playlists[self._active_playlist]
+        self._active_playlist = ""
+        self._save_playlists()
+        self._render_playlists()
+
+    def _choose_playlist(self) -> str:
+        if not self.playlists:
+            return self.create_playlist()
+        names = sorted(self.playlists, key=str.casefold)
+        create_label = "Create new playlist…"
+        choices = [create_label, *names]
+        current = (
+            names.index(self._active_playlist) + 1
+            if self._active_playlist in names
+            else 0
+        )
+        choice, accepted = QInputDialog.getItem(
+            self,
+            "Add to playlist",
+            "Playlist",
+            choices,
+            current,
+            False,
+        )
+        if not accepted:
+            return ""
+        return self.create_playlist() if choice == create_label else str(choice)
+
+    def add_items_to_playlist(
+        self,
+        items: list[LibraryItem],
+        playlist_name: str | None = None,
+        *,
+        duplicate_policy: str | None = None,
+    ) -> int:
+        """Add track links and request one explicit decision when duplicates exist."""
+
+        if not items:
+            return 0
+        name = playlist_name or self._choose_playlist()
+        if not name or name not in self.playlists:
+            return 0
+        existing = self.playlists[name]
+        known = {path.casefold() for path in existing}
+        duplicate_count = sum(item.path.casefold() in known for item in items)
+        policy = duplicate_policy
+        if duplicate_count and policy not in {"skip", "add"}:
+            box = QMessageBox(self)
+            box.setIcon(QMessageBox.Icon.Warning)
+            box.setWindowTitle("Track already present")
+            box.setText("Track already present")
+            box.setInformativeText(
+                f"{duplicate_count} selected track(s) already exist in {name}."
+            )
+            skip_button = box.addButton(
+                "Skip duplicates", QMessageBox.ButtonRole.AcceptRole
+            )
+            add_button = box.addButton(
+                "Add anyway", QMessageBox.ButtonRole.DestructiveRole
+            )
+            box.exec()
+            policy = "skip" if box.clickedButton() is skip_button else "add"
+            if box.clickedButton() not in {skip_button, add_button}:
+                return 0
+        result = add_playlist_paths(
+            existing,
+            [item.path for item in items],
+            skip_duplicates=policy != "add",
+        )
+        self.playlists[name] = result.paths
+        self._active_playlist = name
+        self._save_playlists()
+        self._render_playlists()
+        self.playlist_track_status.setText(
+            f"{name} · added {result.added} track(s)"
+            + (f" · skipped {result.duplicates} duplicate(s)" if policy != "add" and result.duplicates else "")
+        )
+        return result.added
+
+    def _selected_playlist_items(self) -> list[LibraryItem]:
+        rows = sorted(
+            {index.row() for index in self.playlist_tracks.selectionModel().selectedRows()}
+        )
+        items = self._active_playlist_items()
+        return [items[row] for row in rows if 0 <= row < len(items)]
+
+    def play_selected_playlist_tracks(self) -> None:
+        selected = self._selected_playlist_items() or self._active_playlist_items()
+        self._replace_queue(selected)
+
+    def queue_selected_playlist_tracks(self) -> None:
+        selected = self._selected_playlist_items() or self._active_playlist_items()
+        self._append_to_queue(selected)
+
+    def remove_selected_playlist_tracks(self) -> None:
+        if not self._active_playlist:
+            return
+        rows = sorted(
+            {index.row() for index in self.playlist_tracks.selectionModel().selectedRows()},
+            reverse=True,
+        )
+        paths = self.playlists[self._active_playlist]
+        for row in rows:
+            if 0 <= row < len(paths):
+                paths.pop(row)
+        self._save_playlists()
+        self._render_playlists()
+
+    def _show_playlist_track_context_menu(self, position: QPoint) -> None:
+        entry = self.playlist_tracks.itemAt(position)
+        if entry is None:
+            return
+        clicked_path = str(entry.data(Qt.ItemDataRole.UserRole) or "")
+        selected = self._selected_playlist_items()
+        if not any(item.path == clicked_path for item in selected):
+            self.playlist_tracks.setCurrentItem(entry)
+            selected = [self._library_item_for_path(clicked_path)]
+        self._show_song_context_menu(
+            selected,
+            self.playlist_tracks.viewport().mapToGlobal(position),
+            source_playlist=self._active_playlist,
+        )
 
     def _build_queue_drawer(self) -> QWidget:
         drawer = GlassCard()
@@ -1589,6 +2005,7 @@ class MediaLibraryPage(QWidget):
             return
         self.items = scanned_items
         self.apply_filters()
+        self._render_playlist_tracks()
         log_diagnostic(
             "LIBRARY",
             f"Initial bounded render complete; table_rows={self.table.rowCount()} "
@@ -2012,8 +2429,14 @@ class MediaLibraryPage(QWidget):
             return
         path = str(path_item.data(Qt.ItemDataRole.UserRole) or "")
         if path:
+            candidates = (
+                self._open_album_items if table is self.album_tracks else self.filtered
+            )
+            selected = self._selected_items(table, candidates)
+            if not any(item.path == path for item in selected):
+                selected = [self._library_item_for_path(path)]
             self._show_song_context_menu(
-                path, table.viewport().mapToGlobal(position)
+                selected, table.viewport().mapToGlobal(position)
             )
 
     def _show_list_song_context_menu(
@@ -2025,27 +2448,101 @@ class MediaLibraryPage(QWidget):
         path = str(entry.data(Qt.ItemDataRole.UserRole) or "")
         if path:
             self._show_song_context_menu(
-                path, widget.viewport().mapToGlobal(position)
+                [self._library_item_for_path(path)],
+                widget.viewport().mapToGlobal(position),
             )
 
     def _show_now_playing_context_menu(self, position: QPoint) -> None:
         if not 0 <= self.queue_index < len(self.queue):
             return
         self._show_song_context_menu(
-            self.queue[self.queue_index].path,
+            [self.queue[self.queue_index]],
             self.now_playing.mapToGlobal(position),
         )
 
-    def _show_song_context_menu(self, path: str, global_position: QPoint) -> None:
+    def _show_song_context_menu(
+        self,
+        items: list[LibraryItem],
+        global_position: QPoint,
+        *,
+        source_playlist: str = "",
+    ) -> None:
+        if not items:
+            return
         menu = QMenu(self)
+        self._add_playlist_destinations(menu, items)
+        if source_playlist:
+            remove_action = menu.addAction("Remove from this playlist")
+            remove_action.triggered.connect(self.remove_selected_playlist_tracks)
+        menu.addSeparator()
         edit_action = menu.addAction("Edit File…")
-        edit_action.setToolTip("Open this media file in the Edit File workspace")
+        edit_action.setEnabled(len(items) == 1)
+        edit_action.setToolTip(
+            "Open this media file in the Edit File workspace"
+            if len(items) == 1
+            else "Edit File accepts one track at a time"
+        )
         edit_action.triggered.connect(
-            lambda _checked=False, selected_path=path: self.request_edit_file.emit(
+            lambda _checked=False, selected_path=items[0].path: self.request_edit_file.emit(
                 selected_path
             )
         )
         menu.exec(global_position)
+
+    def _add_playlist_destinations(
+        self, menu: QMenu, items: list[LibraryItem], *, label: str = "Add to playlist"
+    ) -> None:
+        submenu = menu.addMenu(label)
+        new_action = submenu.addAction("New playlist…")
+        new_action.triggered.connect(
+            lambda _checked=False, selected=list(items): self._add_to_new_playlist(selected)
+        )
+        if self.playlists:
+            submenu.addSeparator()
+        for name in sorted(self.playlists, key=str.casefold):
+            action = submenu.addAction(name)
+            action.triggered.connect(
+                lambda _checked=False, playlist=name, selected=list(items):
+                self.add_items_to_playlist(selected, playlist)
+            )
+
+    def _add_to_new_playlist(self, items: list[LibraryItem]) -> None:
+        name = self.create_playlist()
+        if name:
+            self.add_items_to_playlist(items, name)
+
+    def add_selected_tracks_to_playlist(self) -> None:
+        selected = self._selected_items(self.table, self.filtered)
+        if selected:
+            self.add_items_to_playlist(selected)
+
+    def add_selected_album_to_playlist(self) -> None:
+        selected = self.albums.selectedItems()
+        if not selected:
+            return
+        album = str(selected[0].data(Qt.ItemDataRole.UserRole) or "")
+        tracks = [item for item in self.filtered if item.album == album]
+        self.add_items_to_playlist(tracks)
+
+    def add_open_album_tracks_to_playlist(self) -> None:
+        selected = self._selected_items(self.album_tracks, self._open_album_items)
+        self.add_items_to_playlist(selected or list(self._open_album_items))
+
+    def _show_artist_context_menu(self, position: QPoint) -> None:
+        entry = self.facets.itemAt(position)
+        if entry is None:
+            return
+        artist = entry.text()
+        tracks = [
+            item for item in self.items
+            if artist.casefold() in {value.casefold() for value in split_artists(item.artists)}
+        ]
+        menu = QMenu(self)
+        menu.setTitle(artist)
+        self._add_playlist_destinations(
+            menu, tracks, label="Add artist tracks to playlist"
+        )
+        menu.exec(self.facets.viewport().mapToGlobal(position))
 
     def _album_folders(self, album: str) -> list[Path]:
         folders = {
@@ -2063,6 +2560,7 @@ class MediaLibraryPage(QWidget):
         self._show_album_folder_context_menu(
             album,
             self._album_folders(album),
+            [item for item in self.filtered if item.album == album],
             self.albums.viewport().mapToGlobal(position),
         )
 
@@ -2080,34 +2578,45 @@ class MediaLibraryPage(QWidget):
         self._show_album_folder_context_menu(
             self._open_album_name,
             folders,
+            list(self._open_album_items),
             self.album_detail_title.mapToGlobal(position),
         )
 
     def _show_album_folder_context_menu(
-        self, album: str, folders: list[Path], global_position: QPoint
+        self,
+        album: str,
+        folders: list[Path],
+        tracks: list[LibraryItem],
+        global_position: QPoint,
     ) -> None:
-        if not folders:
+        if not folders and not tracks:
             return
         menu = QMenu(self)
         menu.setTitle(album)
-        self._add_album_folder_actions(
-            menu,
-            "Edit album metadata",
-            folders,
-            self.request_edit_album,
+        self._add_playlist_destinations(
+            menu, tracks, label="Add album to playlist"
         )
-        self._add_album_folder_actions(
-            menu,
-            "Consolidate / Album enricher",
-            folders,
-            self.request_album_enricher,
-        )
-        self._add_album_folder_actions(
-            menu,
-            "Track reorder",
-            folders,
-            self.request_track_reorder,
-        )
+        if folders:
+            menu.addSeparator()
+        if folders:
+            self._add_album_folder_actions(
+                menu,
+                "Edit album metadata",
+                folders,
+                self.request_edit_album,
+            )
+            self._add_album_folder_actions(
+                menu,
+                "Consolidate / Album enricher",
+                folders,
+                self.request_album_enricher,
+            )
+            self._add_album_folder_actions(
+                menu,
+                "Track reorder",
+                folders,
+                self.request_track_reorder,
+            )
         menu.exec(global_position)
 
     @staticmethod

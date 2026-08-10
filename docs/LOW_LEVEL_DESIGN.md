@@ -267,8 +267,10 @@ classDiagram
       +list~LibraryItem~ items
       +list~LibraryItem~ filtered
       +list~LibraryItem~ queue
+      +dict playlists
       +refresh_library()
       +apply_filters()
+      +add_items_to_playlist()
       +start_mix()
     }
     class LibraryScanner {
@@ -283,12 +285,18 @@ classDiagram
     class AlbumGridListWidget {
       +wheelEvent(event)
     }
+    class MediaPlaylists {
+      +decode_playlists()
+      +encode_playlists()
+      +add_playlist_paths()
+    }
     class QMediaPlayer
 
     MediaLibraryPage --> LibraryScanner
     MediaLibraryPage --> LibrarySearchWorker
     MediaLibraryPage --> LibraryRecommendationWorker
     MediaLibraryPage --> AlbumGridListWidget
+    MediaLibraryPage --> MediaPlaylists
     MediaLibraryPage --> QMediaPlayer
 ```
 
@@ -296,6 +304,10 @@ Library scanning reads supported files recursively and returns fresh immutable
 `LibraryItem` objects. Search is debounced and filters one authoritative `items` list.
 Artist selection filters both track and album views. The album grid uses per-pixel
 scrolling but advances by one configured grid row for each mouse-wheel notch.
+Playlists persist ordered file paths under `library/playlists`; resolving their display
+metadata against the latest scan keeps the link authoritative while still showing a
+clear missing-file state. Duplicate comparison is case-insensitive, and the caller must
+choose whether duplicates are skipped or deliberately retained.
 
 ## 10. Persistence keys and lifecycle
 

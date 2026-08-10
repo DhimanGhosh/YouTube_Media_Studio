@@ -154,7 +154,11 @@ pass but still routes files and applies available verified indexing.
 flowchart LR
     subgraph EditFile["Edit File"]
         One["One selected media file"] --> Action{"Metadata, artwork, trim, or redownload"}
-        Action --> OneWrite["Write one collision-safe output or replace source"]
+        Action -->|Trim| LocalRange["Song metadata local trim range"]
+        Action -->|Redownload| DownloadRange["File operation download range"]
+        LocalRange --> OneWrite
+        DownloadRange --> OneWrite
+        Action -->|Metadata| OneWrite["Write one collision-safe output or replace source"]
     end
 
     subgraph EditAlbum["Edit Album"]
@@ -196,6 +200,12 @@ sequenceDiagram
     User->>Page: Play/queue a track or album
     Page->>Player: Load queue item
     Player-->>Page: Position, duration, state, metadata
+    User->>Page: Add track, album, or artist to playlist
+    Page->>Page: Compare exact paths with saved playlist
+    alt Duplicate path exists
+        Page-->>User: Skip duplicates or add anyway
+    end
+    Page->>Page: Persist ordered path links in settings
 ```
 
 ## 8. Smart Library Curator multi-agent flow
