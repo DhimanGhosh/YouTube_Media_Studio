@@ -4,6 +4,13 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## Unreleased
+
+### Added
+
+- Add a public privacy policy covering local storage, credentials, optional diagnostics,
+  third-party network services, retention, deletion, and user controls.
+
 ## [2.4.2] - 2026-08-11
 
 ### Fixed
