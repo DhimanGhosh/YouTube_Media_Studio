@@ -41,6 +41,7 @@ from PyQt6.QtGui import (
     QPixmap,
     QPolygonF,
     QShortcut,
+    QWheelEvent,
 )
 from PyQt6.QtMultimedia import QAudioBuffer, QAudioBufferOutput, QAudioOutput, QMediaPlayer
 from PyQt6.QtMultimediaWidgets import QVideoWidget
@@ -60,6 +61,7 @@ from PyQt6.QtWidgets import (
     QMenu,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QSlider,
     QSpinBox,
     QSplitter,
@@ -455,6 +457,25 @@ class AnimatedQueueList(QListWidget):
         animation.start()
 
 
+class AlbumGridListWidget(QListWidget):
+    """Album grid whose wheel advances exactly one visual row per notch."""
+
+    def wheelEvent(self, event: QWheelEvent) -> None:  # noqa: N802
+        angle_delta = event.angleDelta().y()
+        if not angle_delta:
+            super().wheelEvent(event)
+            return
+
+        notch_count = max(1, abs(angle_delta) // 120)
+        direction = -1 if angle_delta > 0 else 1
+        scrollbar = self.verticalScrollBar()
+        row_height = max(1, self.gridSize().height())
+        scrollbar.setValue(
+            scrollbar.value() + direction * notch_count * row_height
+        )
+        event.accept()
+
+
 def _transport_icon(name: str) -> QIcon:
     """Create crisp monochrome controls without platform-dependent emoji glyphs."""
 
@@ -662,7 +683,10 @@ class MediaLibraryPage(QWidget):
     def _build_search_row(self) -> QHBoxLayout:
         row = QHBoxLayout()
         self.search = QLineEdit()
-        self.search.setMaximumWidth(920)
+        self.search.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
         self.search.setPlaceholderText("Search title, album, artist, year, or filename…")
         self.search.textChanged.connect(self._schedule_search)
         self.search.returnPressed.connect(self.search_or_download)
@@ -676,22 +700,37 @@ class MediaLibraryPage(QWidget):
         self.search_completer.activated[str].connect(self._suggestion_activated)
         self.search.setCompleter(self.search_completer)
         row.addWidget(self.search, 1)
-        clear_search = QPushButton("Clear")
-        clear_search.setObjectName("secondaryButton")
-        clear_search.setToolTip("Clear the library search")
-        clear_search.clicked.connect(self.search.clear)
-        row.addWidget(clear_search)
+        self.clear_search_button = QPushButton("Clear")
+        self.clear_search_button.setObjectName("secondaryButton")
+        self.clear_search_button.setToolTip("Clear the library search")
+        self.clear_search_button.setSizePolicy(
+            QSizePolicy.Policy.Fixed,
+            QSizePolicy.Policy.Fixed,
+        )
+        self.clear_search_button.clicked.connect(self.search.clear)
+        row.addWidget(self.clear_search_button)
         self.year_from = QSpinBox()
         self.year_to = QSpinBox()
         for spin, label in ((self.year_from, "From year"), (self.year_to, "To year")):
             spin.setRange(0, 2100)
             spin.setSpecialValueText(label)
+            spin.setSizePolicy(
+                QSizePolicy.Policy.Fixed,
+                QSizePolicy.Policy.Fixed,
+            )
+            spin.setFixedWidth(
+                max(112, spin.fontMetrics().horizontalAdvance(label) + 52)
+            )
             spin.valueChanged.connect(self._schedule_search)
             row.addWidget(spin)
-        online = QPushButton("Search online if missing")
-        online.setObjectName("secondaryButton")
-        online.clicked.connect(self.search_or_download)
-        row.addWidget(online)
+        self.online_search_button = QPushButton("Search online if missing")
+        self.online_search_button.setObjectName("secondaryButton")
+        self.online_search_button.setSizePolicy(
+            QSizePolicy.Policy.Fixed,
+            QSizePolicy.Policy.Fixed,
+        )
+        self.online_search_button.clicked.connect(self.search_or_download)
+        row.addWidget(self.online_search_button)
         return row
 
     def _build_recommendation_card(self) -> QWidget:
@@ -1145,12 +1184,15 @@ class MediaLibraryPage(QWidget):
         helper.setObjectName("mutedLabel")
         heading.addWidget(helper)
         browser_layout.addLayout(heading)
-        self.albums = QListWidget()
+        self.albums = AlbumGridListWidget()
         self.albums.setViewMode(QListWidget.ViewMode.IconMode)
         self.albums.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.albums.setIconSize(QSize(108, 108))
         self.albums.setGridSize(QSize(178, 165))
         self.albums.setResizeMode(QListWidget.ResizeMode.Adjust)
+        self.albums.setVerticalScrollMode(
+            QAbstractItemView.ScrollMode.ScrollPerPixel
+        )
         self.albums.setWordWrap(True)
         self.albums.itemSelectionChanged.connect(self._update_album_browser_context)
         self.albums.itemDoubleClicked.connect(self.open_album)

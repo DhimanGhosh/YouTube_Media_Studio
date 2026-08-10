@@ -2,7 +2,9 @@
   "Sample 4K Video": {
     "ytb_link": "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
     "file_name": "Sample 4K Video",
-    "resolution": "4K"
+    "resolution": "4K",
+    "start_timestamp": "00:10",
+    "end_timestamp": "01:30"
   },
   "Sample Uses YouTube Title": {
     "ytb_link": "https://www.youtube.com/watch?v=aqz-KE-bpKQ",

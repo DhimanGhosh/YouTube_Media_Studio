@@ -51,6 +51,8 @@ class Song:
     release_year: str = ""
     track_number: int | None = None
     track_total: int | None = None
+    start_timestamp: str = "00:00"
+    end_timestamp: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,6 +92,8 @@ class VideoJob:
     ytb_link: str
     file_name: str | None = None
     resolution: str | None = None
+    start_timestamp: str = "00:00"
+    end_timestamp: str = ""
 
 
 @dataclass(frozen=True, slots=True)

@@ -15,9 +15,9 @@ import numpy as np
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtCore import (  # noqa: E402
-    QBuffer, QByteArray, QIODevice, QPoint, QSettings, QSize, Qt,
+    QBuffer, QByteArray, QIODevice, QPoint, QPointF, QSettings, QSize, Qt,
 )
-from PyQt6.QtGui import QColor, QIcon, QPixmap  # noqa: E402
+from PyQt6.QtGui import QColor, QIcon, QPixmap, QWheelEvent  # noqa: E402
 from PyQt6.QtMultimedia import QAudioBuffer, QAudioFormat, QMediaPlayer  # noqa: E402
 from PyQt6.QtTest import QSignalSpy, QTest  # noqa: E402
 from PyQt6.QtWidgets import QApplication, QMenu  # noqa: E402
@@ -235,6 +235,53 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.app.processEvents()
 
         self.assertEqual(scrollbar.value(), wanted)
+
+    def test_album_wheel_scrolls_exactly_one_visual_row_per_notch(self) -> None:
+        albums = [
+            LibraryItem(
+                f"C:/album-{index}.mp3", f"Song {index}", f"Album {index}",
+                "Artist", 2000, 1000, "audio", 1,
+            )
+            for index in range(40)
+        ]
+        self.page.filtered = albums
+        self.page._artwork_cache = {item.path: QIcon() for item in albums}
+        self.page.resize(900, 700)
+        self.page.show()
+        self.page.albums.setFixedHeight(170)
+        self.page._render_albums()
+        self.app.processEvents()
+        scrollbar = self.page.albums.verticalScrollBar()
+        self.assertGreater(scrollbar.maximum(), self.page.albums.gridSize().height())
+
+        event = QWheelEvent(
+            QPointF(10, 10), QPointF(10, 10), QPoint(), QPoint(0, -120),
+            Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier,
+            Qt.ScrollPhase.ScrollUpdate, False,
+        )
+        self.page.albums.wheelEvent(event)
+
+        self.assertEqual(scrollbar.value(), self.page.albums.gridSize().height())
+
+    def test_search_row_gives_remaining_width_to_search_field(self) -> None:
+        self.page.resize(1600, 900)
+        self.page.show()
+        self.app.processEvents()
+
+        fixed_controls = (
+            self.page.clear_search_button,
+            self.page.year_from,
+            self.page.year_to,
+            self.page.online_search_button,
+        )
+        self.assertTrue(all(
+            self.page.search.width() > control.width()
+            for control in fixed_controls
+        ))
+        self.assertGreaterEqual(
+            self.page.online_search_button.width(),
+            self.page.online_search_button.sizeHint().width(),
+        )
 
     def test_album_opens_without_playing_and_exposes_track_actions(self) -> None:
         self.page._load_current = Mock()

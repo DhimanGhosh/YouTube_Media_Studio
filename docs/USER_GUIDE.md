@@ -136,8 +136,8 @@ item unchanged.
 | --- | --- | --- |
 | **Dashboard** | Shows current activity, session totals, and recent operations. | Start work on another page, then return here to see progress and results. **Clear** removes displayed session history, not media files. |
 | **Search Song** | Finds a song, album, movie track, video, or jukebox from plain language. | Enter a description, review and preview the matches, choose a row and destination workflow, then select **Use selected result**. |
-| **Audio Downloader** | Downloads permitted full audio or a timestamp range with a normalized filename, tags, and cover artwork. | Add or import track details, optionally set start/end, verify metadata and output, then run the download. |
-| **Video Downloader** | Inspects available formats and downloads full or timestamp-bounded video or audio. | Enter the source URL, optionally set start/end, choose output, then start the download. |
+| **Audio Downloader** | Downloads permitted full audio or a timestamp range with a normalized filename, tags, and cover artwork. | Add or import track details, optionally set start/end inside each song row, verify metadata and output, then run the download. |
+| **Video Downloader** | Inspects available formats and downloads full or timestamp-bounded video or audio. | Add each source URL and its optional start/end inside that video row, choose output, then start the download. |
 | **Album Splitter** | Turns one full-album source into separate tagged songs. | Add the source and timestamped track list, verify the rows and shared album metadata, then split. |
 | **Jukebox Splitter** | Splits a compilation containing tracks from different albums or artists. | Add the source, review each timestamped track and its individual metadata, then split and organize. |
 | **Track Reorder** | Applies a verified album order to existing local tracks. | Select an album folder, preview the proposed sequence, and apply it only after checking the matches. |
@@ -158,7 +158,8 @@ item unchanged.
 4. Set **Send selected result to** to **Audio Downloader (MP3 + metadata)** and select
    **Use selected result**.
 5. In **Audio Downloader**, review the populated title, album, artists, year, artwork,
-   output folder, and optional start/end range. Do not assume the first result is correct.
+   output folder, and that song row's optional start/end range. Each batch row has its own
+   range. Do not assume the first result is correct.
 6. Start the download and check **Live Logs** for the final saved path.
 
 The same result-routing control can send a match to **Video Downloader**, **Album

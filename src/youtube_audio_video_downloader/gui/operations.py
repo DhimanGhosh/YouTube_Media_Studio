@@ -431,8 +431,6 @@ def _run_audio(params: dict[str, Any], token: CancellationToken) -> OperationSum
     service = YouTubeAudioDownloader(
         settings=settings,
         cancellation_token=token,
-        start_timestamp=("00:00" if mode == "tag-existing" else str(params.get("start_timestamp", "00:00"))),
-        end_timestamp=("" if mode == "tag-existing" else str(params.get("end_timestamp", ""))),
     )
     with _input_json(params, "input_path", "Audio") as json_path:
         if mode == "tag-existing":
@@ -457,8 +455,6 @@ def _run_video(params: dict[str, Any], token: CancellationToken) -> OperationSum
         settings=settings,
         cancellation_token=token,
         interactive_prompts=False,
-        start_timestamp=str(params.get("start_timestamp", "00:00")),
-        end_timestamp=str(params.get("end_timestamp", "")),
     )
     resolution = str(params.get("resolution", "best") or "best")
     if resolution.lower() == "ask":

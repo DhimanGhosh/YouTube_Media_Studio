@@ -209,8 +209,8 @@ edit, consolidate, inspect logs, configure defaults, and play the finished libra
 
 | Workspace | Capability |
 | --- | --- |
-| **Audio Downloader** | Download permitted full audio or a start/end range, write tags, embed artwork, and normalize filenames |
-| **Video Downloader** | Inspect formats and download full or timestamp-bounded video/audio at a selected quality |
+| **Audio Downloader** | Download permitted audio with an independent start/end range for each song, write tags, embed artwork, and normalize filenames |
+| **Video Downloader** | Inspect formats and download video/audio with an independent timestamp range for each batch entry |
 | **Album Splitter** | Turn a full-album source and timestamps into individual tagged tracks |
 | **Jukebox Splitter** | Split compilation videos and organize the resulting songs |
 | **Search Song** | Find tracks, albums, release years, performers, and cover artwork |
@@ -390,6 +390,13 @@ tests/                               Automated test suite
 tools/desktop_installer.py           Native graphical installer/uninstaller
 tools/release.py                     Validation, packaging, and release entry point
 ```
+
+## Architecture and design
+
+- [Architecture documentation hub](docs/ARCHITECTURE.md)
+- [High-level design](docs/HIGH_LEVEL_DESIGN.md)
+- [Low-level design](docs/LOW_LEVEL_DESIGN.md)
+- [Workflow sequence diagrams and flowcharts](docs/WORKFLOW_DESIGNS.md)
 
 ## Application data
 

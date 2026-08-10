@@ -31,15 +31,10 @@ class YouTubeAudioDownloader:
         self,
         settings: DownloadSettings | None = None,
         cancellation_token: CancellationToken | None = None,
-        start_timestamp: str = "00:00",
-        end_timestamp: str = "",
     ) -> None:
         self.settings = settings or DownloadSettings()
         self.cancellation_token = cancellation_token or CancellationToken()
         self.metadata_tagger = MetadataTagger()
-        self.download_range_options = build_download_range_options(
-            start_timestamp, end_timestamp
-        )
 
     def cancel(self) -> None:
         """Request cooperative cancellation for running audio workers."""
@@ -262,7 +257,9 @@ class YouTubeAudioDownloader:
             try:
                 import yt_dlp
 
-                with yt_dlp.YoutubeDL(self._build_yt_dlp_options(output_dir, file_name)) as ydl:
+                with yt_dlp.YoutubeDL(
+                    self._build_yt_dlp_options(output_dir, file_name, song)
+                ) as ydl:
                     ydl.download([song.ytb_link])
 
                 self.metadata_tagger.tag_mp3(final_mp3_path, song)
@@ -324,8 +321,13 @@ class YouTubeAudioDownloader:
         except Exception as exc:  # Existing downloads should not fail the whole run because of tags.
             print(f"[TAG-WARNING] {song.json_key}: failed to refresh metadata: {exc}")
 
-    def _build_yt_dlp_options(self, output_dir: Path, file_name: str) -> dict[str, Any]:
-        """Build yt-dlp options for best available audio converted to MP3."""
+    def _build_yt_dlp_options(
+        self,
+        output_dir: Path,
+        file_name: str,
+        song: Song,
+    ) -> dict[str, Any]:
+        """Build yt-dlp options for one song's independently selected range."""
 
         return {
             "format": "bestaudio/best",
@@ -345,7 +347,7 @@ class YouTubeAudioDownloader:
                 }
             ],
             "postprocessor_args": ["-ar", self.settings.audio_sample_rate],
-            **self.download_range_options,
+            **build_download_range_options(song.start_timestamp, song.end_timestamp),
         }
 
     def _wait_before_download(self, song_title: str) -> None:
