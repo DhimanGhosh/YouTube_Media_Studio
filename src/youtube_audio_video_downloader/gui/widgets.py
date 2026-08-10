@@ -746,8 +746,12 @@ class JsonBatchEditor(QWidget):
     log_requested = pyqtSignal(str)
 
     FLAT_FIELDS = {
-        "audio": ["ytb_link", "mp3_file_path", "title", "album", "artists", "album_art", "release_year", "track_number"],
-        "video": ["ytb_link"],
+        "audio": [
+            "ytb_link", "mp3_file_path", "title", "album", "artists",
+            "album_art", "release_year", "track_number", "start_timestamp",
+            "end_timestamp",
+        ],
+        "video": ["ytb_link", "start_timestamp", "end_timestamp"],
         "album": ["ytb_link", "release_year", "album_art"],
         "jukebox": ["ytb_link"],
     }
@@ -830,6 +834,8 @@ class JsonBatchEditor(QWidget):
                 continue
             form.setRowVisible(fields["ytb_link"], not tagging_existing)
             form.setRowVisible(fields["mp3_file_path"], tagging_existing)
+            form.setRowVisible(fields["start_timestamp"], not tagging_existing)
+            form.setRowVisible(fields["end_timestamp"], not tagging_existing)
 
     def cancel_background_tasks(self) -> list[QThread]:
         """Request cooperative shutdown and return tasks still winding down."""
@@ -901,6 +907,13 @@ class JsonBatchEditor(QWidget):
         for field in self.FLAT_FIELDS[self.kind]:
             widget = self._text_field(values.get(field, ""))
             fields[field] = widget
+            if field in {"start_timestamp", "end_timestamp"}:
+                widget.setPlaceholderText(
+                    "00:00" if field == "start_timestamp" else "Optional — download to the end"
+                )
+                widget.setToolTip(
+                    "Accepted formats: SS, MM:SS, or HH:MM:SS (decimals allowed)"
+                )
             if field == "album_art":
                 album_name_edit = name_edit if self.kind == "album" else fields.get("album")
                 form.addRow(
@@ -1002,6 +1015,8 @@ class JsonBatchEditor(QWidget):
             tagging_existing = self._audio_mode == "tag-existing"
             form.setRowVisible(fields["ytb_link"], not tagging_existing)
             form.setRowVisible(fields["mp3_file_path"], tagging_existing)
+            form.setRowVisible(fields["start_timestamp"], not tagging_existing)
+            form.setRowVisible(fields["end_timestamp"], not tagging_existing)
         if auto_extract and self.kind == "jukebox":
             QTimer.singleShot(0, lambda: self._extract_entry_tracks(record))
         return record

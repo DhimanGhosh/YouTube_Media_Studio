@@ -4,6 +4,20 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## Unreleased
+
+### Added
+
+- Add full-project high-level and low-level architecture documentation with Mermaid
+  context, class, sequence, state, flowchart, deployment, and release views.
+
+### Changed
+
+- Move Audio Downloader and Video Downloader start/end timestamps into each individual
+  batch entry so every song or video can select a different source interval.
+- Make the Media Library album wheel advance one visual row per notch and let the main
+  search field consume available width while the remaining controls fit their labels.
+
 ## [2.4.0] - 2026-08-10
 
 ### Added

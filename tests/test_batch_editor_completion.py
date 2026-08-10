@@ -143,6 +143,26 @@ class BatchEditorCompletionTest(unittest.TestCase):
 
         self.assertTrue(fields["mp3_file_path"].isVisibleTo(editor))
         self.assertFalse(fields["ytb_link"].isVisibleTo(editor))
+        self.assertFalse(fields["start_timestamp"].isVisibleTo(editor))
+        self.assertFalse(fields["end_timestamp"].isVisibleTo(editor))
+
+    def test_audio_and_video_entries_serialize_their_own_timestamp_ranges(self) -> None:
+        audio = JsonBatchEditor("audio")
+        audio_fields = audio.entries[0]["fields"]
+        audio_fields["title"].setText("Audio clip")
+        audio_fields["start_timestamp"].setText("00:10")
+        audio_fields["end_timestamp"].setText("00:45")
+
+        video = JsonBatchEditor("video")
+        video_fields = video.entries[0]["fields"]
+        video_fields["__name__"].setText("Video clip")
+        video_fields["start_timestamp"].setText("01:00")
+        video_fields["end_timestamp"].setText("01:30")
+
+        self.assertEqual(audio.data()["Audio clip"]["start_timestamp"], "00:10")
+        self.assertEqual(audio.data()["Audio clip"]["end_timestamp"], "00:45")
+        self.assertEqual(video.data()["Video clip"]["start_timestamp"], "01:00")
+        self.assertEqual(video.data()["Video clip"]["end_timestamp"], "01:30")
 
     def test_populated_entry_replaces_launch_placeholder(self) -> None:
         editor = JsonBatchEditor("jukebox")

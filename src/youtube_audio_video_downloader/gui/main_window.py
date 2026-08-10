@@ -1172,16 +1172,9 @@ class MainWindow(QMainWindow):
         )
         self.audio_output = PathPicker(placeholder="Optional MP3 output folder", mode="folder")
         self.audio_overwrite = self._check("Overwrite existing MP3 files")
-        self.audio_start = QLineEdit("00:00")
-        self.audio_end = QLineEdit()
-        self.audio_end.setPlaceholderText("Optional — download to the end")
-        for field in (self.audio_start, self.audio_end):
-            field.setToolTip("Accepted formats: SS, MM:SS, or HH:MM:SS (decimals allowed)")
         form.addRow("Songs", self.audio_input)
         form.addRow("Mode", self.audio_mode)
         form.addRow("Output folder", self.audio_output)
-        form.addRow("Start timestamp", self.audio_start)
-        form.addRow("End timestamp", self.audio_end)
         form.addRow("Existing files", self.audio_overwrite)
         self.audio_mode.currentIndexChanged.connect(self._audio_mode_changed)
         self._audio_mode_changed()
@@ -1202,21 +1195,10 @@ class MainWindow(QMainWindow):
             "mode": self.audio_mode.currentData(),
             "output_dir": self.audio_output.text(),
             "overwrite": self.audio_overwrite.isChecked(),
-            "start_timestamp": self.audio_start.text(),
-            "end_timestamp": self.audio_end.text(),
         }
 
     def _audio_mode_changed(self) -> None:
-        enabled = str(self.audio_mode.currentData()) == "download"
-        self.audio_start.setEnabled(enabled)
-        self.audio_end.setEnabled(enabled)
-        tooltip = (
-            "Accepted formats: SS, MM:SS, or HH:MM:SS (decimals allowed)"
-            if enabled
-            else "Trimming applies only when downloading media"
-        )
-        self.audio_start.setToolTip(tooltip)
-        self.audio_end.setToolTip(tooltip)
+        self.audio_input.set_audio_mode(str(self.audio_mode.currentData()))
 
     # ------------------------------------------------------------------ video
     def _build_video_page(self) -> QWidget:
@@ -1239,17 +1221,10 @@ class MainWindow(QMainWindow):
         self.video_merge.addItems(["mp4", "mkv", "webm"])
         self.video_report = self._check("Write result report", True)
         self.video_overwrite = self._check("Overwrite existing output")
-        self.video_start = QLineEdit("00:00")
-        self.video_end = QLineEdit()
-        self.video_end.setPlaceholderText("Optional — download to the end")
-        for field in (self.video_start, self.video_end):
-            field.setToolTip("Accepted formats: SS, MM:SS, or HH:MM:SS (decimals allowed)")
         form.addRow("Videos", self.video_input)
         form.addRow("When MP3 is selected", self.video_mp3_mode)
         form.addRow("Video output", self.video_output)
         form.addRow("Audio output", self.video_audio_output)
-        form.addRow("Start timestamp", self.video_start)
-        form.addRow("End timestamp", self.video_end)
         form.addRow("Merge container", self.video_merge)
         form.addRow("Reporting", self.video_report)
         form.addRow("Existing files", self.video_overwrite)
@@ -1271,8 +1246,6 @@ class MainWindow(QMainWindow):
             "info_mode": False,
             "write_report": self.video_report.isChecked(),
             "overwrite": self.video_overwrite.isChecked(),
-            "start_timestamp": self.video_start.text(),
-            "end_timestamp": self.video_end.text(),
         }
 
     # ------------------------------------------------------------------ album
@@ -3551,16 +3524,12 @@ class MainWindow(QMainWindow):
         self.audio_mode.setCurrentIndex(0)
         self.audio_output.set_text("")
         self.audio_overwrite.setChecked(False)
-        self.audio_start.setText("00:00")
-        self.audio_end.clear()
         self.video_mp3_mode.setCurrentIndex(0)
         self.video_output.set_text("")
         self.video_audio_output.set_text("")
         self.video_merge.setCurrentText("mp4")
         self.video_report.setChecked(True)
         self.video_overwrite.setChecked(False)
-        self.video_start.setText("00:00")
-        self.video_end.clear()
         self.album_output.set_text("")
         self.album_threshold.setValue(-35.0)
         self.album_silence.setValue(1.5)
@@ -3786,18 +3755,6 @@ class MainWindow(QMainWindow):
             self.edit_file_end.setText(
                 str(self.settings.value("workspace/edit_file_end", "") or "")
             )
-            self.audio_start.setText(
-                str(self.settings.value("workspace/audio_start", "00:00") or "00:00")
-            )
-            self.audio_end.setText(
-                str(self.settings.value("workspace/audio_end", "") or "")
-            )
-            self.video_start.setText(
-                str(self.settings.value("workspace/video_start", "00:00") or "00:00")
-            )
-            self.video_end.setText(
-                str(self.settings.value("workspace/video_end", "") or "")
-            )
             content_index = self.edit_file_content.findData(
                 str(self.settings.value("workspace/edit_file_content", "auto") or "auto")
             )
@@ -3912,10 +3869,6 @@ class MainWindow(QMainWindow):
         self.settings.setValue("workspace/edit_file_url", self.edit_file_url.text())
         self.settings.setValue("workspace/edit_file_start", self.edit_file_start.text())
         self.settings.setValue("workspace/edit_file_end", self.edit_file_end.text())
-        self.settings.setValue("workspace/audio_start", self.audio_start.text())
-        self.settings.setValue("workspace/audio_end", self.audio_end.text())
-        self.settings.setValue("workspace/video_start", self.video_start.text())
-        self.settings.setValue("workspace/video_end", self.video_end.text())
         self.settings.setValue("workspace/edit_file_content", self.edit_file_content.currentData())
         self.settings.setValue(
             "workspace/edit_file_overwrite", bool(self.edit_file_mode.currentData())

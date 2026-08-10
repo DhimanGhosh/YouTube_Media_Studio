@@ -121,6 +121,8 @@ def load_songs(json_path: Path) -> list[Song]:
                 parsed_metadata=parsed_metadata,
                 album_art=str(metadata.get("album_art") or "").strip(),
                 release_year=str(metadata.get("release_year") or "").strip(),
+                start_timestamp=str(metadata.get("start_timestamp") or "00:00").strip(),
+                end_timestamp=str(metadata.get("end_timestamp") or "").strip(),
             )
         )
 
@@ -324,6 +326,8 @@ def load_videos(json_path: Path) -> list[VideoJob]:
                 ytb_link=ytb_link,
                 file_name=file_name,
                 resolution=resolution,
+                start_timestamp=str(metadata.get("start_timestamp") or "00:00").strip(),
+                end_timestamp=str(metadata.get("end_timestamp") or "").strip(),
             )
         )
 

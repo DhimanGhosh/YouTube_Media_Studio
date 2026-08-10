@@ -86,20 +86,13 @@ class YouTubeVideoDownloader:
         settings: DownloadSettings | None = None,
         cancellation_token: CancellationToken | None = None,
         interactive_prompts: bool = True,
-        start_timestamp: str = "00:00",
-        end_timestamp: str = "",
     ) -> None:
         self.settings = settings or DownloadSettings()
         self.cancellation_token = cancellation_token or CancellationToken()
         self.interactive_prompts = interactive_prompts
-        self.download_range_options = build_download_range_options(
-            start_timestamp, end_timestamp
-        )
         self.audio_downloader = YouTubeAudioDownloader(
             settings=self.settings,
             cancellation_token=self.cancellation_token,
-            start_timestamp=start_timestamp,
-            end_timestamp=end_timestamp,
         )
 
     def cancel(self) -> None:
@@ -962,6 +955,8 @@ class YouTubeVideoDownloader:
             parsed_metadata=metadata,
             album_art=str(info.get("thumbnail") or "").strip(),
             release_year=self._extract_release_year(info),
+            start_timestamp=video.start_timestamp,
+            end_timestamp=video.end_timestamp,
         )
         return self.audio_downloader.download_song_to_directory(song, audio_dir)
 
@@ -1067,7 +1062,9 @@ class YouTubeVideoDownloader:
             try:
                 import yt_dlp
 
-                with yt_dlp.YoutubeDL(self._build_video_yt_dlp_options(output_dir, file_name, selected)) as ydl:
+                with yt_dlp.YoutubeDL(
+                    self._build_video_yt_dlp_options(output_dir, file_name, selected, video)
+                ) as ydl:
                     ydl.download([video.ytb_link])
                 return
             except UserCancelledError:
@@ -1090,8 +1087,9 @@ class YouTubeVideoDownloader:
         output_dir: Path,
         file_name: str,
         selected: VideoQuality,
+        video: VideoJob,
     ) -> dict[str, Any]:
-        """Return yt-dlp options for the selected video stream."""
+        """Return yt-dlp options for one video's independently selected range."""
 
         return {
             "format": selected.format_selector,
@@ -1104,7 +1102,7 @@ class YouTubeVideoDownloader:
             "no_warnings": False,
             "retries": self.settings.max_retries,
             "fragment_retries": self.settings.max_retries,
-            **self.download_range_options,
+            **build_download_range_options(video.start_timestamp, video.end_timestamp),
         }
 
     @staticmethod
