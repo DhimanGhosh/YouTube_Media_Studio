@@ -216,8 +216,9 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
             )
         )
 
-    def test_video_seek_interval_is_saved_and_applied_to_the_player(self) -> None:
+    def test_video_playback_settings_are_saved_and_applied_to_the_player(self) -> None:
         self.window.settings_video_seek_seconds.setValue(7)
+        self.window.settings_remember_video_display_modes.setChecked(True)
 
         with (
             patch.object(self.window, "_save_data_directory", return_value=False),
@@ -225,13 +226,22 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
             patch.object(
                 self.window.media_library, "set_video_seek_seconds"
             ) as apply_seek,
+            patch.object(
+                self.window.media_library, "set_remember_video_display_modes"
+            ) as apply_mode_memory,
         ):
             self.window._save_defaults()
 
         self.assertEqual(
             int(self.window.settings.value("defaults/video_seek_seconds")), 7
         )
+        self.assertTrue(
+            self.window.settings.value(
+                "defaults/remember_video_display_modes", type=bool
+            )
+        )
         apply_seek.assert_called_once_with(7)
+        apply_mode_memory.assert_called_once_with(True)
 
     def test_serpapi_key_is_saved_and_applied_without_operation_parameters(self) -> None:
         self.window.settings_serpapi_api_key.setText("serpapi-secret")

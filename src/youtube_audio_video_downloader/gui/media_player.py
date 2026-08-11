@@ -23,6 +23,7 @@ from PyQt6.QtCore import (
     QRect,
     QRectF,
     QSize,
+    QSizeF,
     QSettings,
     QStringListModel,
     Qt,
@@ -38,6 +39,7 @@ from PyQt6.QtGui import (
     QIcon,
     QKeySequence,
     QPainter,
+    QPalette,
     QPen,
     QPixmap,
     QPolygonF,
@@ -45,7 +47,7 @@ from PyQt6.QtGui import (
     QWheelEvent,
 )
 from PyQt6.QtMultimedia import QAudioBuffer, QAudioBufferOutput, QAudioOutput, QMediaPlayer
-from PyQt6.QtMultimediaWidgets import QVideoWidget
+from PyQt6.QtMultimediaWidgets import QGraphicsVideoItem
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -53,6 +55,9 @@ from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFileDialog,
+    QFrame,
+    QGraphicsScene,
+    QGraphicsView,
     QGridLayout,
     QHBoxLayout,
     QHeaderView,
@@ -111,10 +116,13 @@ VALID_MEDIA_TYPES = frozenset(option[1] for option in MEDIA_TYPE_OPTIONS)
 EMBEDDED_VIDEO_MIN_HEIGHT = 320
 EMBEDDED_VIDEO_MAX_HEIGHT = 520
 FULLSCREEN_VIDEO_MAX_HEIGHT = 16_777_215
+AUDIO_PLAYER_CARD_MIN_HEIGHT = 166
+VIDEO_PLAYER_CARD_MIN_HEIGHT = 482
 VIDEO_THUMBNAIL_SIZE = QSize(144, 81)
 VIDEO_GRID_THUMBNAIL_SIZE = QSize(240, 135)
 VIDEO_THUMBNAIL_CACHE_SIZE = QSize(320, 180)
-VIDEO_TABLE_ROW_HEIGHT = 96
+VIDEO_TABLE_ROW_HEIGHT = 90
+VIDEO_TABLE_ARTWORK_WIDTH = 160
 COMPACT_TABLE_ROW_HEIGHT = 30
 VIDEO_ASPECT_MODES: tuple[tuple[str, float | None], ...] = (
     ("Default", None),
@@ -167,18 +175,33 @@ class LibraryScanner(QObject):
 
 
 class VideoViewport(QWidget):
-    """Clip and reshape a QVideoWidget for VLC-style crop/aspect controls."""
+    """Clip and reshape video without letting its renderer cover the controls."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("videoViewport")
-        self.setStyleSheet("#videoViewport { background: black; }")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setAutoFillBackground(True)
+        background = self.palette()
+        background.setColor(QPalette.ColorRole.Window, QColor("black"))
+        self.setPalette(background)
+        self.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.clip = QWidget(self)
-        self.clip.setStyleSheet("background: black;")
-        self.surface = QVideoWidget(self.clip)
-        self.surface.setAspectRatioMode(Qt.AspectRatioMode.IgnoreAspectRatio)
+        self.scene = QGraphicsScene(self)
+        self.surface = QGraphicsView(self.scene, self)
+        self.clip = self.surface
+        self.surface.setObjectName("videoSurface")
+        self.surface.setFrameShape(QFrame.Shape.NoFrame)
+        self.surface.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.surface.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.surface.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        self.surface.setStyleSheet("#videoSurface { background: black; border: 0; }")
         self.surface.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.video_item = QGraphicsVideoItem()
+        self.video_item.setAspectRatioMode(Qt.AspectRatioMode.IgnoreAspectRatio)
+        self.scene.addItem(self.video_item)
         self._source_size = QSize(16, 9)
         self._aspect_ratio: float | None = None
         self._crop_ratio: float | None = None
@@ -191,14 +214,15 @@ class VideoViewport(QWidget):
         self.message.setStyleSheet(
             "background: rgba(0, 0, 0, 190); color: white; "
             "border: 1px solid rgba(255, 255, 255, 80); "
-            "border-radius: 6px; padding: 8px 14px; font-weight: 600;"
+            "border-radius: 7px; padding: 10px 18px; font-size: 20px; "
+            "font-weight: 600;"
         )
         self.message.hide()
         self._message_timer = QTimer(self)
         self._message_timer.setSingleShot(True)
         self._message_timer.setInterval(1700)
         self._message_timer.timeout.connect(self.message.hide)
-        self.surface.videoSink().videoSizeChanged.connect(self.set_source_size)
+        self.video_item.videoSink().videoSizeChanged.connect(self.set_source_size)
 
     def set_source_size(self, size: QSize) -> None:
         if size.width() > 0 and size.height() > 0:
@@ -226,7 +250,7 @@ class VideoViewport(QWidget):
         self._position_message()
 
     def _position_message(self) -> None:
-        self.message.move(max(12, (self.width() - self.message.width()) // 2), 16)
+        self.message.move(max(12, self.width() - self.message.width() - 24), 20)
 
     def _update_surface_geometry(self) -> None:
         viewport_width = self.width()
@@ -249,19 +273,19 @@ class VideoViewport(QWidget):
         else:
             visible_width = viewport_width
             visible_height = round(visible_width / display_ratio)
-        self.clip.setGeometry(
+        self.surface.setGeometry(
             (viewport_width - visible_width) // 2,
             (viewport_height - visible_height) // 2,
             visible_width,
             visible_height,
         )
+        self.scene.setSceneRect(0, 0, visible_width, visible_height)
         surface_width = max(1, round(visible_width / crop_width_fraction))
         surface_height = max(1, round(visible_height / crop_height_fraction))
-        self.surface.setGeometry(
+        self.video_item.setSize(QSizeF(surface_width, surface_height))
+        self.video_item.setPos(
             (visible_width - surface_width) // 2,
             (visible_height - surface_height) // 2,
-            surface_width,
-            surface_height,
         )
         self.message.raise_()
 
@@ -759,13 +783,30 @@ class MediaLibraryPage(QWidget):
         self._fullscreen_hidden_widgets: list[tuple[QWidget, bool]] = []
         self._fullscreen_window: QWidget | None = None
         self._fullscreen_window_state = Qt.WindowState.WindowNoState
-        self._video_aspect_index = _video_mode_index(
-            VIDEO_ASPECT_MODES,
-            self.settings.value("library/video_aspect_mode", "Default"),
+        remember_modes_value = self.settings.value(
+            "defaults/remember_video_display_modes", False
         )
-        self._video_crop_index = _video_mode_index(
-            VIDEO_CROP_MODES,
-            self.settings.value("library/video_crop_mode", "Default"),
+        self._remember_video_display_modes = str(remember_modes_value).lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        self._video_aspect_index = (
+            _video_mode_index(
+                VIDEO_ASPECT_MODES,
+                self.settings.value("library/video_aspect_mode", "Default"),
+            )
+            if self._remember_video_display_modes
+            else 0
+        )
+        self._video_crop_index = (
+            _video_mode_index(
+                VIDEO_CROP_MODES,
+                self.settings.value("library/video_crop_mode", "Default"),
+            )
+            if self._remember_video_display_modes
+            else 0
         )
         self._video_seek_seconds = max(
             1,
@@ -1444,8 +1485,9 @@ class MediaLibraryPage(QWidget):
         grid.addLayout(actions, 0, 1)
 
         self.table = self._new_media_table(
-            ["Title", "Artist", "Album", "Year", "Type", "Length"]
+            ["Title", "Artwork", "Artist", "Album", "Year", "Type", "Length"]
         )
+        self.table.setColumnHidden(1, True)
         self.table.doubleClicked.connect(lambda _index: self.play_selected())
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(
@@ -1992,7 +2034,7 @@ class MediaLibraryPage(QWidget):
         card = GlassCard()
         self.player_card = card
         card.setObjectName("playerCard")
-        card.setMinimumHeight(166)
+        card.setMinimumHeight(AUDIO_PLAYER_CARD_MIN_HEIGHT)
         grid = QGridLayout(card)
         self.player_grid = grid
         grid.setContentsMargins(18, 13, 18, 13)
@@ -2002,12 +2044,11 @@ class MediaLibraryPage(QWidget):
         self.video_viewport.setMinimumHeight(EMBEDDED_VIDEO_MIN_HEIGHT)
         self.video_viewport.setMaximumHeight(EMBEDDED_VIDEO_MAX_HEIGHT)
         self.video = self.video_viewport.surface
-        self.video.setToolTip(
-            "Double-click for full screen · A changes aspect ratio · C changes crop"
-        )
         self.video.installEventFilter(self)
+        self.video.viewport().installEventFilter(self)
         self.video_viewport.installEventFilter(self)
         self.video_viewport.setVisible(False)
+        self.player_card.setMinimumHeight(AUDIO_PLAYER_CARD_MIN_HEIGHT)
         grid.addWidget(self.video_viewport, 0, 0, 1, 13)
         self.now_playing_art = QLabel()
         self.now_playing_art.setObjectName("nowPlayingArtwork")
@@ -2038,6 +2079,7 @@ class MediaLibraryPage(QWidget):
         grid.addWidget(self.position, 2, 1, 1, 11)
         grid.addWidget(self.elapsed, 2, 12)
         controls = QWidget()
+        self.player_controls = controls
         controls_layout = QHBoxLayout(controls)
         controls_layout.setContentsMargins(0, 0, 0, 0)
         controls_layout.setSpacing(8)
@@ -2158,7 +2200,11 @@ class MediaLibraryPage(QWidget):
             and (watched is self or self.isAncestorOf(watched))
         ):
             return True
-        if watched in {self.video, self.video_viewport} and event.type() == (
+        if watched in {
+            self.video,
+            self.video.viewport(),
+            self.video_viewport,
+        } and event.type() == (
             QEvent.Type.MouseButtonDblClick
         ):
             self.toggle_video_fullscreen()
@@ -2227,7 +2273,8 @@ class MediaLibraryPage(QWidget):
             self._video_aspect_index + 1
         ) % len(VIDEO_ASPECT_MODES)
         label = VIDEO_ASPECT_MODES[self._video_aspect_index][0]
-        self.settings.setValue("library/video_aspect_mode", label)
+        if self._remember_video_display_modes:
+            self.settings.setValue("library/video_aspect_mode", label)
         self._apply_video_display_modes()
         self.video_viewport.show_mode_message(f"Aspect ratio: {label}")
         self.video.setFocus()
@@ -2241,7 +2288,8 @@ class MediaLibraryPage(QWidget):
             self._video_crop_index + 1
         ) % len(VIDEO_CROP_MODES)
         label = VIDEO_CROP_MODES[self._video_crop_index][0]
-        self.settings.setValue("library/video_crop_mode", label)
+        if self._remember_video_display_modes:
+            self.settings.setValue("library/video_crop_mode", label)
         self._apply_video_display_modes()
         self.video_viewport.show_mode_message(f"Crop: {label}")
         self.video.setFocus()
@@ -2263,6 +2311,23 @@ class MediaLibraryPage(QWidget):
 
     def set_video_seek_seconds(self, seconds: int) -> None:
         self._video_seek_seconds = max(1, min(60, int(seconds)))
+
+    def set_remember_video_display_modes(self, enabled: bool) -> None:
+        """Choose whether a video's crop/aspect choices carry to the next video."""
+
+        self._remember_video_display_modes = bool(enabled)
+        if self._remember_video_display_modes:
+            self.settings.setValue(
+                "library/video_aspect_mode",
+                VIDEO_ASPECT_MODES[self._video_aspect_index][0],
+            )
+            self.settings.setValue(
+                "library/video_crop_mode",
+                VIDEO_CROP_MODES[self._video_crop_index][0],
+            )
+        else:
+            self.settings.remove("library/video_aspect_mode")
+            self.settings.remove("library/video_crop_mode")
 
     def _run_video_command(self, command: Callable[[], None]) -> None:
         if self.aspect_button.isEnabled():
@@ -2358,7 +2423,7 @@ class MediaLibraryPage(QWidget):
         self._spectrum_worker.spectrum_ready.connect(self.spectrum_ready)
         self._spectrum_thread.finished.connect(self._spectrum_worker.deleteLater)
         self._spectrum_thread.start()
-        self.player.setVideoOutput(self.video)
+        self.player.setVideoOutput(self.video_viewport.video_item)
         self.audio_output.setVolume(self.volume.value() / 100)
         self.volume.valueChanged.connect(
             lambda value: self.audio_output.setVolume(value / 100)
@@ -2887,8 +2952,11 @@ class MediaLibraryPage(QWidget):
             and self._selected_media_type() == MEDIA_TYPE_VIDEO
         )
         table.setIconSize(VIDEO_THUMBNAIL_SIZE if video_rows else QSize(18, 18))
+        if include_album_and_type and table is self.table:
+            table.setColumnHidden(1, not video_rows)
         if video_rows:
             table.setColumnWidth(0, max(340, table.columnWidth(0)))
+            table.setColumnWidth(1, VIDEO_TABLE_ARTWORK_WIDTH)
         table.setUpdatesEnabled(False)
         table.setSortingEnabled(False)
         table.setRowCount(len(items))
@@ -2901,6 +2969,7 @@ class MediaLibraryPage(QWidget):
                 if include_album_and_type:
                     values = (
                         (item.title, item.title.casefold()),
+                        ("", item.title.casefold()),
                         (item.artists, item.artists.casefold()),
                         (item.album, item.album.casefold()),
                         (str(item.year or ""), item.year or 0),
@@ -2923,6 +2992,8 @@ class MediaLibraryPage(QWidget):
                     cell.setData(Qt.ItemDataRole.UserRole, item.path)
                     cell.setData(SortableTableItem.SORT_ROLE, sort_value)
                     if column == 0:
+                        cell.setIcon(QIcon())
+                    elif column == 1 and include_album_and_type:
                         icon = (
                             self._video_thumbnail_cache.get(
                                 (item.path, item.modified_ns), QIcon()
@@ -2961,6 +3032,9 @@ class MediaLibraryPage(QWidget):
             if not bool(table.property("initialContentSizingDone")):
                 table.resizeColumnsToContents()
                 table.setProperty("initialContentSizingDone", True)
+            if video_rows:
+                table.setColumnWidth(0, max(340, table.columnWidth(0)))
+                table.setColumnWidth(1, VIDEO_TABLE_ARTWORK_WIDTH)
         finally:
             table.verticalScrollBar().setValue(vertical_scroll)
             table.horizontalScrollBar().setValue(horizontal_scroll)
@@ -3048,7 +3122,7 @@ class MediaLibraryPage(QWidget):
         if current_item is None or current_item.modified_ns != key[1]:
             return
         for row in range(self.table.rowCount()):
-            cell = self.table.item(row, 0)
+            cell = self.table.item(row, 1)
             if cell is not None and cell.data(Qt.ItemDataRole.UserRole) == key[0]:
                 cell.setIcon(icon)
                 break
@@ -3633,6 +3707,7 @@ class MediaLibraryPage(QWidget):
         self.now_playing.setText("Nothing playing")
         self._set_now_playing_art(None)
         self.video_viewport.setVisible(False)
+        self.player_card.setMinimumHeight(AUDIO_PLAYER_CARD_MIN_HEIGHT)
         self.aspect_button.setEnabled(False)
         self.crop_button.setEnabled(False)
         self.fullscreen_button.setEnabled(False)
@@ -3688,13 +3763,24 @@ class MediaLibraryPage(QWidget):
         self.player.stop()
         if item.media_type != MEDIA_TYPE_VIDEO:
             self.exit_video_fullscreen()
+        elif not self._remember_video_display_modes:
+            self._video_aspect_index = 0
+            self._video_crop_index = 0
+            self._apply_video_display_modes()
         self.player.setVideoOutput(
-            self.video if item.media_type == MEDIA_TYPE_VIDEO else None
+            self.video_viewport.video_item
+            if item.media_type == MEDIA_TYPE_VIDEO
+            else None
         )
         self.player.setSource(QUrl.fromLocalFile(item.path))
         self.now_playing.setText(f"{item.title} — {item.artists}  •  {item.album}")
         self._set_now_playing_art(item)
         video_active = item.media_type == MEDIA_TYPE_VIDEO
+        self.player_card.setMinimumHeight(
+            VIDEO_PLAYER_CARD_MIN_HEIGHT
+            if video_active
+            else AUDIO_PLAYER_CARD_MIN_HEIGHT
+        )
         self.video_viewport.setVisible(video_active)
         self.aspect_button.setEnabled(video_active)
         self.crop_button.setEnabled(video_active)
