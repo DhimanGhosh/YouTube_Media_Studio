@@ -200,8 +200,10 @@ checks cancellation, runs its handler, and returns `OperationSummary`.
 
 ```mermaid
 flowchart LR
-    GUIThread["Qt GUI thread"] -->|moveToThread| Worker["OperationWorker"]
+    GUIThread["Qt GUI thread"] -->|one QThread per active workspace| Worker["OperationWorker"]
+    GUIThread --> Worker2["OperationWorker for another workspace"]
     Worker --> Dispatcher["execute_operation"]
+    Worker2 --> Dispatcher2["execute_operation"]
     Dispatcher --> Pool["Bounded ThreadPoolExecutor where supported"]
     Pool --> Unit1["Item 1"]
     Pool --> Unit2["Item 2"]
@@ -213,11 +215,15 @@ flowchart LR
 ```
 
 - `OperationWorker` redirects stdout/stderr into line-buffered Qt log signals.
+- Distinct operations can own independent `QThread`/`OperationWorker` pairs at the same
+  time. A workspace action is disabled only while that same operation is running; a
+  duplicate start is rejected without blocking the other workspaces.
 - Operation-level retries are limited to workflows that are safe to repeat.
 - Download/split/enrichment services may run item-level thread pools bounded by global
   worker settings and input size.
 - A shared cancellation token interrupts waits, stops new work, and allows active units
-  to exit cooperatively.
+  to exit cooperatively. The global **Stop** action sends cancellation to every active
+  operation worker.
 - File-in-use handling pauses the worker until the user retries or cancels.
 
 ## 7. Download option construction

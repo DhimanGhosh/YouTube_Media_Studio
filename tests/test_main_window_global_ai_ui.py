@@ -5,7 +5,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -89,6 +89,61 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         self.window._sync_stop_button()
         self.assertFalse(self.window.cancel_button.isEnabled())
         self.assertIn("QPushButton#dangerButton:disabled", APP_STYLE)
+
+    def test_different_workspaces_remain_available_while_jobs_run(self) -> None:
+        self.window._active_thread = object()
+        self.window._active_operation_name = "album"
+        self.window._parallel_jobs = {
+            object(): ("video", Mock()),
+        }
+
+        self.window._sync_run_buttons()
+        self.window._parallel_jobs.clear()
+
+        self.assertFalse(self.window._form_runs["album"].isEnabled())
+        self.assertFalse(self.window._form_runs["video"].isEnabled())
+        self.assertTrue(self.window._form_runs["audio"].isEnabled())
+        self.assertTrue(self.window._form_runs["album_metadata_enricher"].isEnabled())
+
+    def test_new_workspace_routes_to_parallel_dispatcher(self) -> None:
+        self.window._active_thread = object()
+        self.window._active_operation_name = "album"
+
+        with patch.object(self.window, "_start_parallel_operation") as start_parallel:
+            self.window._start_operation("video", {"input_data": {}})
+
+        start_parallel.assert_called_once_with("video", {"input_data": {}})
+
+    def test_same_workspace_cannot_start_twice(self) -> None:
+        self.window._active_thread = object()
+        self.window._active_operation_name = "video"
+
+        with (
+            patch.object(QMessageBox, "information") as information,
+            patch.object(self.window, "_start_parallel_operation") as start_parallel,
+        ):
+            self.window._start_operation("video", {"input_data": {}})
+
+        information.assert_called_once()
+        start_parallel.assert_not_called()
+
+    def test_stop_cancels_every_running_workspace(self) -> None:
+        primary = Mock()
+        video = Mock()
+        audio = Mock()
+        self.window._active_worker = primary
+        self.window._parallel_jobs = {
+            object(): ("video", video),
+            object(): ("audio", audio),
+        }
+
+        self.window._cancel_active_operation()
+        self.window._active_worker = None
+        self.window._parallel_jobs.clear()
+
+        primary.cancel.assert_called_once_with()
+        video.cancel.assert_called_once_with()
+        audio.cancel.assert_called_once_with()
 
     def test_completed_output_folder_can_be_opened(self) -> None:
         output_folder = self.data_directory / "songs"
