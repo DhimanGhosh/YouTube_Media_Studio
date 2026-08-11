@@ -102,6 +102,7 @@ class MediaLibraryTest(unittest.TestCase):
         self.assertEqual(result, b"video-frame")
         command = run.call_args.args[0]
         self.assertIn("10.000", command)
+        self.assertIn("0:V:0", command)
         self.assertIn("scale=320:180:force_original_aspect_ratio=decrease", command)
 
 

@@ -1320,11 +1320,15 @@ class MediaLibraryPage(QWidget):
         self._search_debounce.stop()
         if self.player.playbackState() != QMediaPlayer.PlaybackState.StoppedState:
             self.stop()
+        self.clear_playback_queue()
         self.folder_list.clear()
         self._render_folder_chips()
         self.search.clear()
         self.media_type_filter.setCurrentIndex(0)
         self.video_view_toggle.setChecked(False)
+        self._video_aspect_index = 0
+        self._video_crop_index = 0
+        self._apply_video_display_modes()
         self.year_from.setValue(0)
         self.year_to.setValue(0)
         self.clear_ai_recommendations()

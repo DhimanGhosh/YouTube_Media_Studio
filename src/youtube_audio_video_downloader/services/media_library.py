@@ -135,7 +135,11 @@ def video_thumbnail_bytes(path: str | Path, duration_ms: int = 0) -> bytes:
     source = Path(path)
     if not ffmpeg or not source.is_file():
         return b""
-    seek_seconds = min(30.0, max(1.0, duration_ms / 10_000))
+    seek_seconds = (
+        min(30.0, max(0.1, duration_ms / 10_000))
+        if duration_ms > 0
+        else 1.0
+    )
     command = [
         ffmpeg,
         "-hide_banner",
@@ -146,7 +150,7 @@ def video_thumbnail_bytes(path: str | Path, duration_ms: int = 0) -> bytes:
         "-i",
         str(source),
         "-map",
-        "0:v:0",
+        "0:V:0",
         "-frames:v",
         "1",
         "-vf",
