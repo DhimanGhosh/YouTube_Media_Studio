@@ -276,7 +276,10 @@ report the complete log block.
    artist filters both tracks and albums until **All tracks** or **All albums** is used.
    Use **All media**, **Music**, or **Videos** beside search to keep audio and video
    results, queues, and curator requests separate. Video mode hides the album browser so
-   the video list and cinema player receive the available space.
+   the video list and cinema player receive the available space. Its list rows are taller
+   and show embedded/download artwork or a representative video frame. Select
+   **Thumbnails view** for a larger title-and-preview grid, or **List view** to return to
+   the detailed columns; selection and playback actions work in either view.
 3. Expand **Smart Library Curator** for a natural-language request such as `latest
    Arijit Singh Hindi dance songs` or `old Bengali songs`, enable AI, and select **Find in my
    library**. Agno plans the constraints, filters local artist/language/time metadata,
@@ -292,6 +295,16 @@ report the complete log block.
    complete player—including seek, transport, repeat/shuffle, and volume controls—to a
    full screen view. Double-click again, select **Exit full screen**, or press **Esc** to
    return to the library. The embedded video surface is also taller than the music player.
+   Use **Aspect** or press **A** to cycle display ratios; use **Crop** or press **C** to
+   cycle centered crop ratios. These video-only controls work in embedded and full screen
+   playback, remember the last choices, and briefly show the selected ratio over the top
+   of the picture. **Default** restores the video's original aspect or uncropped frame.
+   Press **F** to toggle full screen, **Space** to play/pause, **M** to mute, **S** to
+   stop, **N** for the next track, or **P** for the previous track. **Left/Right** seek by
+   the interval configured under **Global Settings > Video playback**; hold **Shift** to
+   seek twice that amount. **Home** or **0** jumps to `00:00`, while **1** through **9**
+   jump to 10% through 90% of the video. Keyboard controls activate while the video or
+   its player controls have focus, leaving library search text unaffected.
 6. Select **Playlists** in the page header to create, rename, delete, play, queue, or
    edit saved collections. Playlists store exact links to local file paths and remain
    available after restart. Use **Add to playlist** beside track and album actions, or
@@ -315,6 +328,59 @@ report the complete log block.
 8. The curator never redirects automatically. If the local result is empty, select the
    explicit **Search YouTube too** action only when you want an online search. Playlist
    file paths are never included in the AI or online-search context.
+
+### Video browsing and preview details
+
+The **Videos** filter provides two interchangeable track-level views:
+
+| View | What it shows | Best use |
+| --- | --- | --- |
+| **List view** | A tall preview beside Title plus Artist, Album, Year, Type, and Length columns. | Comparing metadata, sorting columns, and selecting precise rows. |
+| **Thumbnails view** | A larger 16:9 preview tile with the video title beneath it. | Visually finding a movie or music video before playback. |
+
+Selection is preserved when switching views. Double-click plays the chosen tile or row;
+the Play, Queue, playlist, multi-selection, and right-click Edit File actions work in both
+views. A preview first uses artwork embedded while downloading or editing the video. If
+no artwork is embedded, the app extracts a small representative frame in the background.
+The original video is never modified. Refreshing the library regenerates a preview after
+the file's modification time changes.
+
+### Crop and aspect ratio
+
+**Aspect** controls the shape in which the selected picture is displayed. It cycles
+through Default, 16:9, 4:3, 1:1, 16:10, 2.21:1, 2.35:1, 2.39:1, and 5:4. A non-default
+choice can stretch or compress the picture when it differs from the source.
+
+**Crop** removes centered outer edges without re-encoding the file. It cycles through
+Default, 16:10, 16:9, 4:3, 1.85:1, 2.21:1, 2.35:1, 2.39:1, 5:3, 5:4, and 1:1. For a
+video with black bars encoded inside the picture, choose the crop ratio matching the
+visible film, then choose the aspect ratio that best fits the monitor. Both choices are
+remembered between launches. The brief message at the top of the video confirms each
+intentional crop, aspect, seek, or mute command; passive mouse-hover popups are disabled
+throughout Media Library.
+
+### Video keyboard reference
+
+These keys work in embedded and full screen playback. They are active when Media Library
+video playback—not a search or editable text field—has focus.
+
+| Key | Action |
+| --- | --- |
+| `F` | Enter or leave full screen. |
+| `Esc` | Leave full screen. |
+| `Space` | Toggle play and pause. |
+| `M` | Toggle mute. |
+| `S` | Stop playback. |
+| `N` / `P` | Play the next / previous queued track. |
+| `A` | Cycle the aspect ratio and show the selected ratio briefly. |
+| `C` | Cycle the crop ratio and show the selected ratio briefly. |
+| `Right` / `Left` | Seek forward / backward by the configured base interval. |
+| `Shift+Right` / `Shift+Left` | Seek by twice the configured base interval. |
+| `Home` or `0` | Jump to `00:00`. |
+| `1` through `9` | Jump to 10% through 90% of the total duration. |
+
+Set the base arrow-key interval from 1 to 60 seconds under **Global Settings > Video
+playback > Arrow-key seek interval**. The default is 10 seconds.
 
 The songs-and-videos table shows every matching scanned item; it does not truncate a
 large library. The count beside the table is the number of rows currently available

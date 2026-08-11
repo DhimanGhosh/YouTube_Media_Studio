@@ -15,7 +15,8 @@ import numpy as np
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtCore import (  # noqa: E402
-    QBuffer, QByteArray, QIODevice, QPoint, QPointF, QSettings, QSize, Qt, QTimer,
+    QBuffer, QByteArray, QEvent, QIODevice, QPoint, QPointF, QSettings, QSize, Qt,
+    QTimer,
 )
 from PyQt6.QtGui import QColor, QIcon, QPixmap, QWheelEvent  # noqa: E402
 from PyQt6.QtMultimedia import QAudioBuffer, QAudioFormat, QMediaPlayer  # noqa: E402
@@ -27,6 +28,8 @@ from youtube_audio_video_downloader.gui.media_player import (  # noqa: E402
     EMBEDDED_VIDEO_MIN_HEIGHT,
     FULLSCREEN_VIDEO_MAX_HEIGHT,
     MediaLibraryPage,
+    VIDEO_TABLE_ROW_HEIGHT,
+    VIDEO_THUMBNAIL_SIZE,
 )
 from youtube_audio_video_downloader.gui.widgets import (  # noqa: E402
     BlankClickSelectionFilter,
@@ -829,7 +832,7 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.assertTrue(self.page.video.isVisibleTo(self.page))
         self.assertTrue(self.page.fullscreen_button.isEnabled())
         self.assertGreaterEqual(
-            self.page.video.minimumHeight(), EMBEDDED_VIDEO_MIN_HEIGHT
+            self.page.video_viewport.minimumHeight(), EMBEDDED_VIDEO_MIN_HEIGHT
         )
 
         QTest.mouseDClick(self.page.video, Qt.MouseButton.LeftButton)
@@ -838,14 +841,21 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.assertTrue(self.page._player_fullscreen)
         self.assertTrue(self.page.window().isFullScreen())
         self.assertEqual(
-            self.page.video.maximumHeight(), FULLSCREEN_VIDEO_MAX_HEIGHT
+            self.page.video_viewport.maximumHeight(), FULLSCREEN_VIDEO_MAX_HEIGHT
         )
         self.assertEqual(
             self.page.fullscreen_button.text(), "Exit full screen"
         )
         self.assertIs(self.page.position.window(), self.page.window())
         self.assertIs(self.page.volume.window(), self.page.window())
+        self.assertIs(self.page.aspect_button.window(), self.page.window())
+        self.assertIs(self.page.crop_button.window(), self.page.window())
         self.assertTrue(self.page.library_splitter.isHidden())
+
+        QTest.keyClick(self.page.video, Qt.Key.Key_C)
+        self.app.processEvents()
+        self.assertEqual(self.page.crop_button.text(), "Crop: 16:10")
+        self.assertTrue(self.page._player_fullscreen)
 
         QTest.keyClick(self.page.video, Qt.Key.Key_Escape)
         self.app.processEvents()
@@ -866,11 +876,204 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.assertIs(self.page.player_card.parent(), self.page._player_host)
         self.assertFalse(self.page.library_splitter.isHidden())
         self.assertEqual(
-            self.page.video.maximumHeight(), EMBEDDED_VIDEO_MAX_HEIGHT
+            self.page.video_viewport.maximumHeight(), EMBEDDED_VIDEO_MAX_HEIGHT
         )
         self.assertEqual(self.page.fullscreen_button.text(), "Full screen")
         self.page.clear_playback_queue()
         QTest.qWait(50)
+
+    def test_video_aspect_and_crop_cycle_with_buttons_shortcuts_and_osd(self) -> None:
+        video_path = Path(self.temporary.name) / "wide-movie.mp4"
+        video_path.write_bytes(b"video")
+        video = LibraryItem(
+            str(video_path), "Wide Movie", "Test Movie", "Test Artist",
+            2024, 60_000, "video", 1,
+        )
+        self.assertFalse(self.page.aspect_button.isEnabled())
+        self.assertFalse(self.page.crop_button.isEnabled())
+        self.page._replace_queue([video])
+        self.page.resize(1200, 800)
+        self.page.show()
+        self.app.processEvents()
+        self.page.video_viewport.resize(800, 450)
+        self.page.video_viewport.set_source_size(QSize(1920, 800))
+
+        self.assertTrue(self.page.aspect_button.isEnabled())
+        self.assertTrue(self.page.crop_button.isEnabled())
+        self.assertEqual(self.page.aspect_button.text(), "Aspect: Default")
+        self.assertEqual(self.page.crop_button.text(), "Crop: Default")
+        self.assertLess(self.page.video_viewport.clip.height(), 450)
+
+        QTest.mouseClick(self.page.aspect_button, Qt.MouseButton.LeftButton)
+        self.app.processEvents()
+        self.assertEqual(self.page.aspect_button.text(), "Aspect: 16:9")
+        self.assertEqual(self.page.video_viewport.message.text(), "Aspect ratio: 16:9")
+        self.assertTrue(self.page.video_viewport.message.isVisible())
+        self.assertAlmostEqual(
+            self.page.video_viewport.clip.width()
+            / self.page.video_viewport.clip.height(),
+            16 / 9,
+            places=2,
+        )
+
+        QTest.keyClick(self.page.video, Qt.Key.Key_A)
+        self.app.processEvents()
+        self.assertEqual(self.page.aspect_button.text(), "Aspect: 4:3")
+
+        QTest.keyClick(self.page.video, Qt.Key.Key_C)
+        self.app.processEvents()
+        self.assertEqual(self.page.crop_button.text(), "Crop: 16:10")
+        self.assertEqual(self.page.video_viewport.message.text(), "Crop: 16:10")
+        self.assertGreater(
+            self.page.video.width(), self.page.video_viewport.clip.width()
+        )
+
+        QTest.qWait(1750)
+        self.assertFalse(self.page.video_viewport.message.isVisible())
+
+    def test_video_keyboard_playback_and_timeline_shortcuts(self) -> None:
+        video_path = Path(self.temporary.name) / "keyboard-movie.mp4"
+        video_path.write_bytes(b"video")
+        video = LibraryItem(
+            str(video_path), "Keyboard Movie", "Film", "Artist",
+            2024, 100_000, "video", 1,
+        )
+        player = Mock()
+        player.position.return_value = 30_000
+        player.duration.return_value = 100_000
+        player.playbackState.return_value = QMediaPlayer.PlaybackState.PlayingState
+        self.page.player = player
+        self.page._replace_queue([video])
+        self.page.resize(1200, 800)
+        self.page.show()
+        self.app.processEvents()
+        self.page.set_video_seek_seconds(7)
+        player.reset_mock()
+
+        QTest.keyClick(self.page.video, Qt.Key.Key_Right)
+        player.setPosition.assert_called_with(37_000)
+        QTest.keyClick(
+            self.page.video,
+            Qt.Key.Key_Left,
+            Qt.KeyboardModifier.ShiftModifier,
+        )
+        player.setPosition.assert_called_with(16_000)
+
+        QTest.keyClick(self.page.video, Qt.Key.Key_Home)
+        player.setPosition.assert_called_with(0)
+        QTest.keyClick(self.page.video, Qt.Key.Key_3)
+        player.setPosition.assert_called_with(30_000)
+        QTest.keyClick(self.page.video, Qt.Key.Key_0)
+        player.setPosition.assert_called_with(0)
+
+        QTest.keyClick(self.page.video, Qt.Key.Key_Space)
+        player.pause.assert_called_once()
+        self.page.audio_output.setMuted(False)
+        QTest.keyClick(self.page.video, Qt.Key.Key_M)
+        self.assertTrue(self.page.audio_output.isMuted())
+        QTest.keyClick(self.page.video, Qt.Key.Key_S)
+        player.stop.assert_called()
+
+        with patch.object(self.page, "next") as next_track, patch.object(
+            self.page, "previous"
+        ) as previous_track:
+            QTest.keyClick(self.page.video, Qt.Key.Key_N)
+            QTest.keyClick(self.page.video, Qt.Key.Key_P)
+        next_track.assert_called_once()
+        previous_track.assert_called_once()
+
+        QTest.keyClick(self.page.video, Qt.Key.Key_F)
+        self.app.processEvents()
+        self.assertTrue(self.page._player_fullscreen)
+        QTest.keyClick(self.page.video, Qt.Key.Key_F)
+        self.app.processEvents()
+        self.assertFalse(self.page._player_fullscreen)
+
+        self.page.search.setFocus()
+        self.app.processEvents()
+        self.assertFalse(self.page.aspect_shortcut.isEnabled())
+        QTest.keyClicks(self.page.search, "ac")
+        self.assertEqual(self.page.search.text(), "ac")
+        self.page.video.setFocus()
+        self.app.processEvents()
+        self.assertTrue(self.page.aspect_shortcut.isEnabled())
+
+    def test_media_library_suppresses_passive_hover_tooltips(self) -> None:
+        tooltip_event = QEvent(QEvent.Type.ToolTip)
+        self.assertTrue(self.page.eventFilter(self.page.video, tooltip_event))
+        self.assertTrue(
+            self.page.eventFilter(self.page.fullscreen_button, tooltip_event)
+        )
+
+    def test_video_mode_loads_tall_preview_rows_and_thumbnail_grid(self) -> None:
+        first_path = Path(self.temporary.name) / "first.mp4"
+        second_path = Path(self.temporary.name) / "second.mp4"
+        first_path.write_bytes(b"video")
+        second_path.write_bytes(b"video")
+        videos = [
+            LibraryItem(
+                str(first_path), "First Video", "Film", "Artist",
+                2024, 60_000, "video", 1,
+            ),
+            LibraryItem(
+                str(second_path), "Second Video", "Film", "Artist",
+                2024, 60_000, "video", 1,
+            ),
+        ]
+        source = QPixmap(320, 180)
+        source.fill(QColor("orange"))
+        payload = QByteArray()
+        buffer = QBuffer(payload)
+        buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+        source.save(buffer, "PNG")
+        buffer.close()
+        self.page.items = videos
+        self.page.media_type_filter.setCurrentIndex(
+            self.page.media_type_filter.findData("video")
+        )
+
+        with patch(
+            "youtube_audio_video_downloader.gui.media_player.video_thumbnail_bytes",
+            return_value=bytes(payload),
+        ):
+            self.page.apply_filters()
+            self.assertTrue(
+                wait_until(lambda: self.page._video_thumbnail_thread is None)
+            )
+
+        self.assertEqual(self.page.table.rowCount(), 2)
+        self.assertEqual(self.page.table.iconSize(), VIDEO_THUMBNAIL_SIZE)
+        self.assertEqual(self.page.table.rowHeight(0), VIDEO_TABLE_ROW_HEIGHT)
+        self.assertFalse(self.page.table.item(0, 0).icon().isNull())
+        self.page.table.selectRow(0)
+
+        QTest.mouseClick(
+            self.page.video_view_toggle, Qt.MouseButton.LeftButton
+        )
+        self.assertIs(
+            self.page.media_view_stack.currentWidget(), self.page.video_grid
+        )
+        self.assertEqual(self.page.video_grid.count(), 2)
+        self.assertEqual(self.page.video_grid.item(0).text(), "First Video")
+        self.assertFalse(self.page.video_grid.item(0).icon().isNull())
+        self.assertTrue(self.page.video_grid.item(0).isSelected())
+
+        self.page.video_grid.clearSelection()
+        self.page.video_grid.item(1).setSelected(True)
+        self.page.play_selected()
+        self.assertEqual([item.path for item in self.page.queue], [str(second_path)])
+
+        QTest.mouseClick(
+            self.page.video_view_toggle, Qt.MouseButton.LeftButton
+        )
+        selected_rows = self.page.table.selectionModel().selectedRows()
+        self.assertEqual(len(selected_rows), 1)
+        self.assertEqual(
+            self.page.table.item(selected_rows[0].row(), 0).data(
+                Qt.ItemDataRole.UserRole
+            ),
+            str(second_path),
+        )
 
     def test_cached_album_art_is_bounded_to_thumbnail_dimensions(self) -> None:
         source = QPixmap(1200, 1200)
