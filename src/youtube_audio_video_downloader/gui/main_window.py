@@ -1706,9 +1706,10 @@ class MainWindow(QMainWindow):
         )
         card, outer, form = self._form_card(
             "Album-wide metadata",
-            "Titles, track numbers, and folder names are preserved. Album, year, Artist(s), "
-            "and optional album artwork are applied to every file; filenames are rebuilt "
-            "from the preserved title and new shared values, including nested folders.",
+            "Titles, track numbers, and folder names are preserved. Album, year, and "
+            "optional artwork are applied to every file. Artist(s) is an optional override; "
+            "leave it blank to preserve each track's existing artist. Filenames are rebuilt "
+            "from the preserved title and resulting values, including nested folders.",
         )
         self.edit_album_folder = PathPicker(
             placeholder="Select the complete album folder",
@@ -1720,7 +1721,9 @@ class MainWindow(QMainWindow):
         self.edit_album_year.setMaxLength(4)
         self.edit_album_year.setPlaceholderText("Four-digit release year")
         self.edit_album_artist = QLineEdit()
-        self.edit_album_artist.setPlaceholderText("Comma-separated artists for every track")
+        self.edit_album_artist.setPlaceholderText(
+            "Optional shared override; blank preserves each track's artists"
+        )
         self.edit_album_artwork = PathPicker(
             placeholder="Optional local JPEG/PNG path or https:// image URL",
             file_filter="Images (*.jpg *.jpeg *.png);;All files (*)",
@@ -1732,7 +1735,7 @@ class MainWindow(QMainWindow):
         form.addRow("Album folder", self.edit_album_folder)
         form.addRow("Album name", self.edit_album_name)
         form.addRow("Release year", self.edit_album_year)
-        form.addRow("Artist(s)", self.edit_album_artist)
+        form.addRow("Artist(s) override", self.edit_album_artist)
         form.addRow("Album artwork", self.edit_album_artwork)
         form.addRow("Artwork behavior", self.edit_album_remove_artwork)
         form.addRow("Folder status", self.edit_album_status)
@@ -1815,13 +1818,6 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Album name required", "Enter the album name to apply.")
             return
         artists = self.edit_album_artist.text().strip()
-        if not artists:
-            QMessageBox.warning(
-                self,
-                "Artist(s) required",
-                "Enter the artist value to apply to every track.",
-            )
-            return
         if year and not re.fullmatch(r"\d{4}", year):
             QMessageBox.warning(
                 self, "Invalid release year", "Release year must contain four digits or be blank."
@@ -1843,12 +1839,13 @@ class MainWindow(QMainWindow):
             if remove_artwork
             else "preserve existing artwork"
         )
+        artist_action = artists or "preserve each file's existing artist(s)"
         answer = QMessageBox.question(
             self,
             "Apply album metadata?",
             f"Update album metadata in {len(summary.files)} file(s) inside:\n"
             f"{summary.folder}\n\nAlbum: {album}\nYear: {year or '(clear)'}\n"
-            f"Artist(s) on every track: {artists}\nArtwork: {artwork_action}",
+            f"Artist(s): {artist_action}\nArtwork: {artwork_action}",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )

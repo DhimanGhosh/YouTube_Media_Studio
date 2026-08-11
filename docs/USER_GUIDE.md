@@ -142,7 +142,7 @@ item unchanged.
 | **Jukebox Splitter** | Splits a compilation containing tracks from different albums or artists. | Add the source, review each timestamped track and its individual metadata, then split and organize. |
 | **Track Reorder** | Applies a verified album order to existing local tracks. | Select an album folder, preview the proposed sequence, and apply it only after checking the matches. |
 | **Edit File** | Trims a local file and repairs its filename, tags, track number, or artwork. | Select a file, load its current values, change only the required fields or trim range, then save. |
-| **Edit Album** | Applies one album name, year, track artist value, and optional cover to every supported media file in a folder. | Browse an album folder, enter comma-separated artists, optionally select a JPEG/PNG or HTTPS image (or remove all artwork), inspect the file count/current values, then confirm. Titles, track numbers, and the dedicated album-artist tag are preserved; filenames are safely rebuilt as `Title - Album (Year) - Artists`. |
+| **Edit Album** | Applies one album name, year, optional shared track-artist override, and optional cover to every supported media file in a folder. | Browse an album folder and inspect its current values. Leave **Artist(s) override** blank to preserve each file's own track artist, or enter comma-separated artists only when every track should receive that shared value. Optionally select a JPEG/PNG or HTTPS image (or remove all artwork), then confirm. Titles, track numbers, and the dedicated album-artist tag are preserved; filenames are safely rebuilt as `Title - Album (Year) - Artists` using each resulting track artist. |
 | **Album Consolidator** | Enriches local metadata and routes verified files into album folders. | Select the source, run the enricher, inspect review items, select a destination, then move verified tracks. |
 | **Utilities** | Formats artist names and converts timestamp text. | Choose the relevant tab, paste or load input, run the tool, then copy or save its result. |
 | **Live Logs** | Explains what an operation changed, skipped, or could not verify. | Filter or copy the relevant block when troubleshooting or reporting a bug. |
@@ -200,14 +200,19 @@ metadata already loaded.
 2. Review the detected file count, artwork coverage, and existing album, year, and
    track-artist values.
    Mixed values are shown as such instead of being silently chosen.
-3. Enter the three shared values. Album is required; year must be four digits or blank.
+3. Enter the album-wide values. Album is required; year must be four digits or blank.
+   **Artist(s) override is optional.** Leave it blank for a compilation, soundtrack, or
+   other album whose tracks have different artists; each file keeps its existing artist
+   tag and that individual value is used when rebuilding its filename. Enter artists only
+   when you intentionally want to replace the artist on every track with one shared value.
    To change every cover, browse to a local JPEG/PNG or enter an HTTPS image URL. To
    clear every cover, select **Remove artwork from every album file**. Leave both blank
    to preserve each file's current artwork.
 4. Select **Apply to all files** and confirm the folder-level change.
-5. Review **Live Logs**. Every successful file receives the shared album, year, and
-   track Artist(s), plus the selected artwork action; its title and track number are
-   preserved, and its filename is rebuilt from the updated shared identity. Any failed
+5. Review **Live Logs**. Every successful file receives the shared album and year plus
+   the selected artwork action. The track artist is changed only when an override was
+   entered; otherwise it is preserved per file. Its title and track number are preserved,
+   and its filename is rebuilt from the updated album identity and resulting artist. Any failed
    file is listed.
 
 From an album in **Media Library**, right-click and choose **Edit album metadata**.
