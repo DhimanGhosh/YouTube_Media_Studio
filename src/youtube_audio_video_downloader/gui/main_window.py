@@ -168,6 +168,7 @@ class MainWindow(QMainWindow):
         self._active_thread: QThread | None = None
         self._active_worker: OperationWorker | None = None
         self._parallel_jobs: dict[QThread, tuple[str, OperationWorker]] = {}
+        self._parallel_entry_names: dict[QThread, list[str]] = {}
         self._session_jobs = 0
         self._session_completed = 0
         self._session_failed = 0
@@ -2551,15 +2552,15 @@ class MainWindow(QMainWindow):
 
     # ----------------------------------------------------------- worker logic
     def _start_operation(self, operation: str, params: dict[str, Any]) -> None:
-        if self._active_thread is not None:
-            if self._active_operation_name == "album_metadata_enricher":
-                self._start_parallel_operation(operation, params)
-                return
+        if self._operation_is_running(operation):
             QMessageBox.information(
                 self,
                 "Job already running",
-                "Stop or finish the current job before starting another one.",
+                "That workspace already has a running job. Other workspaces remain available.",
             )
+            return
+        if self._active_thread is not None:
+            self._start_parallel_operation(operation, params)
             return
 
         params = dict(params)
@@ -2640,9 +2641,8 @@ class MainWindow(QMainWindow):
         self.activity_progress.setRange(0, 0)
         self.activity_progress.setFormat("Preparing…")
         self._sync_stop_button()
-        self._set_run_buttons_enabled(operation == "album_metadata_enricher")
+        self._sync_run_buttons()
         if operation == "album_metadata_enricher":
-            self._form_runs[operation].setEnabled(False)
             # Disabling the clicked button makes Qt advance focus to the next
             # editable widget, which is the Move destination PathPicker.  That
             # looked like the application was choosing/changing a destination.
@@ -2661,15 +2661,13 @@ class MainWindow(QMainWindow):
         )
 
     def _start_parallel_operation(self, operation: str, params: dict[str, Any]) -> None:
-        """Run another workspace while the long metadata scan continues."""
+        """Run a different workspace without interrupting existing jobs."""
 
-        if operation == "album_metadata_enricher" or any(
-            name == operation for name, _worker in self._parallel_jobs.values()
-        ):
+        if self._operation_is_running(operation):
             QMessageBox.information(
                 self,
                 "Job already running",
-                "That workspace already has a running job.",
+                "That workspace already has a running job. Other workspaces remain available.",
             )
             return
         params = dict(params)
@@ -2721,20 +2719,31 @@ class MainWindow(QMainWindow):
         worker.cancelled.connect(
             lambda current=thread: self._parallel_operation_cancelled(current)
         )
+        worker.item_finished.connect(
+            lambda item, successful, name=operation: (
+                self._mark_parallel_batch_item_finished(name, item, successful)
+            )
+        )
         for signal in (worker.finished, worker.failed, worker.cancelled):
             signal.connect(thread.quit)
             signal.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
         thread.finished.connect(lambda current=thread: self._clear_parallel_job(current))
         self._parallel_jobs[thread] = (operation, worker)
+        input_data = params.get("input_data")
+        entry_names = list(input_data) if isinstance(input_data, dict) else []
+        self._parallel_entry_names[thread] = entry_names
+        if operation == "album":
+            for name in entry_names:
+                self._album_statuses[name] = "Running"
+            self.album_input.set_statuses(self._album_statuses)
+            self._save_workspace_state()
         self._sync_stop_button()
-        button = self._form_runs.get(operation)
-        if button is not None:
-            button.setEnabled(False)
+        self._sync_run_buttons()
         self._session_jobs += 1
         self.jobs_metric.set_value(self._session_jobs)
         self._append_log(
-            f"[PARALLEL] Started {operation} while Album Enricher continues."
+            f"[PARALLEL] Started {operation}; other workspace jobs continue."
         )
         thread.start()
 
@@ -2758,9 +2767,21 @@ class MainWindow(QMainWindow):
         self._session_completed += 1
         self.completed_metric.set_value(self._session_completed)
         self._handle_operation_output(summary)
+        editor = self._batch_editor_for_operation(
+            str(summary.get("operation", operation))
+        )
+        if editor is not None:
+            editor.disable_completed(
+                summary.get("completed_items", ()),
+                summary.get("failed_items", ()),
+            )
         details = self._summary_text(summary)
         self._append_log(f"[PARALLEL-COMPLETE] {operation}: {details}")
         self._add_history(operation, "Completed", summary.get("total", 0), details)
+        if operation == "album":
+            status = "Partial" if int(summary.get("failed", 0) or 0) else "Completed"
+            self._set_parallel_album_status(thread, status)
+        self._save_workspace_state()
         self.media_library.refresh_library()
 
     def _parallel_operation_failed(
@@ -2772,18 +2793,24 @@ class MainWindow(QMainWindow):
         self._append_log(f"[PARALLEL-ERROR] {operation}: {message}")
         self._append_log(traceback_text.rstrip())
         self._add_history(operation, "Failed", 0, message)
+        if operation == "album":
+            self._set_parallel_album_status(thread, "Failed")
+        self._save_workspace_state()
         QMessageBox.critical(self, f"{operation} failed", message)
 
     def _parallel_operation_cancelled(self, thread: QThread) -> None:
         operation = self._parallel_jobs.get(thread, ("Job", None))[0]
         self._append_log(f"[PARALLEL-CANCELLED] {operation}")
         self._add_history(operation, "Cancelled", 0, "Stopped by user")
+        if operation == "album":
+            self._set_parallel_album_status(thread, "Cancelled")
+        self._save_workspace_state()
 
     def _clear_parallel_job(self, thread: QThread) -> None:
-        operation, _worker = self._parallel_jobs.pop(thread, ("", None))
-        button = self._form_runs.get(operation)
-        if button is not None:
-            button.setEnabled(True)
+        self._parallel_jobs.pop(thread, ("", None))
+        self._parallel_entry_names.pop(thread, None)
+        self._sync_run_buttons()
+        self._sync_stop_button()
         if self._active_thread is None and not self._parallel_jobs:
             self._set_idle_state("Completed")
 
@@ -2867,13 +2894,26 @@ class MainWindow(QMainWindow):
             worker.acknowledge_file_in_use()
 
     def _mark_batch_item_finished(self, item: str, successful: bool) -> None:
+        self._mark_parallel_batch_item_finished(
+            self._active_operation_name, item, successful
+        )
+
+    def _batch_editor_for_operation(
+        self, operation: str
+    ) -> JsonBatchEditor | None:
         editor = {
             "audio": getattr(self, "audio_input", None),
             "video": getattr(self, "video_input", None),
             "album": getattr(self, "album_input", None),
             "jukebox": getattr(self, "jukebox_input", None),
-        }.get(self._active_operation_name)
-        if not isinstance(editor, JsonBatchEditor):
+        }.get(operation)
+        return editor if isinstance(editor, JsonBatchEditor) else None
+
+    def _mark_parallel_batch_item_finished(
+        self, operation: str, item: str, successful: bool
+    ) -> None:
+        editor = self._batch_editor_for_operation(operation)
+        if editor is None:
             return
         editor.disable_completed(
             (item,) if successful else (),
@@ -2894,13 +2934,8 @@ class MainWindow(QMainWindow):
                 "AI ENABLED · no model call was needed", active=True
             )
         self._handle_operation_output(summary)
-        editor = {
-            "audio": getattr(self, "audio_input", None),
-            "video": getattr(self, "video_input", None),
-            "album": getattr(self, "album_input", None),
-            "jukebox": getattr(self, "jukebox_input", None),
-        }.get(str(summary.get("operation", "")))
-        if isinstance(editor, JsonBatchEditor):
+        editor = self._batch_editor_for_operation(str(summary.get("operation", "")))
+        if editor is not None:
             editor.disable_completed(
                 summary.get("completed_items", ()),
                 summary.get("failed_items", ()),
@@ -2941,6 +2976,11 @@ class MainWindow(QMainWindow):
             self._album_statuses[name] = status
         self.album_input.set_statuses(self._album_statuses)
 
+    def _set_parallel_album_status(self, thread: QThread, status: str) -> None:
+        for name in self._parallel_entry_names.get(thread, []):
+            self._album_statuses[name] = status
+        self.album_input.set_statuses(self._album_statuses)
+
     def _set_idle_state(self, label: str) -> None:
         if self._parallel_jobs:
             self.activity_label.setText(
@@ -2950,11 +2990,7 @@ class MainWindow(QMainWindow):
             self.activity_progress.setRange(0, 0)
             self.activity_progress.setFormat("Working…")
             self._sync_stop_button()
-            self._set_run_buttons_enabled(True)
-            for operation, _worker in self._parallel_jobs.values():
-                button = self._form_runs.get(operation)
-                if button is not None:
-                    button.setEnabled(False)
+            self._sync_run_buttons()
             return
         self.activity_label.setText(label)
         self.pulse_dot.setVisible(False)
@@ -2962,11 +2998,11 @@ class MainWindow(QMainWindow):
         self.activity_progress.setValue(100 if label == "Completed" else 0)
         self.activity_progress.setFormat(label if label != "Completed" else "Completed · 100%")
         self.cancel_button.setEnabled(False)
-        self._set_run_buttons_enabled(True)
+        self._sync_run_buttons()
         QTimer.singleShot(2500, self._reset_activity_label)
 
     def _reset_activity_label(self) -> None:
-        if self._active_thread is None:
+        if self._active_thread is None and not self._parallel_jobs:
             self.activity_label.setText("Idle")
             self.activity_progress.setValue(0)
             self.activity_progress.setFormat("")
@@ -2975,11 +3011,22 @@ class MainWindow(QMainWindow):
         self._active_worker = None
         self._active_thread = None
         self._sync_stop_button()
+        self._sync_run_buttons()
 
-    def _set_run_buttons_enabled(self, enabled: bool) -> None:
-        for button in self._form_runs.values():
-            button.setEnabled(enabled)
-        self.dashboard_clear_button.setEnabled(enabled)
+    def _running_operations(self) -> set[str]:
+        operations = {name for name, _worker in self._parallel_jobs.values()}
+        if self._active_thread is not None and self._active_operation_name:
+            operations.add(self._active_operation_name)
+        return operations
+
+    def _operation_is_running(self, operation: str) -> bool:
+        return operation in self._running_operations()
+
+    def _sync_run_buttons(self) -> None:
+        running = self._running_operations()
+        for operation, button in self._form_runs.items():
+            button.setEnabled(operation not in running)
+        self.dashboard_clear_button.setEnabled(not running)
 
     def _append_log(self, line: str) -> None:
         if not hasattr(self, "log_view"):
@@ -3141,7 +3188,7 @@ class MainWindow(QMainWindow):
                 self.history_table.setItem(row, column, QTableWidgetItem(value))
 
     def _clear_dashboard(self) -> None:
-        if self._active_thread is not None:
+        if self._active_thread is not None or self._parallel_jobs:
             return
         self._session_jobs = 0
         self._session_completed = 0

@@ -32,6 +32,18 @@ class BatchEditorCompletionTest(unittest.TestCase):
                 self.assertEqual(entry["section"].status_label.text(), "COMPLETED")
                 self.assertFalse(entry["fields"]["download"].isChecked())
 
+    def test_video_link_row_precedes_file_name_for_auto_fill(self) -> None:
+        editor = JsonBatchEditor("video")
+        entry = editor.entries[0]
+        form = entry["form"]
+
+        link_row, _link_role = form.getWidgetPosition(entry["fields"]["ytb_link"])
+        name_row, _name_role = form.getWidgetPosition(entry["fields"]["__name__"])
+
+        self.assertLess(link_row, name_row)
+        self.assertEqual(form.labelForField(entry["fields"]["ytb_link"]).text(), "Ytb Link")
+        self.assertEqual(form.labelForField(entry["fields"]["__name__"]).text(), "File name")
+
     def test_nested_tracks_collapse_individually_then_collapse_parent(self) -> None:
         editor = JsonBatchEditor("album")
         editor.load_data({

@@ -924,7 +924,7 @@ class JsonBatchEditor(QWidget):
             # Audio entries use Title as both their visible identity and JSON key.
             # Keep the internal widget only for shared completion/status behavior.
             pass
-        else:
+        elif self.kind != "video":
             form.addRow(name_label, name_edit)
         for field in self.FLAT_FIELDS[self.kind]:
             widget = self._text_field(values.get(field, ""))
@@ -947,6 +947,9 @@ class JsonBatchEditor(QWidget):
                     "Ytb Link",
                     self._youtube_search_row(widget, name_edit, fields, section),
                 )
+            elif field == "ytb_link" and self.kind == "video":
+                form.addRow("Ytb Link", widget)
+                form.addRow(name_label, name_edit)
             elif field == "release_year":
                 album_name_edit = name_edit if self.kind == "album" else fields.get("album")
                 form.addRow(

@@ -79,6 +79,13 @@ The left sidebar switches between workflows. Each workflow collects its input in
 or more cards and starts only when its main action button is selected. Tasks run in the
 background, so changing pages does not cancel an operation.
 
+Different workspaces can run at the same time. For example, an Album Splitter job can
+continue while you start Video Downloader, Audio Downloader, or Album Enricher. The
+action button is disabled only for a workspace that already has a running job, which
+prevents accidentally starting that same workspace twice. The bottom **Stop** button
+cancels every currently running workspace job; wait for their cancellation messages in
+**Live Logs** before closing the app or changing files they use.
+
 The installed release is always shown as **Version x.y.z** beneath the sidebar. Include
 this value when reporting a problem so logs and behavior can be matched to the correct
 release.
@@ -137,7 +144,7 @@ item unchanged.
 | **Dashboard** | Shows current activity, session totals, and recent operations. | Start work on another page, then return here to see progress and results. **Clear** removes displayed session history, not media files. |
 | **Search Song** | Finds a song, album, movie track, video, or jukebox from plain language. | Enter a description, review and preview the matches, choose a row and destination workflow, then select **Use selected result**. |
 | **Audio Downloader** | Downloads permitted full audio or a timestamp range with a normalized filename, tags, and cover artwork. | Add or import track details, optionally set start/end inside each song row, verify metadata and output, then run the download. |
-| **Video Downloader** | Inspects available formats and downloads full or timestamp-bounded video or audio. | Add each source URL and its optional start/end inside that video row, choose output, then start the download. |
+| **Video Downloader** | Inspects available formats and downloads full or timestamp-bounded video or audio. | Paste **Ytb Link** first; the app scans qualities and fills the optional file name from YouTube when it is blank. Set an optional start/end, choose output, then start the download. |
 | **Album Splitter** | Turns one full-album source into separate tagged songs. | Add the source and timestamped track list, verify the rows and shared album metadata, then split. |
 | **Jukebox Splitter** | Splits a compilation containing tracks from different albums or artists. | Add the source, review each timestamped track and its individual metadata, then split and organize. |
 | **Track Reorder** | Applies a verified album order to existing local tracks. | Select an album folder, preview the proposed sequence, and apply it only after checking the matches. |
