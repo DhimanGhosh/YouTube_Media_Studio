@@ -4,6 +4,11 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [2.7.0] - 2026-08-12
+
+### Added
+
+- feat: add advanced video browsing and playback controls (#19) (`3ee400c`)
 ## [2.6.0] - 2026-08-12
 
 ### Added
