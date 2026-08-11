@@ -122,7 +122,8 @@ VIDEO_THUMBNAIL_SIZE = QSize(144, 81)
 VIDEO_GRID_THUMBNAIL_SIZE = QSize(240, 135)
 VIDEO_THUMBNAIL_CACHE_SIZE = QSize(320, 180)
 VIDEO_TABLE_ROW_HEIGHT = 90
-VIDEO_TABLE_ARTWORK_WIDTH = 160
+VIDEO_TABLE_ARTWORK_WIDTH = round(VIDEO_TABLE_ROW_HEIGHT * 16 / 9)
+ARTWORK_COLUMN_INDEX = 1
 COMPACT_TABLE_ROW_HEIGHT = 30
 VIDEO_ASPECT_MODES: tuple[tuple[str, float | None], ...] = (
     ("Default", None),
@@ -783,15 +784,9 @@ class MediaLibraryPage(QWidget):
         self._fullscreen_hidden_widgets: list[tuple[QWidget, bool]] = []
         self._fullscreen_window: QWidget | None = None
         self._fullscreen_window_state = Qt.WindowState.WindowNoState
-        remember_modes_value = self.settings.value(
-            "defaults/remember_video_display_modes", False
+        self._remember_video_display_modes = self.settings.value(
+            "defaults/remember_video_display_modes", False, type=bool
         )
-        self._remember_video_display_modes = str(remember_modes_value).lower() in {
-            "1",
-            "true",
-            "yes",
-            "on",
-        }
         self._video_aspect_index = (
             _video_mode_index(
                 VIDEO_ASPECT_MODES,
@@ -1487,7 +1482,7 @@ class MediaLibraryPage(QWidget):
         self.table = self._new_media_table(
             ["Title", "Artwork", "Artist", "Album", "Year", "Type", "Length"]
         )
-        self.table.setColumnHidden(1, True)
+        self.table.setColumnHidden(ARTWORK_COLUMN_INDEX, True)
         self.table.doubleClicked.connect(lambda _index: self.play_selected())
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(
@@ -2953,10 +2948,10 @@ class MediaLibraryPage(QWidget):
         )
         table.setIconSize(VIDEO_THUMBNAIL_SIZE if video_rows else QSize(18, 18))
         if include_album_and_type and table is self.table:
-            table.setColumnHidden(1, not video_rows)
+            table.setColumnHidden(ARTWORK_COLUMN_INDEX, not video_rows)
         if video_rows:
             table.setColumnWidth(0, max(340, table.columnWidth(0)))
-            table.setColumnWidth(1, VIDEO_TABLE_ARTWORK_WIDTH)
+            table.setColumnWidth(ARTWORK_COLUMN_INDEX, VIDEO_TABLE_ARTWORK_WIDTH)
         table.setUpdatesEnabled(False)
         table.setSortingEnabled(False)
         table.setRowCount(len(items))
@@ -2993,7 +2988,7 @@ class MediaLibraryPage(QWidget):
                     cell.setData(SortableTableItem.SORT_ROLE, sort_value)
                     if column == 0:
                         cell.setIcon(QIcon())
-                    elif column == 1 and include_album_and_type:
+                    elif column == ARTWORK_COLUMN_INDEX and include_album_and_type:
                         icon = (
                             self._video_thumbnail_cache.get(
                                 (item.path, item.modified_ns), QIcon()
@@ -3034,7 +3029,9 @@ class MediaLibraryPage(QWidget):
                 table.setProperty("initialContentSizingDone", True)
             if video_rows:
                 table.setColumnWidth(0, max(340, table.columnWidth(0)))
-                table.setColumnWidth(1, VIDEO_TABLE_ARTWORK_WIDTH)
+                table.setColumnWidth(
+                    ARTWORK_COLUMN_INDEX, VIDEO_TABLE_ARTWORK_WIDTH
+                )
         finally:
             table.verticalScrollBar().setValue(vertical_scroll)
             table.horizontalScrollBar().setValue(horizontal_scroll)
@@ -3122,7 +3119,7 @@ class MediaLibraryPage(QWidget):
         if current_item is None or current_item.modified_ns != key[1]:
             return
         for row in range(self.table.rowCount()):
-            cell = self.table.item(row, 1)
+            cell = self.table.item(row, ARTWORK_COLUMN_INDEX)
             if cell is not None and cell.data(Qt.ItemDataRole.UserRole) == key[0]:
                 cell.setIcon(icon)
                 break

@@ -871,6 +871,13 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.app.processEvents()
         self.assertFalse(self.page._player_fullscreen)
 
+        QTest.mouseDClick(
+            self.page.video.viewport(), Qt.MouseButton.LeftButton
+        )
+        self.app.processEvents()
+        self.assertTrue(self.page._player_fullscreen)
+        self.page.exit_video_fullscreen()
+
         QTest.mouseClick(
             self.page.fullscreen_button, Qt.MouseButton.LeftButton
         )
@@ -991,6 +998,12 @@ class MediaPlayerPageTest(unittest.TestCase):
         )
 
         self.page.set_remember_video_display_modes(False)
+        self.assertFalse(
+            self.page.settings.contains("library/video_aspect_mode")
+        )
+        self.assertFalse(
+            self.page.settings.contains("library/video_crop_mode")
+        )
         self.page._replace_queue([second])
         self.assertEqual(self.page.aspect_button.text(), "Aspect: Default")
         self.assertEqual(self.page.crop_button.text(), "Crop: Default")

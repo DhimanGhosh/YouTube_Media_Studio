@@ -604,6 +604,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         self.window.settings_nvidia_model.setText("hosted:model")
         self.window.settings_agentic_model.setCurrentText("local:model")
         self.window.settings_workers.setValue(1)
+        self.window.settings_remember_video_display_modes.setChecked(True)
         self.window.audio_input.add_entry("Song", {"ytb_link": "https://example.test"})
         self.window.audio_output.set_text("C:/Music")
         self.window.track_reorder_folder.set_text("C:/Music/Album")
@@ -625,6 +626,9 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
             patch(
                 "youtube_audio_video_downloader.gui.main_window.save_data_directory_choice"
             ),
+            patch.object(
+                self.window.media_library, "set_remember_video_display_modes"
+            ) as apply_mode_memory,
         ):
             self.window._reset_app()
 
@@ -634,6 +638,13 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         self.assertEqual(self.window.settings_ai_provider.currentData(), "ollama")
         self.assertEqual(self.window.settings_agentic_model.currentText(), "")
         self.assertEqual(self.window.settings_workers.value(), machine_parallel_workers())
+        self.assertFalse(self.window.settings_remember_video_display_modes.isChecked())
+        self.assertFalse(
+            self.window.settings.value(
+                "defaults/remember_video_display_modes", type=bool
+            )
+        )
+        apply_mode_memory.assert_called_once_with(False)
         self.assertEqual(self.window.settings_data_directory.text(), str(reset_data))
         self.assertEqual(self.window.audio_input.data(), {})
         self.assertEqual(self.window.audio_output.text(), "")
