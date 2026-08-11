@@ -6,7 +6,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Literal, Mapping
+from typing import Iterable, Literal, Mapping, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -47,6 +47,18 @@ class LibraryRecommendation:
     item: LibraryItem
     reason: str
     exists_locally: bool
+
+
+class _TasteTrack(TypedDict):
+    title: str
+    artists: list[str]
+    album: str
+    year: int | None
+
+
+class _TastePlaylist(TypedDict):
+    name: str
+    tracks: list[_TasteTrack]
 
 
 @dataclass(frozen=True, slots=True)
@@ -238,7 +250,7 @@ def _plan_request(
     items: list[LibraryItem],
     *,
     literal_artists: tuple[str, ...],
-    taste_profile: list[dict[str, object]],
+    taste_profile: list[_TastePlaylist],
     model: str,
     timeout: float,
 ) -> _QueryPlan:
@@ -489,7 +501,7 @@ def _curate_candidates(
     reasons: dict[int, tuple[str, ...]],
     plan: _QueryPlan,
     *,
-    taste_profile: list[dict[str, object]],
+    taste_profile: list[_TastePlaylist],
     model: str,
     limit: int,
     timeout: float,
@@ -547,11 +559,11 @@ def _curate_candidates(
 def _playlist_taste_profile(
     items: Iterable[LibraryItem],
     playlists: Mapping[str, Iterable[str]],
-) -> list[dict[str, object]]:
+) -> list[_TastePlaylist]:
     """Build bounded, path-free positive taste examples from saved playlists."""
 
     by_path = {item.path.casefold(): item for item in items}
-    profile: list[dict[str, object]] = []
+    profile: list[_TastePlaylist] = []
     remaining_tracks = MAX_TASTE_TRACKS
     for raw_name, paths in sorted(
         playlists.items(), key=lambda pair: str(pair[0]).casefold()
@@ -559,7 +571,7 @@ def _playlist_taste_profile(
         name = str(raw_name).strip()
         if not name or remaining_tracks <= 0:
             continue
-        tracks: list[dict[str, object]] = []
+        tracks: list[_TasteTrack] = []
         seen: set[tuple[str, tuple[str, ...]]] = set()
         for raw_path in paths:
             item = by_path.get(str(raw_path).casefold())
@@ -572,7 +584,7 @@ def _playlist_taste_profile(
             tracks.append(
                 {
                     "title": item.title,
-                    "artists": item.artists,
+                    "artists": split_artists(item.artists),
                     "album": item.album,
                     "year": item.year,
                 }
@@ -589,7 +601,7 @@ def _playlist_taste_profile(
 
 
 def _playlist_affinity(
-    item: LibraryItem, taste_profile: list[dict[str, object]]
+    item: LibraryItem, taste_profile: list[_TastePlaylist]
 ) -> int:
     """Score metadata similarity to positive playlist examples without guessing traits."""
 
@@ -599,27 +611,25 @@ def _playlist_affinity(
     score = 0
     for playlist in taste_profile:
         name_tokens = {
-            token for token in _text_key(str(playlist.get("name", ""))).split()
+            token for token in _text_key(playlist["name"]).split()
             if len(token) > 2 and token not in _QUERY_SCAFFOLD_TOKENS
         }
         metadata_tokens = set(
             _text_key(f"{item.title} {item.artists} {item.album}").split()
         )
         score += len(name_tokens & metadata_tokens)
-        for raw_track in playlist.get("tracks", []):
-            if not isinstance(raw_track, dict):
-                continue
+        for raw_track in playlist["tracks"]:
             taste_artists = {
                 _text_key(value)
-                for value in split_artists(str(raw_track.get("artists", "")))
+                for value in raw_track["artists"]
             }
             if item_artists & taste_artists:
                 score += 5
-            taste_album = _text_key(str(raw_track.get("album", "")))
+            taste_album = _text_key(raw_track["album"])
             if item_album and taste_album and item_album == taste_album:
                 score += 3
             taste_identity = (
-                _text_key(str(raw_track.get("title", ""))),
+                _text_key(raw_track["title"]),
                 tuple(sorted(taste_artists)),
             )
             if item_identity == taste_identity:
@@ -629,7 +639,7 @@ def _playlist_affinity(
 
 
 def _rank_by_playlist_taste(
-    candidates: list[LibraryItem], taste_profile: list[dict[str, object]]
+    candidates: list[LibraryItem], taste_profile: list[_TastePlaylist]
 ) -> list[LibraryItem]:
     if not taste_profile:
         return candidates
@@ -650,11 +660,10 @@ def playlist_taste_search_query(
     profile = _playlist_taste_profile(items, playlists)
     examples: list[str] = []
     for playlist in profile[:4]:
-        tracks = playlist.get("tracks", [])
+        tracks = playlist["tracks"]
         labels = [
-            f"{track.get('title', '')} by {track.get('artists', '')}"
+            f"{track['title']} by {', '.join(track['artists'])}"
             for track in tracks[:3]
-            if isinstance(track, dict)
         ]
         if labels:
             examples.append(f"{playlist['name']}: " + "; ".join(labels))
