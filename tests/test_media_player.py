@@ -15,7 +15,7 @@ import numpy as np
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtCore import (  # noqa: E402
-    QBuffer, QByteArray, QIODevice, QPoint, QPointF, QSettings, QSize, Qt,
+    QBuffer, QByteArray, QIODevice, QPoint, QPointF, QSettings, QSize, Qt, QTimer,
 )
 from PyQt6.QtGui import QColor, QIcon, QPixmap, QWheelEvent  # noqa: E402
 from PyQt6.QtMultimedia import QAudioBuffer, QAudioFormat, QMediaPlayer  # noqa: E402
@@ -190,6 +190,39 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.page.apply_filters = Mock()
         self.page._scan_finished(list(self.page.items))
         self.page.apply_filters.assert_not_called()
+
+    def test_refresh_requested_during_scan_is_queued(self) -> None:
+        self.page._scanner_thread = Mock()
+
+        self.page.refresh_library()
+
+        self.assertTrue(self.page._scan_refresh_pending)
+        self.assertEqual(self.page.library_refresh_button.text(), "Refresh queued")
+        with patch.object(QTimer, "singleShot") as single_shot:
+            self.page._scanner_thread_finished()
+        single_shot.assert_called_once_with(0, self.page.refresh_library)
+        self.assertIsNone(self.page._scanner_thread)
+        self.assertTrue(self.page.library_refresh_button.isEnabled())
+
+    def test_refresh_without_folders_clears_stale_library_rows(self) -> None:
+        self.assertTrue(self.page.items)
+
+        self.page.refresh_library()
+
+        self.assertEqual(self.page.items, [])
+        self.assertEqual(self.page.table.rowCount(), 0)
+
+    def test_scan_removes_deleted_tracks_from_the_queue(self) -> None:
+        original_items = list(self.page.items)
+        self.page.queue = list(original_items)
+        self.page._queue_source = list(original_items)
+        self.page.queue_index = 1
+
+        self.page._scan_finished([original_items[0]])
+
+        self.assertEqual(self.page.queue, [original_items[0]])
+        self.assertEqual(self.page._queue_source, [original_items[0]])
+        self.assertEqual(self.page.queue_index, 0)
 
     def test_table_refresh_preserves_vertical_scroll_position(self) -> None:
         many_items = [media(f"Song {index:03d}", 2000, 1000) for index in range(80)]

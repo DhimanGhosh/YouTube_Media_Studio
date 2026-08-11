@@ -160,6 +160,37 @@ class GuiOperationsTest(unittest.TestCase):
             )
             self.assertEqual(summary.downloaded, 1)
             self.assertEqual(summary.tagged, 1)
+            self.assertEqual(Path(summary.output_path), output_dir.resolve())
+
+    def test_download_summary_reports_the_folder_containing_an_absolute_output(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            output_dir = Path(temporary_directory)
+            nested_dir = output_dir / "Artist" / "Album"
+            nested_dir.mkdir(parents=True)
+            downloaded = nested_dir / "Song.mp3"
+            downloaded.write_bytes(b"audio")
+            result = DownloadResult(
+                song="Song",
+                status=DownloadStatus.DOWNLOADED,
+                file_name=str(downloaded),
+            )
+            with patch(
+                "youtube_audio_video_downloader.gui.operations.YouTubeAudioDownloader"
+            ) as downloader_class:
+                downloader_class.return_value.download_from_json.return_value = [result]
+                summary = execute_operation(
+                    "audio",
+                    {
+                        "input_data": {
+                            "Song": {"ytb_link": "https://youtu.be/example"}
+                        },
+                        "output_dir": str(output_dir),
+                        "auto_enrich_downloads": False,
+                    },
+                    CancellationToken(),
+                )
+
+            self.assertEqual(Path(summary.output_path), nested_dir.resolve())
 
     def test_agentic_model_reaches_every_post_download_enricher(self) -> None:
         """Every downloader must use the same configured metadata adjudicator."""
