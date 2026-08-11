@@ -2196,6 +2196,15 @@ class MainWindow(QMainWindow):
         self.settings_sample_rate.setCurrentText(
             str(self.settings.value("defaults/sample_rate", "44100"))
         )
+        self.settings_video_seek_seconds = self._spin(
+            1,
+            60,
+            self._default_value("video_seek_seconds", 10),
+            " s",
+        )
+        self.settings_video_seek_seconds.setToolTip(
+            "Seconds skipped by Left/Right during video playback; Shift skips twice this value."
+        )
         self.settings_wikipedia_order = self._check(
             "Use verified Wikipedia album order and compress downloaded songs to 1..N",
             self._setting_bool("defaults/wikipedia_track_order", True),
@@ -2389,6 +2398,16 @@ class MainWindow(QMainWindow):
         audio_form.addRow("Album track ordering", self.settings_wikipedia_order)
         self.settings_sections["audio_metadata"] = audio_section
         layout.addWidget(audio_section)
+
+        video_section, _video_body, video_form = self._settings_group(
+            "Video playback",
+            "Video-only keyboard navigation and playback behavior.",
+            "video_playback",
+            expanded=False,
+        )
+        video_form.addRow("Arrow-key seek interval", self.settings_video_seek_seconds)
+        self.settings_sections["video_playback"] = video_section
+        layout.addWidget(video_section)
 
         ai_section, _ai_body, ai_form = self._settings_group(
             "AI providers and online evidence",
@@ -3411,6 +3430,7 @@ class MainWindow(QMainWindow):
             "nvidia_model": "",
             "serpapi_api_key": "",
             "search_suggestions": 10,
+            "video_seek_seconds": 10,
             "crystalness": 65,
         }
 
@@ -3432,7 +3452,12 @@ class MainWindow(QMainWindow):
 
         library_busy = any(
             getattr(self.media_library, name, None) is not None
-            for name in ("_scanner_thread", "_search_thread", "_recommendation_thread")
+            for name in (
+                "_scanner_thread",
+                "_search_thread",
+                "_recommendation_thread",
+                "_video_thumbnail_thread",
+            )
         )
         if self._active_thread is not None or self._parallel_jobs or library_busy:
             QMessageBox.warning(
@@ -3519,6 +3544,7 @@ class MainWindow(QMainWindow):
         self.settings_serpapi_api_key.clear()
         self.settings_agentic_model.setCurrentText("")
         self.settings_search_suggestions.setValue(int(values["search_suggestions"]))
+        self.settings_video_seek_seconds.setValue(int(values["video_seek_seconds"]))
         self.settings_crystalness.setValue(int(values["crystalness"]))
         self.settings_data_directory.set_text(default_directory)
         persist_signals = self.settings_persist_state.blockSignals(True)
@@ -3532,6 +3558,7 @@ class MainWindow(QMainWindow):
         self.workers_metric.set_value(values["workers"])
         self._apply_crystalness(int(values["crystalness"]), persist=True)
         self.media_library.set_suggestion_limit(int(values["search_suggestions"]))
+        self.media_library.set_video_seek_seconds(int(values["video_seek_seconds"]))
         for editor in (self.audio_input, self.video_input, self.album_input, self.jukebox_input):
             editor.retry_attempts = int(values["retries"])
         self._eta_profiles.clear()
@@ -3631,6 +3658,7 @@ class MainWindow(QMainWindow):
             "ai_provider": provider_id,
             "serpapi_api_key": self.settings_serpapi_api_key.text().strip(),
             "search_suggestions": self.settings_search_suggestions.value(),
+            "video_seek_seconds": self.settings_video_seek_seconds.value(),
             "crystalness": self.settings_crystalness.value(),
         }
         for key, value in values.items():
@@ -3685,6 +3713,7 @@ class MainWindow(QMainWindow):
         self.workers_metric.set_value(values["workers"])
         self._apply_crystalness(int(values["crystalness"]), persist=True)
         self.media_library.set_suggestion_limit(int(values["search_suggestions"]))
+        self.media_library.set_video_seek_seconds(int(values["video_seek_seconds"]))
         storage_changed = self._save_data_directory()
         QMessageBox.information(
             self,

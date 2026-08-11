@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Callable, Iterable
@@ -121,6 +123,55 @@ def artwork_bytes(path: str | Path) -> bytes:
     except (MutagenError, OSError, TypeError, ValueError):
         pass
     return b""
+
+
+def video_thumbnail_bytes(path: str | Path, duration_ms: int = 0) -> bytes:
+    """Return embedded artwork or a small representative video frame."""
+
+    embedded = artwork_bytes(path)
+    if embedded:
+        return embedded
+    ffmpeg = shutil.which("ffmpeg")
+    source = Path(path)
+    if not ffmpeg or not source.is_file():
+        return b""
+    seek_seconds = (
+        min(30.0, max(0.1, duration_ms / 10_000))
+        if duration_ms > 0
+        else 1.0
+    )
+    command = [
+        ffmpeg,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-ss",
+        f"{seek_seconds:.3f}",
+        "-i",
+        str(source),
+        "-map",
+        "0:V:0",
+        "-frames:v",
+        "1",
+        "-vf",
+        "scale=320:180:force_original_aspect_ratio=decrease",
+        "-f",
+        "image2pipe",
+        "-vcodec",
+        "png",
+        "pipe:1",
+    ]
+    try:
+        completed = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=8,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return b""
+    return completed.stdout if completed.returncode == 0 else b""
 
 
 def _read_item(path: Path) -> LibraryItem:

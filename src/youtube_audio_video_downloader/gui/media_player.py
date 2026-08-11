@@ -85,6 +85,7 @@ from youtube_audio_video_downloader.services.media_library import (
     filter_library,
     scan_library,
     split_artists,
+    video_thumbnail_bytes,
 )
 from youtube_audio_video_downloader.services.media_playlists import (
     add_playlist_paths,
@@ -110,6 +111,44 @@ VALID_MEDIA_TYPES = frozenset(option[1] for option in MEDIA_TYPE_OPTIONS)
 EMBEDDED_VIDEO_MIN_HEIGHT = 320
 EMBEDDED_VIDEO_MAX_HEIGHT = 520
 FULLSCREEN_VIDEO_MAX_HEIGHT = 16_777_215
+VIDEO_THUMBNAIL_SIZE = QSize(144, 81)
+VIDEO_GRID_THUMBNAIL_SIZE = QSize(240, 135)
+VIDEO_THUMBNAIL_CACHE_SIZE = QSize(320, 180)
+VIDEO_TABLE_ROW_HEIGHT = 96
+COMPACT_TABLE_ROW_HEIGHT = 30
+VIDEO_ASPECT_MODES: tuple[tuple[str, float | None], ...] = (
+    ("Default", None),
+    ("16:9", 16 / 9),
+    ("4:3", 4 / 3),
+    ("1:1", 1.0),
+    ("16:10", 16 / 10),
+    ("2.21:1", 2.21),
+    ("2.35:1", 2.35),
+    ("2.39:1", 2.39),
+    ("5:4", 5 / 4),
+)
+VIDEO_CROP_MODES: tuple[tuple[str, float | None], ...] = (
+    ("Default", None),
+    ("16:10", 16 / 10),
+    ("16:9", 16 / 9),
+    ("4:3", 4 / 3),
+    ("1.85:1", 1.85),
+    ("2.21:1", 2.21),
+    ("2.35:1", 2.35),
+    ("2.39:1", 2.39),
+    ("5:3", 5 / 3),
+    ("5:4", 5 / 4),
+    ("1:1", 1.0),
+)
+
+
+def _video_mode_index(
+    modes: tuple[tuple[str, float | None], ...], saved_label: object
+) -> int:
+    label = str(saved_label or "Default")
+    return next(
+        (index for index, option in enumerate(modes) if option[0] == label), 0
+    )
 
 
 class LibraryScanner(QObject):
@@ -125,6 +164,106 @@ class LibraryScanner(QObject):
         self.finished.emit(
             scan_library(self.folders, cancelled=thread.isInterruptionRequested)
         )
+
+
+class VideoViewport(QWidget):
+    """Clip and reshape a QVideoWidget for VLC-style crop/aspect controls."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("videoViewport")
+        self.setStyleSheet("#videoViewport { background: black; }")
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.clip = QWidget(self)
+        self.clip.setStyleSheet("background: black;")
+        self.surface = QVideoWidget(self.clip)
+        self.surface.setAspectRatioMode(Qt.AspectRatioMode.IgnoreAspectRatio)
+        self.surface.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._source_size = QSize(16, 9)
+        self._aspect_ratio: float | None = None
+        self._crop_ratio: float | None = None
+        self.message = QLabel(self)
+        self.message.setObjectName("videoModeMessage")
+        self.message.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.message.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
+        )
+        self.message.setStyleSheet(
+            "background: rgba(0, 0, 0, 190); color: white; "
+            "border: 1px solid rgba(255, 255, 255, 80); "
+            "border-radius: 6px; padding: 8px 14px; font-weight: 600;"
+        )
+        self.message.hide()
+        self._message_timer = QTimer(self)
+        self._message_timer.setSingleShot(True)
+        self._message_timer.setInterval(1700)
+        self._message_timer.timeout.connect(self.message.hide)
+        self.surface.videoSink().videoSizeChanged.connect(self.set_source_size)
+
+    def set_source_size(self, size: QSize) -> None:
+        if size.width() > 0 and size.height() > 0:
+            self._source_size = size
+            self._update_surface_geometry()
+
+    def set_display_modes(
+        self, aspect_ratio: float | None, crop_ratio: float | None
+    ) -> None:
+        self._aspect_ratio = aspect_ratio
+        self._crop_ratio = crop_ratio
+        self._update_surface_geometry()
+
+    def show_mode_message(self, text: str) -> None:
+        self.message.setText(text)
+        self.message.adjustSize()
+        self._position_message()
+        self.message.show()
+        self.message.raise_()
+        self._message_timer.start()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._update_surface_geometry()
+        self._position_message()
+
+    def _position_message(self) -> None:
+        self.message.move(max(12, (self.width() - self.message.width()) // 2), 16)
+
+    def _update_surface_geometry(self) -> None:
+        viewport_width = self.width()
+        viewport_height = self.height()
+        if viewport_width <= 0 or viewport_height <= 0:
+            return
+        source_ratio = self._source_size.width() / self._source_size.height()
+        crop_ratio = self._crop_ratio or source_ratio
+        if source_ratio >= crop_ratio:
+            crop_width_fraction = crop_ratio / source_ratio
+            crop_height_fraction = 1.0
+        else:
+            crop_width_fraction = 1.0
+            crop_height_fraction = source_ratio / crop_ratio
+        display_ratio = self._aspect_ratio or crop_ratio
+        viewport_ratio = viewport_width / viewport_height
+        if viewport_ratio >= display_ratio:
+            visible_height = viewport_height
+            visible_width = round(visible_height * display_ratio)
+        else:
+            visible_width = viewport_width
+            visible_height = round(visible_width / display_ratio)
+        self.clip.setGeometry(
+            (viewport_width - visible_width) // 2,
+            (viewport_height - visible_height) // 2,
+            visible_width,
+            visible_height,
+        )
+        surface_width = max(1, round(visible_width / crop_width_fraction))
+        surface_height = max(1, round(visible_height / crop_height_fraction))
+        self.surface.setGeometry(
+            (visible_width - surface_width) // 2,
+            (visible_height - surface_height) // 2,
+            surface_width,
+            surface_height,
+        )
+        self.message.raise_()
 
 
 class LibrarySearchWorker(QObject):
@@ -189,6 +328,27 @@ class LibrarySearchWorker(QObject):
         self.finished.emit(
             self.request_id, matches, suggestions, available_artists
         )
+
+
+class VideoThumbnailWorker(QObject):
+    thumbnail_ready = pyqtSignal(object, object)
+    finished = pyqtSignal()
+
+    def __init__(self, items: list[LibraryItem]) -> None:
+        super().__init__()
+        self.items = items
+
+    @pyqtSlot()
+    def run(self) -> None:
+        thread = QThread.currentThread()
+        for item in self.items:
+            if thread.isInterruptionRequested():
+                break
+            key = (item.path, item.modified_ns)
+            self.thumbnail_ready.emit(
+                key, video_thumbnail_bytes(item.path, item.duration_ms)
+            )
+        self.finished.emit()
 
 
 class LibraryRecommendationWorker(QObject):
@@ -570,6 +730,9 @@ class MediaLibraryPage(QWidget):
         self._open_album_name = ""
         self._open_album_artists: list[str] = []
         self._artwork_cache: dict[str, QIcon] = {}
+        self._video_thumbnail_cache: dict[tuple[str, int], QIcon] = {}
+        self._video_thumbnail_thread: QThread | None = None
+        self._video_thumbnail_worker: VideoThumbnailWorker | None = None
         self._album_art_generation = 0
         self._pending_album_art: list[tuple[QListWidgetItem, str]] = []
         self._scanner_thread: QThread | None = None
@@ -596,6 +759,21 @@ class MediaLibraryPage(QWidget):
         self._fullscreen_hidden_widgets: list[tuple[QWidget, bool]] = []
         self._fullscreen_window: QWidget | None = None
         self._fullscreen_window_state = Qt.WindowState.WindowNoState
+        self._video_aspect_index = _video_mode_index(
+            VIDEO_ASPECT_MODES,
+            self.settings.value("library/video_aspect_mode", "Default"),
+        )
+        self._video_crop_index = _video_mode_index(
+            VIDEO_CROP_MODES,
+            self.settings.value("library/video_crop_mode", "Default"),
+        )
+        self._video_seek_seconds = max(
+            1,
+            min(
+                60,
+                int(self.settings.value("defaults/video_seek_seconds", 10)),
+            ),
+        )
         self._consecutive_playback_errors = 0
         self._last_media_command_at = 0.0
         self._native_media_filter: WindowsMediaKeyFilter | None = None
@@ -606,6 +784,10 @@ class MediaLibraryPage(QWidget):
         self._search_debounce.setInterval(180)
         self._search_debounce.timeout.connect(self._start_background_search)
         self._build_ui()
+        application = QApplication.instance()
+        self._application_event_filter_installed = application is not None
+        if application is not None:
+            application.installEventFilter(self)
         self._connect_player()
         self._install_media_shortcuts()
         self._load_folders()
@@ -1131,16 +1313,22 @@ class MediaLibraryPage(QWidget):
                 self._scanner_thread,
                 self._search_thread,
                 self._recommendation_thread,
+                self._video_thumbnail_thread,
             )
         ):
             return False
         self._search_debounce.stop()
         if self.player.playbackState() != QMediaPlayer.PlaybackState.StoppedState:
             self.stop()
+        self.clear_playback_queue()
         self.folder_list.clear()
         self._render_folder_chips()
         self.search.clear()
         self.media_type_filter.setCurrentIndex(0)
+        self.video_view_toggle.setChecked(False)
+        self._video_aspect_index = 0
+        self._video_crop_index = 0
+        self._apply_video_display_modes()
         self.year_from.setValue(0)
         self.year_to.setValue(0)
         self.clear_ai_recommendations()
@@ -1156,6 +1344,8 @@ class MediaLibraryPage(QWidget):
         self._open_album_artists.clear()
         self.facets.clear()
         self.table.setRowCount(0)
+        self.video_grid.clear()
+        self._video_thumbnail_cache.clear()
         self.albums.clear()
         self.album_tracks.setRowCount(0)
         self.album_stack.setCurrentIndex(0)
@@ -1220,6 +1410,18 @@ class MediaLibraryPage(QWidget):
         self.match_status.setObjectName("mutedLabel")
         actions.addWidget(self.match_status)
         actions.addStretch(1)
+        self.video_view_toggle = QPushButton("Thumbnails view")
+        self.video_view_toggle.setObjectName("secondaryButton")
+        self.video_view_toggle.setCheckable(True)
+        self.video_view_toggle.setChecked(
+            str(self.settings.value("library/video_view_mode", "list")) == "grid"
+        )
+        self.video_view_toggle.setToolTip(
+            "Toggle between detailed video rows and a larger thumbnail grid"
+        )
+        self.video_view_toggle.toggled.connect(self._toggle_video_view)
+        self.video_view_toggle.setVisible(False)
+        actions.addWidget(self.video_view_toggle)
         self.add_selected_to_playlist_button = QPushButton("Add to playlist")
         self.add_selected_to_playlist_button.setObjectName("secondaryButton")
         self.add_selected_to_playlist_button.setToolTip(
@@ -1249,7 +1451,25 @@ class MediaLibraryPage(QWidget):
         self.table.customContextMenuRequested.connect(
             lambda point: self._show_table_song_context_menu(self.table, point)
         )
-        grid.addWidget(self.table, 1, 1)
+        self.video_grid = QListWidget()
+        self.video_grid.setViewMode(QListWidget.ViewMode.IconMode)
+        self.video_grid.setResizeMode(QListWidget.ResizeMode.Adjust)
+        self.video_grid.setMovement(QListWidget.Movement.Static)
+        self.video_grid.setSelectionMode(
+            QAbstractItemView.SelectionMode.ExtendedSelection
+        )
+        self.video_grid.setIconSize(VIDEO_GRID_THUMBNAIL_SIZE)
+        self.video_grid.setGridSize(QSize(280, 185))
+        self.video_grid.setWordWrap(True)
+        self.video_grid.itemDoubleClicked.connect(self._play_video_grid_item)
+        self.video_grid.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.video_grid.customContextMenuRequested.connect(
+            self._show_video_grid_context_menu
+        )
+        self.media_view_stack = QStackedWidget()
+        self.media_view_stack.addWidget(self.table)
+        self.media_view_stack.addWidget(self.video_grid)
+        grid.addWidget(self.media_view_stack, 1, 1)
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 4)
         return widget
@@ -1778,15 +1998,17 @@ class MediaLibraryPage(QWidget):
         grid.setContentsMargins(18, 13, 18, 13)
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(8)
-        self.video = QVideoWidget()
-        self.video.setMinimumHeight(EMBEDDED_VIDEO_MIN_HEIGHT)
-        self.video.setMaximumHeight(EMBEDDED_VIDEO_MAX_HEIGHT)
+        self.video_viewport = VideoViewport()
+        self.video_viewport.setMinimumHeight(EMBEDDED_VIDEO_MIN_HEIGHT)
+        self.video_viewport.setMaximumHeight(EMBEDDED_VIDEO_MAX_HEIGHT)
+        self.video = self.video_viewport.surface
         self.video.setToolTip(
-            "Double-click the video to enter or leave full-screen playback"
+            "Double-click for full screen · A changes aspect ratio · C changes crop"
         )
         self.video.installEventFilter(self)
-        self.video.setVisible(False)
-        grid.addWidget(self.video, 0, 0, 1, 13)
+        self.video_viewport.installEventFilter(self)
+        self.video_viewport.setVisible(False)
+        grid.addWidget(self.video_viewport, 0, 0, 1, 13)
         self.now_playing_art = QLabel()
         self.now_playing_art.setObjectName("nowPlayingArtwork")
         self.now_playing_art.setFixedSize(112, 112)
@@ -1851,6 +2073,16 @@ class MediaLibraryPage(QWidget):
         self.repeat_button.setObjectName("playerModeButton")
         self.repeat_button.clicked.connect(self.cycle_repeat_mode)
         controls_layout.addWidget(self.repeat_button)
+        self.aspect_button = QPushButton()
+        self.aspect_button.setObjectName("playerModeButton")
+        self.aspect_button.setEnabled(False)
+        self.aspect_button.clicked.connect(self.cycle_video_aspect)
+        controls_layout.addWidget(self.aspect_button)
+        self.crop_button = QPushButton()
+        self.crop_button.setObjectName("playerModeButton")
+        self.crop_button.setEnabled(False)
+        self.crop_button.clicked.connect(self.cycle_video_crop)
+        controls_layout.addWidget(self.crop_button)
         self.fullscreen_button = QPushButton("Full screen")
         self.fullscreen_button.setObjectName("playerModeButton")
         self.fullscreen_button.setEnabled(False)
@@ -1861,6 +2093,7 @@ class MediaLibraryPage(QWidget):
         self.fullscreen_button.clicked.connect(self.toggle_video_fullscreen)
         controls_layout.addWidget(self.fullscreen_button)
         self._update_playback_mode_buttons()
+        self._apply_video_display_modes()
         grid.addWidget(controls, 3, 1, 1, 9)
         volume_label = QLabel("Volume")
         volume_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -1876,11 +2109,58 @@ class MediaLibraryPage(QWidget):
         self.fullscreen_shortcut = QShortcut(QKeySequence("Esc"), card)
         self.fullscreen_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         self.fullscreen_shortcut.activated.connect(self.exit_video_fullscreen)
+        self.aspect_shortcut = QShortcut(QKeySequence("A"), card)
+        self.aspect_shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
+        self.aspect_shortcut.activated.connect(self.cycle_video_aspect)
+        self.crop_shortcut = QShortcut(QKeySequence("C"), card)
+        self.crop_shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
+        self.crop_shortcut.activated.connect(self.cycle_video_crop)
+        self.video_shortcuts: list[QShortcut] = [
+            self.aspect_shortcut,
+            self.crop_shortcut,
+        ]
+        for sequence, handler in (
+            ("Right", lambda: self._seek_video(1)),
+            ("Left", lambda: self._seek_video(-1)),
+            ("Shift+Right", lambda: self._seek_video(2)),
+            ("Shift+Left", lambda: self._seek_video(-2)),
+            ("Home", lambda: self._seek_video_percent(0)),
+            ("0", lambda: self._seek_video_percent(0)),
+            ("Space", lambda: self._run_video_command(self.toggle_play)),
+            ("F", lambda: self._run_video_command(self.toggle_video_fullscreen)),
+            ("M", self.toggle_video_mute),
+            ("S", lambda: self._run_video_command(self.stop)),
+            ("N", lambda: self._run_video_command(self.next)),
+            ("P", lambda: self._run_video_command(self.previous)),
+        ):
+            shortcut = QShortcut(QKeySequence(sequence), card)
+            shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
+            shortcut.activated.connect(handler)
+            self.video_shortcuts.append(shortcut)
+        for number in range(1, 10):
+            shortcut = QShortcut(QKeySequence(str(number)), card)
+            shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
+            shortcut.activated.connect(
+                lambda value=number: self._seek_video_percent(value * 10)
+            )
+            self.video_shortcuts.append(shortcut)
+        application = QApplication.instance()
+        if application is not None:
+            application.focusChanged.connect(self._sync_video_shortcuts)
+        self._sync_video_shortcuts()
         self._player_host_layout.addWidget(card)
         return self._player_host
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
-        if watched is self.video and event.type() == QEvent.Type.MouseButtonDblClick:
+        if (
+            event.type() == QEvent.Type.ToolTip
+            and isinstance(watched, QWidget)
+            and (watched is self or self.isAncestorOf(watched))
+        ):
+            return True
+        if watched in {self.video, self.video_viewport} and event.type() == (
+            QEvent.Type.MouseButtonDblClick
+        ):
             self.toggle_video_fullscreen()
             return True
         return super().eventFilter(watched, event)
@@ -1891,7 +2171,7 @@ class MediaLibraryPage(QWidget):
         if self._player_fullscreen:
             self.exit_video_fullscreen()
             return
-        if not self.video.isVisible():
+        if not self.video_viewport.isVisible():
             return
         self._player_fullscreen = True
         self._fullscreen_window = self.window()
@@ -1912,8 +2192,8 @@ class MediaLibraryPage(QWidget):
                 break
             branch = parent
             parent = branch.parentWidget()
-        self.video.setMinimumHeight(0)
-        self.video.setMaximumHeight(FULLSCREEN_VIDEO_MAX_HEIGHT)
+        self.video_viewport.setMinimumHeight(0)
+        self.video_viewport.setMaximumHeight(FULLSCREEN_VIDEO_MAX_HEIGHT)
         self.player_grid.setRowStretch(0, 1)
         self.fullscreen_button.setText("Exit full screen")
         self._fullscreen_window.showFullScreen()
@@ -1933,10 +2213,102 @@ class MediaLibraryPage(QWidget):
             widget.setVisible(not was_hidden)
         self._fullscreen_hidden_widgets = []
         self._fullscreen_window = None
-        self.video.setMinimumHeight(EMBEDDED_VIDEO_MIN_HEIGHT)
-        self.video.setMaximumHeight(EMBEDDED_VIDEO_MAX_HEIGHT)
+        self.video_viewport.setMinimumHeight(EMBEDDED_VIDEO_MIN_HEIGHT)
+        self.video_viewport.setMaximumHeight(EMBEDDED_VIDEO_MAX_HEIGHT)
         self.player_grid.setRowStretch(0, 0)
         self.fullscreen_button.setText("Full screen")
+
+    def cycle_video_aspect(self) -> None:
+        """Cycle the display aspect ratio for the active video (keyboard: A)."""
+
+        if not self.aspect_button.isEnabled():
+            return
+        self._video_aspect_index = (
+            self._video_aspect_index + 1
+        ) % len(VIDEO_ASPECT_MODES)
+        label = VIDEO_ASPECT_MODES[self._video_aspect_index][0]
+        self.settings.setValue("library/video_aspect_mode", label)
+        self._apply_video_display_modes()
+        self.video_viewport.show_mode_message(f"Aspect ratio: {label}")
+        self.video.setFocus()
+
+    def cycle_video_crop(self) -> None:
+        """Cycle the centered video crop ratio (keyboard: C)."""
+
+        if not self.crop_button.isEnabled():
+            return
+        self._video_crop_index = (
+            self._video_crop_index + 1
+        ) % len(VIDEO_CROP_MODES)
+        label = VIDEO_CROP_MODES[self._video_crop_index][0]
+        self.settings.setValue("library/video_crop_mode", label)
+        self._apply_video_display_modes()
+        self.video_viewport.show_mode_message(f"Crop: {label}")
+        self.video.setFocus()
+
+    def _apply_video_display_modes(self) -> None:
+        aspect_label, aspect_ratio = VIDEO_ASPECT_MODES[
+            self._video_aspect_index
+        ]
+        crop_label, crop_ratio = VIDEO_CROP_MODES[self._video_crop_index]
+        self.video_viewport.set_display_modes(aspect_ratio, crop_ratio)
+        self.aspect_button.setText(f"Aspect: {aspect_label}")
+        self.aspect_button.setToolTip(
+            f"Current aspect ratio: {aspect_label} · Press A to cycle"
+        )
+        self.crop_button.setText(f"Crop: {crop_label}")
+        self.crop_button.setToolTip(
+            f"Current crop: {crop_label} · Press C to cycle"
+        )
+
+    def set_video_seek_seconds(self, seconds: int) -> None:
+        self._video_seek_seconds = max(1, min(60, int(seconds)))
+
+    def _run_video_command(self, command: Callable[[], None]) -> None:
+        if self.aspect_button.isEnabled():
+            command()
+
+    def _sync_video_shortcuts(self, *_args: object) -> None:
+        focus = QApplication.focusWidget()
+        editing_text = isinstance(focus, (QLineEdit, QSpinBox)) or (
+            isinstance(focus, QComboBox) and focus.isEditable()
+        )
+        enabled = (
+            self.aspect_button.isEnabled()
+            and self.isVisible()
+            and not editing_text
+        )
+        for shortcut in self.video_shortcuts:
+            shortcut.setEnabled(enabled)
+
+    def _seek_video(self, multiplier: int) -> None:
+        if not self.aspect_button.isEnabled():
+            return
+        offset = self._video_seek_seconds * int(multiplier) * 1000
+        target = max(0, self.player.position() + offset)
+        if self.player.duration() > 0:
+            target = min(target, self.player.duration())
+        self.player.setPosition(target)
+        sign = "+" if multiplier > 0 else "−"
+        self.video_viewport.show_mode_message(
+            f"{sign}{abs(multiplier) * self._video_seek_seconds} seconds"
+        )
+
+    def _seek_video_percent(self, percent: int) -> None:
+        if not self.aspect_button.isEnabled():
+            return
+        bounded_percent = max(0, min(90, int(percent)))
+        target = round(self.player.duration() * bounded_percent / 100)
+        self.player.setPosition(target)
+        message = "00:00" if bounded_percent == 0 else f"{bounded_percent}%"
+        self.video_viewport.show_mode_message(message)
+
+    def toggle_video_mute(self) -> None:
+        if not self.aspect_button.isEnabled():
+            return
+        muted = not self.audio_output.isMuted()
+        self.audio_output.setMuted(muted)
+        self.video_viewport.show_mode_message("Muted" if muted else "Sound on")
 
     @staticmethod
     def _new_media_table(labels: list[str]) -> QTableWidget:
@@ -2165,6 +2537,16 @@ class MediaLibraryPage(QWidget):
             )
             return
         self.items = scanned_items
+        valid_thumbnail_keys = {
+            (item.path, item.modified_ns)
+            for item in scanned_items
+            if item.media_type == MEDIA_TYPE_VIDEO
+        }
+        self._video_thumbnail_cache = {
+            key: icon
+            for key, icon in self._video_thumbnail_cache.items()
+            if key in valid_thumbnail_keys
+        }
         available_paths = {item.path.casefold() for item in scanned_items}
         current_path = (
             self.queue[self.queue_index].path
@@ -2245,8 +2627,59 @@ class MediaLibraryPage(QWidget):
         )
         show_albums = media_type != MEDIA_TYPE_VIDEO
         self.library_splitter.widget(1).setVisible(show_albums)
+        video_mode = media_type == MEDIA_TYPE_VIDEO
+        self.video_view_toggle.setVisible(video_mode)
+        self.video_view_toggle.setText(
+            "List view"
+            if self.video_view_toggle.isChecked()
+            else "Thumbnails view"
+        )
+        self.media_view_stack.setCurrentWidget(
+            self.video_grid
+            if video_mode and self.video_view_toggle.isChecked()
+            else self.table
+        )
+        if video_mode and self.video_view_toggle.isChecked():
+            self._render_video_grid()
         if not show_albums:
             self.album_stack.setCurrentIndex(0)
+
+    def _toggle_video_view(self, thumbnails: bool) -> None:
+        selected_paths = {item.path for item in self._selected_library_items()}
+        self.settings.setValue(
+            "library/video_view_mode", "grid" if thumbnails else "list"
+        )
+        self.video_view_toggle.setText(
+            "List view" if thumbnails else "Thumbnails view"
+        )
+        if self._selected_media_type() != MEDIA_TYPE_VIDEO:
+            return
+        self.media_view_stack.setCurrentWidget(
+            self.video_grid if thumbnails else self.table
+        )
+        if thumbnails:
+            self._render_video_grid()
+            for row in range(self.video_grid.count()):
+                entry = self.video_grid.item(row)
+                entry.setSelected(
+                    str(entry.data(Qt.ItemDataRole.UserRole) or "")
+                    in selected_paths
+                )
+        else:
+            selection_model = self.table.selectionModel()
+            selection_model.clearSelection()
+            for row in range(self.table.rowCount()):
+                cell = self.table.item(row, 0)
+                if (
+                    cell is not None
+                    and str(cell.data(Qt.ItemDataRole.UserRole) or "")
+                    in selected_paths
+                ):
+                    selection_model.select(
+                        self.table.model().index(row, 0),
+                        QItemSelectionModel.SelectionFlag.Select
+                        | QItemSelectionModel.SelectionFlag.Rows,
+                    )
 
     def _schedule_search(self, *_args: object) -> None:
         self._search_request_id += 1
@@ -2331,6 +2764,8 @@ class MediaLibraryPage(QWidget):
         self._applied_query = self.search.text().strip()
         self._applied_media_type = self._selected_media_type()
         self._populate_table(self.table, self.filtered, include_album_and_type=True)
+        if self._selected_media_type() == MEDIA_TYPE_VIDEO:
+            self._render_video_grid()
         self.match_status.setText(f"{len(self.filtered):,} match(es)")
         self._render_albums()
         if self.album_stack.currentIndex() == 1:
@@ -2446,11 +2881,23 @@ class MediaLibraryPage(QWidget):
         header = table.horizontalHeader()
         sort_column = header.sortIndicatorSection()
         sort_order = header.sortIndicatorOrder()
+        video_rows = (
+            include_album_and_type
+            and table is self.table
+            and self._selected_media_type() == MEDIA_TYPE_VIDEO
+        )
+        table.setIconSize(VIDEO_THUMBNAIL_SIZE if video_rows else QSize(18, 18))
+        if video_rows:
+            table.setColumnWidth(0, max(340, table.columnWidth(0)))
         table.setUpdatesEnabled(False)
         table.setSortingEnabled(False)
         table.setRowCount(len(items))
         try:
             for row, item in enumerate(items):
+                table.setRowHeight(
+                    row,
+                    VIDEO_TABLE_ROW_HEIGHT if video_rows else COMPACT_TABLE_ROW_HEIGHT,
+                )
                 if include_album_and_type:
                     values = (
                         (item.title, item.title.casefold()),
@@ -2475,6 +2922,15 @@ class MediaLibraryPage(QWidget):
                     cell.setText(text)
                     cell.setData(Qt.ItemDataRole.UserRole, item.path)
                     cell.setData(SortableTableItem.SORT_ROLE, sort_value)
+                    if column == 0:
+                        icon = (
+                            self._video_thumbnail_cache.get(
+                                (item.path, item.modified_ns), QIcon()
+                            )
+                            if video_rows
+                            else QIcon()
+                        )
+                        cell.setIcon(icon)
             table.setSortingEnabled(True)
             if 0 <= sort_column < table.columnCount():
                 table.sortItems(sort_column, sort_order)
@@ -2510,6 +2966,105 @@ class MediaLibraryPage(QWidget):
             table.horizontalScrollBar().setValue(horizontal_scroll)
             table.setUpdatesEnabled(True)
             table.viewport().update()
+        if video_rows:
+            self._start_video_thumbnail_worker(items)
+
+    def _render_video_grid(self) -> None:
+        selected_paths = {
+            str(entry.data(Qt.ItemDataRole.UserRole) or "")
+            for entry in self.video_grid.selectedItems()
+        }
+        self.video_grid.setUpdatesEnabled(False)
+        self.video_grid.clear()
+        try:
+            for item in self.filtered:
+                if item.media_type != MEDIA_TYPE_VIDEO:
+                    continue
+                entry = QListWidgetItem(item.title)
+                entry.setData(Qt.ItemDataRole.UserRole, item.path)
+                entry.setSizeHint(QSize(270, 180))
+                icon = self._video_thumbnail_cache.get(
+                    (item.path, item.modified_ns), QIcon()
+                )
+                if not icon.isNull():
+                    entry.setIcon(icon)
+                self.video_grid.addItem(entry)
+                if item.path in selected_paths:
+                    entry.setSelected(True)
+        finally:
+            self.video_grid.setUpdatesEnabled(True)
+            self.video_grid.viewport().update()
+
+    def _start_video_thumbnail_worker(self, items: list[LibraryItem]) -> None:
+        if self._shutting_down or self._video_thumbnail_thread is not None:
+            return
+        pending = [
+            item
+            for item in items
+            if item.media_type == MEDIA_TYPE_VIDEO
+            and (item.path, item.modified_ns) not in self._video_thumbnail_cache
+        ]
+        if not pending:
+            return
+        thread = QThread(self)
+        thread.setObjectName("video-thumbnail-loader")
+        worker = VideoThumbnailWorker(pending)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.thumbnail_ready.connect(self._video_thumbnail_ready)
+        worker.finished.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._video_thumbnail_worker_finished)
+        self._video_thumbnail_thread = thread
+        self._video_thumbnail_worker = worker
+        thread.start()
+
+    def _video_thumbnail_ready(self, key: object, payload: object) -> None:
+        if not (
+            isinstance(key, tuple)
+            and len(key) == 2
+            and isinstance(key[0], str)
+            and isinstance(key[1], int)
+        ):
+            return
+        pixmap = QPixmap()
+        if isinstance(payload, bytes) and payload and pixmap.loadFromData(payload):
+            thumbnail = pixmap.scaled(
+                VIDEO_THUMBNAIL_CACHE_SIZE,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            icon = QIcon(thumbnail)
+        else:
+            icon = QIcon()
+        cache_key = (key[0], key[1])
+        self._video_thumbnail_cache[cache_key] = icon
+        if self._selected_media_type() != MEDIA_TYPE_VIDEO or icon.isNull():
+            return
+        current_item = next(
+            (item for item in self.filtered if item.path == key[0]), None
+        )
+        if current_item is None or current_item.modified_ns != key[1]:
+            return
+        for row in range(self.table.rowCount()):
+            cell = self.table.item(row, 0)
+            if cell is not None and cell.data(Qt.ItemDataRole.UserRole) == key[0]:
+                cell.setIcon(icon)
+                break
+        for row in range(self.video_grid.count()):
+            entry = self.video_grid.item(row)
+            if entry.data(Qt.ItemDataRole.UserRole) == key[0]:
+                entry.setIcon(icon)
+                break
+
+    def _video_thumbnail_worker_finished(self) -> None:
+        self._video_thumbnail_thread = None
+        self._video_thumbnail_worker = None
+        if not self._shutting_down and self._selected_media_type() == MEDIA_TYPE_VIDEO:
+            QTimer.singleShot(
+                0, lambda: self._start_video_thumbnail_worker(self.filtered)
+            )
 
     def _render_albums(self) -> None:
         vertical_scroll = self.albums.verticalScrollBar().value()
@@ -2667,6 +3222,23 @@ class MediaLibraryPage(QWidget):
                 widget.viewport().mapToGlobal(position),
             )
 
+    def _show_video_grid_context_menu(self, position: QPoint) -> None:
+        entry = self.video_grid.itemAt(position)
+        if entry is None:
+            return
+        path = str(entry.data(Qt.ItemDataRole.UserRole) or "")
+        selected = self._selected_video_grid_items()
+        if not any(item.path == path for item in selected):
+            selected = [self._library_item_for_path(path)]
+        self._show_song_context_menu(
+            selected, self.video_grid.viewport().mapToGlobal(position)
+        )
+
+    def _play_video_grid_item(self, entry: QListWidgetItem) -> None:
+        path = str(entry.data(Qt.ItemDataRole.UserRole) or "")
+        if path:
+            self._replace_queue([self._library_item_for_path(path)])
+
     def _show_now_playing_context_menu(self, position: QPoint) -> None:
         if not 0 <= self.queue_index < len(self.queue):
             return
@@ -2727,7 +3299,7 @@ class MediaLibraryPage(QWidget):
             self.add_items_to_playlist(items, name)
 
     def add_selected_tracks_to_playlist(self) -> None:
-        selected = self._selected_items(self.table, self.filtered)
+        selected = self._selected_library_items()
         if selected:
             self.add_items_to_playlist(selected)
 
@@ -2868,14 +3440,27 @@ class MediaLibraryPage(QWidget):
         by_path = {item.path: item for item in candidates}
         return [by_path[path] for path in paths if path in by_path]
 
+    def _selected_video_grid_items(self) -> list[LibraryItem]:
+        paths = [
+            str(entry.data(Qt.ItemDataRole.UserRole) or "")
+            for entry in self.video_grid.selectedItems()
+        ]
+        by_path = {item.path: item for item in self.filtered}
+        return [by_path[path] for path in paths if path in by_path]
+
+    def _selected_library_items(self) -> list[LibraryItem]:
+        if self.media_view_stack.currentWidget() is self.video_grid:
+            return self._selected_video_grid_items()
+        return self._selected_items(self.table, self.filtered)
+
     def play_selected(self) -> None:
-        selected = self._selected_items(self.table, self.filtered)
+        selected = self._selected_library_items()
         if not selected and self.filtered:
             selected = [self.filtered[0]]
         self._replace_queue(selected)
 
     def enqueue_selected(self) -> None:
-        selected = self._selected_items(self.table, self.filtered)
+        selected = self._selected_library_items()
         self._append_to_queue(selected)
 
     def _append_to_queue(self, selected: list[LibraryItem]) -> int:
@@ -3047,6 +3632,11 @@ class MediaLibraryPage(QWidget):
         self.queue_index = -1
         self.now_playing.setText("Nothing playing")
         self._set_now_playing_art(None)
+        self.video_viewport.setVisible(False)
+        self.aspect_button.setEnabled(False)
+        self.crop_button.setEnabled(False)
+        self.fullscreen_button.setEnabled(False)
+        self._sync_video_shortcuts()
         self.position.setValue(0)
         self.elapsed.setText("0:00 / 0:00")
         self._update_queue_status()
@@ -3104,10 +3694,16 @@ class MediaLibraryPage(QWidget):
         self.player.setSource(QUrl.fromLocalFile(item.path))
         self.now_playing.setText(f"{item.title} — {item.artists}  •  {item.album}")
         self._set_now_playing_art(item)
-        self.video.setVisible(item.media_type == MEDIA_TYPE_VIDEO)
-        self.fullscreen_button.setEnabled(item.media_type == MEDIA_TYPE_VIDEO)
+        video_active = item.media_type == MEDIA_TYPE_VIDEO
+        self.video_viewport.setVisible(video_active)
+        self.aspect_button.setEnabled(video_active)
+        self.crop_button.setEnabled(video_active)
+        self.fullscreen_button.setEnabled(video_active)
         self._update_queue_status()
         self.player.play()
+        if video_active:
+            self.video.setFocus()
+        self._sync_video_shortcuts()
 
     def _remove_unavailable_queue_item(self) -> None:
         if not 0 <= self.queue_index < len(self.queue):
@@ -3364,7 +3960,10 @@ class MediaLibraryPage(QWidget):
         if query and not matches:
             self.request_search_song.emit(query)
         elif query and matches:
-            self.table.selectRow(0)
+            if self.media_view_stack.currentWidget() is self.video_grid:
+                self.video_grid.setCurrentRow(0)
+            else:
+                self.table.selectRow(0)
 
     def shutdown(self) -> None:
         log_diagnostic("PLAYER", "MediaLibraryPage shutdown requested")
@@ -3373,6 +3972,9 @@ class MediaLibraryPage(QWidget):
         self._scan_refresh_pending = False
         self.refresh_timer.stop()
         application = QApplication.instance()
+        if application is not None and self._application_event_filter_installed:
+            application.removeEventFilter(self)
+            self._application_event_filter_installed = False
         if application is not None and self._native_media_filter is not None:
             application.removeNativeEventFilter(self._native_media_filter)
             self._native_media_filter = None
@@ -3397,6 +3999,12 @@ class MediaLibraryPage(QWidget):
             self._recommendation_thread.requestInterruption()
             self._recommendation_thread.quit()
             self._recommendation_thread.wait(2000)
+        if self._video_thumbnail_thread is not None:
+            self._video_thumbnail_thread.requestInterruption()
+            self._video_thumbnail_thread.quit()
+            self._video_thumbnail_thread.wait(9000)
+            self._video_thumbnail_thread = None
+            self._video_thumbnail_worker = None
 
     @staticmethod
     def _time(milliseconds: int) -> str:

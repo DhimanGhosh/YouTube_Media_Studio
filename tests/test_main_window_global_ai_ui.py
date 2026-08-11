@@ -199,6 +199,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
             {
                 "batch_network",
                 "audio_metadata",
+                "video_playback",
                 "ai_providers",
                 "behavior_privacy",
                 "storage_appearance",
@@ -206,6 +207,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         )
         self.assertFalse(self.window.settings_sections["batch_network"].body.isHidden())
         self.assertTrue(self.window.settings_sections["audio_metadata"].body.isHidden())
+        self.assertTrue(self.window.settings_sections["video_playback"].body.isHidden())
 
         self.window.settings_sections["audio_metadata"].set_expanded(True)
         self.assertTrue(
@@ -213,6 +215,23 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
                 "ui/settings_sections/audio_metadata", False, type=bool
             )
         )
+
+    def test_video_seek_interval_is_saved_and_applied_to_the_player(self) -> None:
+        self.window.settings_video_seek_seconds.setValue(7)
+
+        with (
+            patch.object(self.window, "_save_data_directory", return_value=False),
+            patch.object(QMessageBox, "information"),
+            patch.object(
+                self.window.media_library, "set_video_seek_seconds"
+            ) as apply_seek,
+        ):
+            self.window._save_defaults()
+
+        self.assertEqual(
+            int(self.window.settings.value("defaults/video_seek_seconds")), 7
+        )
+        apply_seek.assert_called_once_with(7)
 
     def test_serpapi_key_is_saved_and_applied_without_operation_parameters(self) -> None:
         self.window.settings_serpapi_api_key.setText("serpapi-secret")
