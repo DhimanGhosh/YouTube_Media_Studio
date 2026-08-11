@@ -120,6 +120,58 @@ class LibraryRecommendationsTest(unittest.TestCase):
         self.assertIn("Slow Bengali: Smriti by Bhoomi", query)
         self.assertNotIn(seed.path, query)
 
+    def test_ai_semantically_matches_playlist_theme_without_keyword_mapping(self) -> None:
+        seed = track("seed.mp3", "Dance With Me", "Favourite Singer")
+        unrelated = track("other.mp3", "Quiet Song", "Other Singer")
+        with (
+            patch(
+                "youtube_audio_video_downloader.services.library_recommendations."
+                "_collect_catalog_evidence",
+                return_value={},
+            ),
+            patch(
+                "youtube_audio_video_downloader.services.library_recommendations."
+                "run_structured_agent",
+                side_effect=[
+                    plan(
+                        languages=["Hindi"],
+                        semantic_filters=["dance"],
+                        use_web_evidence=True,
+                    ),
+                    response(
+                        {
+                            "matches": [
+                                {
+                                    "id": 0,
+                                    "relevant": True,
+                                    "confidence": 0.91,
+                                    "matched_filters": ["Hindi", "dance"],
+                                }
+                            ]
+                        }
+                    ),
+                    response({"matches": []}),
+                    response({"ids": [0]}),
+                ],
+            ) as agent,
+        ):
+            result = recommend_library_tracks(
+                "Hindi dance songs",
+                [unrelated, seed],
+                model="model",
+                playlists={"Fast Hindi": [seed.path]},
+            )
+
+        self.assertEqual([value.item for value in result], [seed])
+        self.assertIn('saved playlist "Fast Hindi"', result[0].reason)
+        taste_call = agent.call_args_list[1]
+        self.assertEqual(taste_call.kwargs["name"], "Playlist taste matcher")
+        self.assertEqual(taste_call.kwargs["input_data"]["request"], "Hindi dance songs")
+        self.assertEqual(
+            taste_call.kwargs["input_data"]["playlists"][0]["name"],
+            "Fast Hindi",
+        )
+
     def test_only_indexed_ids_are_returned_and_local_availability_is_checked(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
             local_path = Path(folder) / "local.mp3"

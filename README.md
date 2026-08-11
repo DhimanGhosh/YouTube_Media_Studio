@@ -253,8 +253,12 @@ or web evidence; a model assertion alone cannot admit a track or invent extra re
 When a related term such as `melancholic` supports `sad`, the verifier must cite that
 exact phrase from the bounded evidence for the same recording.
 Saved playlist names and their indexed track metadata also act as positive taste examples.
-The curator favors related local discoveries and includes a concise version of that taste
-context when **Search YouTube too** is selected; media paths and files are not sent.
+The configured AI model semantically decides which playlist themes relate to each request;
+there is no fixed synonym mapping, so a model can connect differently worded concepts such
+as a playlist's tempo/theme and the requested listening activity. Relevant playlist members
+may be included as personal taste matches, and a concise version of the same context is used
+when **Search YouTube too** is selected. This is request-time contextual personalization,
+not permanent model-weight training; media paths and files are not sent.
 
 Provider keys are stored separately: switching providers does not copy one provider's
 credential into another, and clearing a key remains cleared after **Save and apply

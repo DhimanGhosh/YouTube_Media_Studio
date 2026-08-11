@@ -4,6 +4,14 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [Unreleased]
+
+### Changed
+
+- Let the configured AI model semantically decide which saved playlist themes match a
+  curator request, without fixed keyword mappings, and admit their member tracks as
+  personal taste matches even when public catalogs do not carry the same descriptive tag.
+
 ## [2.5.2] - 2026-08-11
 
 ### Changed
