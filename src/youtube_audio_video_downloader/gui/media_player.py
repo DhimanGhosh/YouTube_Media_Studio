@@ -13,6 +13,7 @@ from typing import Callable
 from PyQt6.QtCore import (
     QEasingCurve,
     QAbstractNativeEventFilter,
+    QEvent,
     QItemSelectionModel,
     QModelIndex,
     QObject,
@@ -50,6 +51,7 @@ from PyQt6.QtWidgets import (
     QApplication,
     QCompleter,
     QCheckBox,
+    QComboBox,
     QFileDialog,
     QGridLayout,
     QHBoxLayout,
@@ -123,6 +125,7 @@ class LibrarySearchWorker(QObject):
         artists: list[str],
         year_from: int | None,
         year_to: int | None,
+        media_type: str,
         suggestion_limit: int,
     ) -> None:
         super().__init__()
@@ -132,6 +135,7 @@ class LibrarySearchWorker(QObject):
         self.artists = artists
         self.year_from = year_from
         self.year_to = year_to
+        self.media_type = media_type
         self.suggestion_limit = suggestion_limit
 
     @pyqtSlot()
@@ -141,6 +145,7 @@ class LibrarySearchWorker(QObject):
             query=self.query,
             year_from=self.year_from,
             year_to=self.year_to,
+            media_type=self.media_type,
         )
         available_artists = sorted(
             {
@@ -567,6 +572,7 @@ class MediaLibraryPage(QWidget):
         self._last_recommendations: list[LibraryRecommendation] = []
         self._search_request_id = 0
         self._applied_query = ""
+        self._applied_media_type = "all"
         self._search_pending = False
         self._suggestion_limit = max(
             1, int(self.settings.value("defaults/search_suggestions", 10))
@@ -649,6 +655,7 @@ class MediaLibraryPage(QWidget):
         layout.addWidget(self.queue_drawer)
         self._sync_queue_drawer()
         self._render_playlists()
+        self._sync_media_type_layout()
 
     def _build_folder_card(self) -> QWidget:
         card = GlassCard()
@@ -738,6 +745,22 @@ class MediaLibraryPage(QWidget):
         )
         self.clear_search_button.clicked.connect(self.search.clear)
         row.addWidget(self.clear_search_button)
+        self.media_type_filter = QComboBox()
+        self.media_type_filter.addItem("All media", "all")
+        self.media_type_filter.addItem("Music", "audio")
+        self.media_type_filter.addItem("Videos", "video")
+        saved_media_type = str(
+            self.settings.value("library/media_type_filter", "all") or "all"
+        )
+        saved_index = self.media_type_filter.findData(saved_media_type)
+        self.media_type_filter.setCurrentIndex(max(0, saved_index))
+        self.media_type_filter.setToolTip(
+            "Keep music and video browsing separate, or show the complete library"
+        )
+        self.media_type_filter.currentIndexChanged.connect(
+            self._media_type_changed
+        )
+        row.addWidget(self.media_type_filter)
         self.year_from = QSpinBox()
         self.year_to = QSpinBox()
         for spin, label in ((self.year_from, "From year"), (self.year_to, "To year")):
@@ -893,7 +916,8 @@ class MediaLibraryPage(QWidget):
             self.recommendation_status.setText("AI off · opening internet search")
             self.search_recommendation_online()
             return
-        if not self.items:
+        recommendation_items = self._media_type_items()
+        if not recommendation_items:
             self.recommendation_status.setText("Library is empty")
             return
         provider, model, identity = self._resolve_ai_identity()
@@ -910,11 +934,11 @@ class MediaLibraryPage(QWidget):
         log_diagnostic(
             "AI-START",
             f"Library recommendations | provider={provider!r} "
-            f"model={model!r} items={len(self.items)}",
+            f"model={model!r} items={len(recommendation_items)}",
         )
         self._run_recommendation_worker(
             request_text,
-            self.items,
+            recommendation_items,
             model,
             requested_limit,
             finished_slot=self._recommendations_finished,
@@ -1041,7 +1065,9 @@ class MediaLibraryPage(QWidget):
         self._replace_queue(exact)
         exact_paths = {item.path.casefold() for item in exact}
         remaining = [
-            item for item in self.items if item.path.casefold() not in exact_paths
+            item
+            for item in self._media_type_items()
+            if item.path.casefold() not in exact_paths
         ]
         if not remaining:
             self.recommendation_status.setText(f"Mix started · {len(exact)} track(s)")
@@ -1097,6 +1123,7 @@ class MediaLibraryPage(QWidget):
         self.folder_list.clear()
         self._render_folder_chips()
         self.search.clear()
+        self.media_type_filter.setCurrentIndex(0)
         self.year_from.setValue(0)
         self.year_to.setValue(0)
         self.clear_ai_recommendations()
@@ -1164,7 +1191,8 @@ class MediaLibraryPage(QWidget):
 
         actions = QHBoxLayout()
         actions.setSpacing(8)
-        actions.addWidget(QLabel("Songs and videos"))
+        self.media_results_label = QLabel("Songs and videos")
+        actions.addWidget(self.media_results_label)
         self.all_tracks_button = QPushButton("‹ All tracks")
         self.all_tracks_button.setObjectName("secondaryButton")
         self.all_tracks_button.setToolTip("Clear artist selection and show all tracks")
@@ -1720,16 +1748,27 @@ class MediaLibraryPage(QWidget):
         return drawer
 
     def _build_player(self) -> QWidget:
+        self._player_host = QWidget()
+        self._player_host_layout = QVBoxLayout(self._player_host)
+        self._player_host_layout.setContentsMargins(0, 0, 0, 0)
+        self._player_host_layout.setSpacing(0)
+        self._player_fullscreen = False
         card = GlassCard()
+        self.player_card = card
         card.setObjectName("playerCard")
         card.setMinimumHeight(166)
         grid = QGridLayout(card)
+        self.player_grid = grid
         grid.setContentsMargins(18, 13, 18, 13)
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(8)
         self.video = QVideoWidget()
-        self.video.setMinimumHeight(220)
-        self.video.setMaximumHeight(300)
+        self.video.setMinimumHeight(320)
+        self.video.setMaximumHeight(520)
+        self.video.setToolTip(
+            "Double-click the video to enter or leave full-screen playback"
+        )
+        self.video.installEventFilter(self)
         self.video.setVisible(False)
         grid.addWidget(self.video, 0, 0, 1, 13)
         self.now_playing_art = QLabel()
@@ -1796,6 +1835,15 @@ class MediaLibraryPage(QWidget):
         self.repeat_button.setObjectName("playerModeButton")
         self.repeat_button.clicked.connect(self.cycle_repeat_mode)
         controls_layout.addWidget(self.repeat_button)
+        self.fullscreen_button = QPushButton("Full screen")
+        self.fullscreen_button.setObjectName("playerModeButton")
+        self.fullscreen_button.setEnabled(False)
+        self.fullscreen_button.setToolTip(
+            "Show the video and playback controls full screen"
+        )
+        self.fullscreen_button.setAccessibleName("Toggle full-screen video")
+        self.fullscreen_button.clicked.connect(self.toggle_video_fullscreen)
+        controls_layout.addWidget(self.fullscreen_button)
         self._update_playback_mode_buttons()
         grid.addWidget(controls, 3, 1, 1, 9)
         volume_label = QLabel("Volume")
@@ -1809,7 +1857,67 @@ class MediaLibraryPage(QWidget):
         grid.addWidget(self.volume, 3, 11, 1, 2)
         grid.setColumnStretch(4, 1)
         grid.setColumnStretch(9, 1)
-        return card
+        card.installEventFilter(self)
+        self.fullscreen_shortcut = QShortcut(QKeySequence("Esc"), card)
+        self.fullscreen_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        self.fullscreen_shortcut.activated.connect(self.exit_video_fullscreen)
+        self._player_host_layout.addWidget(card)
+        return self._player_host
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        if watched is self.video and event.type() == QEvent.Type.MouseButtonDblClick:
+            self.toggle_video_fullscreen()
+            return True
+        if (
+            watched is self.player_card
+            and event.type() == QEvent.Type.Close
+            and self._player_fullscreen
+        ):
+            event.ignore()
+            self.exit_video_fullscreen()
+            return True
+        return super().eventFilter(watched, event)
+
+    def toggle_video_fullscreen(self) -> None:
+        """Move the complete video player, including controls, in or out of full screen."""
+
+        if self._player_fullscreen:
+            self.exit_video_fullscreen()
+            return
+        if not self.video.isVisible():
+            return
+        self._player_fullscreen = True
+        self._player_host_layout.removeWidget(self.player_card)
+        self.player_card.setParent(None)
+        self.player_card.setWindowFlag(Qt.WindowType.Window, True)
+        self.player_card.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
+        self.player_card.setMinimumSize(0, 0)
+        self.video.setMinimumHeight(0)
+        self.video.setMaximumHeight(16_777_215)
+        self.player_grid.setRowStretch(0, 1)
+        self.fullscreen_button.setText("Exit full screen")
+        self.player_card.showFullScreen()
+        self.player.setVideoOutput(self.video)
+        self.video.setFocus()
+
+    def exit_video_fullscreen(self) -> None:
+        """Restore the player card to the Media Library workspace."""
+
+        if not self._player_fullscreen:
+            return
+        self._player_fullscreen = False
+        self.player_card.hide()
+        self.player_card.setWindowFlag(Qt.WindowType.FramelessWindowHint, False)
+        self.player_card.setWindowFlag(Qt.WindowType.Window, False)
+        self.player_card.setParent(self._player_host)
+        self._player_host_layout.addWidget(self.player_card)
+        self.player_card.setMinimumHeight(166)
+        self.video.setMinimumHeight(320)
+        self.video.setMaximumHeight(520)
+        self.player_grid.setRowStretch(0, 0)
+        self.fullscreen_button.setText("Full screen")
+        self.player_card.show()
+        self.player.setVideoOutput(self.video)
 
     @staticmethod
     def _new_media_table(labels: list[str]) -> QTableWidget:
@@ -2076,6 +2184,7 @@ class MediaLibraryPage(QWidget):
             query=self.search.text(),
             year_from=self.year_from.value() or None,
             year_to=self.year_to.value() or None,
+            media_type=self._selected_media_type(),
         )
         available_artists = self._available_artists(base_matches)
         valid_keys = {artist.casefold() for artist in available_artists}
@@ -2091,6 +2200,38 @@ class MediaLibraryPage(QWidget):
         self._update_artist_facets(available_artists, valid_selected)
         self._apply_search_results(matches)
         self._set_suggestions(matches[: self._suggestion_limit])
+
+    def _selected_media_type(self) -> str:
+        value = str(self.media_type_filter.currentData() or "all")
+        return value if value in {"all", "audio", "video"} else "all"
+
+    def _media_type_items(self) -> list[LibraryItem]:
+        return filter_library(
+            self.items, media_type=self._selected_media_type()
+        )
+
+    def _media_type_changed(self, _index: int) -> None:
+        self.settings.setValue(
+            "library/media_type_filter", self._selected_media_type()
+        )
+        self._sync_media_type_layout()
+        self._schedule_search()
+
+    def _sync_media_type_layout(self) -> None:
+        media_type = self._selected_media_type()
+        labels = {
+            "all": "Songs and videos",
+            "audio": "Music",
+            "video": "Videos",
+        }
+        self.media_results_label.setText(labels[media_type])
+        self.all_tracks_button.setText(
+            "‹ All videos" if media_type == "video" else "‹ All tracks"
+        )
+        show_albums = media_type != "video"
+        self.library_splitter.widget(1).setVisible(show_albums)
+        if not show_albums:
+            self.album_stack.setCurrentIndex(0)
 
     def _schedule_search(self, *_args: object) -> None:
         self._search_request_id += 1
@@ -2115,6 +2256,7 @@ class MediaLibraryPage(QWidget):
             artists,
             self.year_from.value() or None,
             self.year_to.value() or None,
+            self._selected_media_type(),
             self._suggestion_limit,
         )
         worker.moveToThread(thread)
@@ -2172,6 +2314,7 @@ class MediaLibraryPage(QWidget):
     def _apply_search_results(self, matches: list[LibraryItem]) -> None:
         self.filtered = matches
         self._applied_query = self.search.text().strip()
+        self._applied_media_type = self._selected_media_type()
         self._populate_table(self.table, self.filtered, include_album_and_type=True)
         self.match_status.setText(f"{len(self.filtered):,} match(es)")
         self._render_albums()
@@ -2881,6 +3024,7 @@ class MediaLibraryPage(QWidget):
             self._update_queue_status()
 
     def clear_playback_queue(self) -> None:
+        self.exit_video_fullscreen()
         self.player.stop()
         self.player.setSource(QUrl())
         self.queue.clear()
@@ -2937,11 +3081,14 @@ class MediaLibraryPage(QWidget):
             f"type={item.media_type} path={item.path!r}",
         )
         self.player.stop()
+        if item.media_type != "video":
+            self.exit_video_fullscreen()
         self.player.setVideoOutput(self.video if item.media_type == "video" else None)
         self.player.setSource(QUrl.fromLocalFile(item.path))
         self.now_playing.setText(f"{item.title} — {item.artists}  •  {item.album}")
         self._set_now_playing_art(item)
         self.video.setVisible(item.media_type == "video")
+        self.fullscreen_button.setEnabled(item.media_type == "video")
         self._update_queue_status()
         self.player.play()
 
@@ -3185,13 +3332,17 @@ class MediaLibraryPage(QWidget):
     def search_or_download(self) -> None:
         query = self.search.text().strip()
         matches = self.filtered
-        if query != self._applied_query:
+        if (
+            query != self._applied_query
+            or self._selected_media_type() != self._applied_media_type
+        ):
             matches = filter_library(
                 self.items,
                 query=query,
                 artists=[item.text() for item in self.facets.selectedItems()],
                 year_from=self.year_from.value() or None,
                 year_to=self.year_to.value() or None,
+                media_type=self._selected_media_type(),
             )
         if query and not matches:
             self.request_search_song.emit(query)
@@ -3200,6 +3351,7 @@ class MediaLibraryPage(QWidget):
 
     def shutdown(self) -> None:
         log_diagnostic("PLAYER", "MediaLibraryPage shutdown requested")
+        self.exit_video_fullscreen()
         self._shutting_down = True
         self._scan_refresh_pending = False
         self.refresh_timer.stop()
@@ -3208,6 +3360,7 @@ class MediaLibraryPage(QWidget):
             application.removeNativeEventFilter(self._native_media_filter)
             self._native_media_filter = None
         self.player.stop()
+        self.player.setSource(QUrl())
         self.visualizer_playback_changed.emit(False)
         if self._spectrum_thread is not None:
             self._spectrum_thread.requestInterruption()
