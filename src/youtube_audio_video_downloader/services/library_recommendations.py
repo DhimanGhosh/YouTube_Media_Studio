@@ -242,6 +242,8 @@ def recommend_library_tracks(
             languages=plan.languages,
             semantic_filters=plan.semantic_filters,
         )
+    # taste_matches came from the full pre-verification pool. `candidates` now holds
+    # only the evidence-approved subset, so restore model-approved playlist members.
     for item in taste_matches:
         if all(id(existing) != id(item) for existing in candidates):
             candidates.append(item)
