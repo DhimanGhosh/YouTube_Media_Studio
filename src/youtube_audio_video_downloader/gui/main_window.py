@@ -2205,6 +2205,14 @@ class MainWindow(QMainWindow):
         self.settings_video_seek_seconds.setToolTip(
             "Seconds skipped by Left/Right during video playback; Shift skips twice this value."
         )
+        self.settings_remember_video_display_modes = self._check(
+            "Remember crop and aspect ratio for the next video",
+            self._setting_bool("defaults/remember_video_display_modes", False),
+        )
+        self.settings_remember_video_display_modes.setToolTip(
+            "Off: every newly loaded video starts with Default crop and aspect ratio. "
+            "On: the last choices carry over to the next video and app session."
+        )
         self.settings_wikipedia_order = self._check(
             "Use verified Wikipedia album order and compress downloaded songs to 1..N",
             self._setting_bool("defaults/wikipedia_track_order", True),
@@ -2406,6 +2414,9 @@ class MainWindow(QMainWindow):
             expanded=False,
         )
         video_form.addRow("Arrow-key seek interval", self.settings_video_seek_seconds)
+        video_form.addRow(
+            "Crop/aspect memory", self.settings_remember_video_display_modes
+        )
         self.settings_sections["video_playback"] = video_section
         layout.addWidget(video_section)
 
@@ -3431,6 +3442,7 @@ class MainWindow(QMainWindow):
             "serpapi_api_key": "",
             "search_suggestions": 10,
             "video_seek_seconds": 10,
+            "remember_video_display_modes": False,
             "crystalness": 65,
         }
 
@@ -3545,6 +3557,9 @@ class MainWindow(QMainWindow):
         self.settings_agentic_model.setCurrentText("")
         self.settings_search_suggestions.setValue(int(values["search_suggestions"]))
         self.settings_video_seek_seconds.setValue(int(values["video_seek_seconds"]))
+        self.settings_remember_video_display_modes.setChecked(
+            bool(values["remember_video_display_modes"])
+        )
         self.settings_crystalness.setValue(int(values["crystalness"]))
         self.settings_data_directory.set_text(default_directory)
         persist_signals = self.settings_persist_state.blockSignals(True)
@@ -3559,6 +3574,9 @@ class MainWindow(QMainWindow):
         self._apply_crystalness(int(values["crystalness"]), persist=True)
         self.media_library.set_suggestion_limit(int(values["search_suggestions"]))
         self.media_library.set_video_seek_seconds(int(values["video_seek_seconds"]))
+        self.media_library.set_remember_video_display_modes(
+            bool(values["remember_video_display_modes"])
+        )
         for editor in (self.audio_input, self.video_input, self.album_input, self.jukebox_input):
             editor.retry_attempts = int(values["retries"])
         self._eta_profiles.clear()
@@ -3659,6 +3677,9 @@ class MainWindow(QMainWindow):
             "serpapi_api_key": self.settings_serpapi_api_key.text().strip(),
             "search_suggestions": self.settings_search_suggestions.value(),
             "video_seek_seconds": self.settings_video_seek_seconds.value(),
+            "remember_video_display_modes": (
+                self.settings_remember_video_display_modes.isChecked()
+            ),
             "crystalness": self.settings_crystalness.value(),
         }
         for key, value in values.items():
@@ -3714,6 +3735,9 @@ class MainWindow(QMainWindow):
         self._apply_crystalness(int(values["crystalness"]), persist=True)
         self.media_library.set_suggestion_limit(int(values["search_suggestions"]))
         self.media_library.set_video_seek_seconds(int(values["video_seek_seconds"]))
+        self.media_library.set_remember_video_display_modes(
+            bool(values["remember_video_display_modes"])
+        )
         storage_changed = self._save_data_directory()
         QMessageBox.information(
             self,

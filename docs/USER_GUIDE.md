@@ -297,8 +297,10 @@ report the complete log block.
    return to the library. The embedded video surface is also taller than the music player.
    Use **Aspect** or press **A** to cycle display ratios; use **Crop** or press **C** to
    cycle centered crop ratios. These video-only controls work in embedded and full screen
-   playback, remember the last choices, and briefly show the selected ratio over the top
-   of the picture. **Default** restores the video's original aspect or uncropped frame.
+   playback and briefly show the selected ratio at the top-right of the black play area.
+   The picture is always clipped to that play area and cannot cover the title, timeline,
+   transport, or volume controls. **Default** restores the video's original aspect or
+   uncropped frame.
    Press **F** to toggle full screen, **Space** to play/pause, **M** to mute, **S** to
    stop, **N** for the next track, or **P** for the previous track. **Left/Right** seek by
    the interval configured under **Global Settings > Video playback**; hold **Shift** to
@@ -335,7 +337,7 @@ The **Videos** filter provides two interchangeable track-level views:
 
 | View | What it shows | Best use |
 | --- | --- | --- |
-| **List view** | A tall preview beside Title plus Artist, Album, Year, Type, and Length columns. | Comparing metadata, sorting columns, and selecting precise rows. |
+| **List view** | The text-only Title column, a separate 16:9 Artwork preview, then Artist, Album, Year, Type, and Length. | Comparing metadata, sorting columns, and selecting precise rows. |
 | **Thumbnails view** | A larger 16:9 preview tile with the video title beneath it. | Visually finding a movie or music video before playback. |
 
 Selection is preserved when switching views. Double-click plays the chosen tile or row;
@@ -354,10 +356,16 @@ choice can stretch or compress the picture when it differs from the source.
 **Crop** removes centered outer edges without re-encoding the file. It cycles through
 Default, 16:10, 16:9, 4:3, 1.85:1, 2.21:1, 2.35:1, 2.39:1, 5:3, 5:4, and 1:1. For a
 video with black bars encoded inside the picture, choose the crop ratio matching the
-visible film, then choose the aspect ratio that best fits the monitor. Both choices are
-remembered between launches. The brief message at the top of the video confirms each
-intentional crop, aspect, seek, or mute command; passive mouse-hover popups are disabled
-throughout Media Library.
+visible film, then choose the aspect ratio that best fits the monitor. The complete play
+area stays black where the chosen ratio leaves unused space, and an enlarged crop is
+strictly clipped inside it so playback never covers the controls. The brief message at
+the top-right of the video confirms each intentional crop, aspect, seek, or mute command;
+passive mouse-hover popups are disabled throughout Media Library.
+
+By default, every newly loaded video starts with **Aspect: Default** and **Crop: Default**.
+Enable **Global Settings > Video playback > Crop/aspect memory** to carry the current
+choices to the next video and preserve them for the next app session. Disable it again to
+make subsequent videos start at the two defaults.
 
 ### Video keyboard reference
 

@@ -15,8 +15,8 @@ import numpy as np
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtCore import (  # noqa: E402
-    QBuffer, QByteArray, QEvent, QIODevice, QPoint, QPointF, QSettings, QSize, Qt,
-    QTimer,
+    QBuffer, QByteArray, QEvent, QIODevice, QPoint, QPointF, QRectF, QSettings,
+    QSize, Qt, QTimer,
 )
 from PyQt6.QtGui import QColor, QIcon, QPixmap, QWheelEvent  # noqa: E402
 from PyQt6.QtMultimedia import QAudioBuffer, QAudioFormat, QMediaPlayer  # noqa: E402
@@ -101,9 +101,9 @@ class MediaPlayerPageTest(unittest.TestCase):
             self.assertLess(self.page.table.columnWidth(column), 500)
             self.page.table.sortItems(column, Qt.SortOrder.AscendingOrder)
             self.page.table.sortItems(column, Qt.SortOrder.DescendingOrder)
-        self.page.table.sortItems(5, Qt.SortOrder.AscendingOrder)
+        self.page.table.sortItems(6, Qt.SortOrder.AscendingOrder)
         self.assertEqual(self.page.table.item(0, 0).text(), "Short")
-        self.page.table.sortItems(3, Qt.SortOrder.AscendingOrder)
+        self.page.table.sortItems(4, Qt.SortOrder.AscendingOrder)
         self.assertEqual(self.page.table.item(0, 0).text(), "Long")
 
     def test_library_table_displays_every_match_beyond_previous_250_row_cap(self) -> None:
@@ -834,6 +834,11 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.assertGreaterEqual(
             self.page.video_viewport.minimumHeight(), EMBEDDED_VIDEO_MIN_HEIGHT
         )
+        self.assertFalse(
+            self.page.video_viewport.geometry().intersects(
+                self.page.player_controls.geometry()
+            )
+        )
 
         QTest.mouseDClick(self.page.video, Qt.MouseButton.LeftButton)
         self.app.processEvents()
@@ -851,6 +856,11 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.assertIs(self.page.aspect_button.window(), self.page.window())
         self.assertIs(self.page.crop_button.window(), self.page.window())
         self.assertTrue(self.page.library_splitter.isHidden())
+        self.assertFalse(
+            self.page.video_viewport.geometry().intersects(
+                self.page.player_controls.geometry()
+            )
+        )
 
         QTest.keyClick(self.page.video, Qt.Key.Key_C)
         self.app.processEvents()
@@ -860,6 +870,13 @@ class MediaPlayerPageTest(unittest.TestCase):
         QTest.keyClick(self.page.video, Qt.Key.Key_Escape)
         self.app.processEvents()
         self.assertFalse(self.page._player_fullscreen)
+
+        QTest.mouseDClick(
+            self.page.video.viewport(), Qt.MouseButton.LeftButton
+        )
+        self.app.processEvents()
+        self.assertTrue(self.page._player_fullscreen)
+        self.page.exit_video_fullscreen()
 
         QTest.mouseClick(
             self.page.fullscreen_button, Qt.MouseButton.LeftButton
@@ -898,6 +915,10 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.page.video_viewport.resize(800, 450)
         self.page.video_viewport.set_source_size(QSize(1920, 800))
 
+        self.assertTrue(self.page.video_viewport.autoFillBackground())
+        self.assertEqual(
+            self.page.video_viewport.palette().window().color(), QColor("black")
+        )
         self.assertTrue(self.page.aspect_button.isEnabled())
         self.assertTrue(self.page.crop_button.isEnabled())
         self.assertEqual(self.page.aspect_button.text(), "Aspect: Default")
@@ -925,11 +946,67 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.assertEqual(self.page.crop_button.text(), "Crop: 16:10")
         self.assertEqual(self.page.video_viewport.message.text(), "Crop: 16:10")
         self.assertGreater(
-            self.page.video.width(), self.page.video_viewport.clip.width()
+            self.page.video_viewport.video_item.size().width(),
+            self.page.video_viewport.clip.width(),
+        )
+        self.assertEqual(
+            self.page.video_viewport.scene.sceneRect(),
+            QRectF(0, 0, self.page.video.width(), self.page.video.height()),
+        )
+        self.assertTrue(
+            self.page.video_viewport.rect().contains(
+                self.page.video_viewport.message.geometry()
+            )
         )
 
         QTest.qWait(1750)
         self.assertFalse(self.page.video_viewport.message.isVisible())
+
+    def test_video_display_modes_reset_unless_memory_is_enabled(self) -> None:
+        first_path = Path(self.temporary.name) / "first-display.mp4"
+        second_path = Path(self.temporary.name) / "second-display.mp4"
+        first_path.write_bytes(b"video")
+        second_path.write_bytes(b"video")
+        first = LibraryItem(
+            str(first_path), "First", "Film", "Artist", 2024, 60_000, "video", 1
+        )
+        second = LibraryItem(
+            str(second_path), "Second", "Film", "Artist", 2024, 60_000, "video", 1
+        )
+
+        self.page._replace_queue([first])
+        self.page.cycle_video_aspect()
+        self.page.cycle_video_crop()
+        self.assertEqual(self.page.aspect_button.text(), "Aspect: 16:9")
+        self.assertEqual(self.page.crop_button.text(), "Crop: 16:10")
+
+        self.page._replace_queue([second])
+        self.assertEqual(self.page.aspect_button.text(), "Aspect: Default")
+        self.assertEqual(self.page.crop_button.text(), "Crop: Default")
+
+        self.page.set_remember_video_display_modes(True)
+        self.page.cycle_video_aspect()
+        self.page.cycle_video_crop()
+        self.page._replace_queue([first])
+        self.assertEqual(self.page.aspect_button.text(), "Aspect: 16:9")
+        self.assertEqual(self.page.crop_button.text(), "Crop: 16:10")
+        self.assertEqual(
+            self.page.settings.value("library/video_aspect_mode"), "16:9"
+        )
+        self.assertEqual(
+            self.page.settings.value("library/video_crop_mode"), "16:10"
+        )
+
+        self.page.set_remember_video_display_modes(False)
+        self.assertFalse(
+            self.page.settings.contains("library/video_aspect_mode")
+        )
+        self.assertFalse(
+            self.page.settings.contains("library/video_crop_mode")
+        )
+        self.page._replace_queue([second])
+        self.assertEqual(self.page.aspect_button.text(), "Aspect: Default")
+        self.assertEqual(self.page.crop_button.text(), "Crop: Default")
 
     def test_video_keyboard_playback_and_timeline_shortcuts(self) -> None:
         video_path = Path(self.temporary.name) / "keyboard-movie.mp4"
@@ -1044,7 +1121,16 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.assertEqual(self.page.table.rowCount(), 2)
         self.assertEqual(self.page.table.iconSize(), VIDEO_THUMBNAIL_SIZE)
         self.assertEqual(self.page.table.rowHeight(0), VIDEO_TABLE_ROW_HEIGHT)
-        self.assertFalse(self.page.table.item(0, 0).icon().isNull())
+        self.assertEqual(self.page.table.horizontalHeaderItem(0).text(), "Title")
+        self.assertEqual(self.page.table.horizontalHeaderItem(1).text(), "Artwork")
+        self.assertEqual(self.page.table.item(0, 0).text(), "First Video")
+        self.assertTrue(self.page.table.item(0, 0).icon().isNull())
+        self.assertFalse(self.page.table.item(0, 1).icon().isNull())
+        self.assertAlmostEqual(
+            self.page.table.columnWidth(1) / self.page.table.rowHeight(0),
+            16 / 9,
+            places=1,
+        )
         self.page.table.selectRow(0)
 
         QTest.mouseClick(
