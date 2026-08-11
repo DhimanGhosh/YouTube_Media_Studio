@@ -843,6 +843,8 @@ def _result_output_folder(
                 return str(candidate.parent)
             if candidate.is_dir():
                 return str(candidate)
+            if candidate.parent.is_dir():
+                return str(candidate.parent)
 
     return str(resolved_roots[0]) if resolved_roots else ""
 
