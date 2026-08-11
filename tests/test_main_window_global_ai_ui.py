@@ -9,7 +9,8 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtCore import QSettings, Qt  # noqa: E402
+from PyQt6.QtCore import QSettings, Qt, QUrl  # noqa: E402
+from PyQt6.QtGui import QDesktopServices  # noqa: E402
 from PyQt6.QtTest import QTest  # noqa: E402
 from PyQt6.QtWidgets import (  # noqa: E402
     QApplication,
@@ -88,6 +89,20 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         self.window._sync_stop_button()
         self.assertFalse(self.window.cancel_button.isEnabled())
         self.assertIn("QPushButton#dangerButton:disabled", APP_STYLE)
+
+    def test_completed_output_folder_can_be_opened(self) -> None:
+        output_folder = self.data_directory / "songs"
+        output_folder.mkdir()
+
+        self.window._handle_operation_output(
+            {"operation": "audio", "output_path": str(output_folder)}
+        )
+
+        self.assertEqual(Path(self.window._last_output_folder), output_folder)
+        self.assertTrue(self.window.open_output_button.isEnabled())
+        with patch.object(QDesktopServices, "openUrl", return_value=True) as open_url:
+            self.window._open_last_output()
+        open_url.assert_called_once_with(QUrl.fromLocalFile(str(output_folder)))
 
     def test_search_uses_global_model_without_a_local_model_field(self) -> None:
         self.assertFalse(hasattr(self.window, "song_search_model"))

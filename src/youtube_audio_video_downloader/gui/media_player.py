@@ -556,6 +556,8 @@ class MediaLibraryPage(QWidget):
         self._pending_album_art: list[tuple[QListWidgetItem, str]] = []
         self._scanner_thread: QThread | None = None
         self._scanner_worker: LibraryScanner | None = None
+        self._scan_refresh_pending = False
+        self._shutting_down = False
         self._scan_started_at = 0.0
         self._search_thread: QThread | None = None
         self._search_worker: LibrarySearchWorker | None = None
@@ -1977,8 +1979,23 @@ class MediaLibraryPage(QWidget):
         self.settings.setValue("library/folders", self.folders())
 
     def refresh_library(self) -> None:
-        if self._scanner_thread is not None or not self.folders():
+        if self._shutting_down:
             return
+        if self._scanner_thread is not None:
+            self._scan_refresh_pending = True
+            self.library_refresh_button.setText("Refresh queued")
+            self.library_refresh_button.setToolTip(
+                "Another rescan will run as soon as the current scan finishes"
+            )
+            return
+        if not self.folders():
+            self.items = []
+            self.apply_filters()
+            self._render_playlist_tracks()
+            return
+        self._scan_refresh_pending = False
+        self.library_refresh_button.setEnabled(False)
+        self.library_refresh_button.setText("Scanning…")
         self._scan_started_at = time.monotonic()
         log_diagnostic(
             "LIBRARY", f"Background scan started; folders={self.folders()!r}"
@@ -1991,10 +2008,21 @@ class MediaLibraryPage(QWidget):
         worker.finished.connect(thread.quit)
         worker.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(lambda: setattr(self, "_scanner_thread", None))
+        thread.finished.connect(self._scanner_thread_finished)
         self._scanner_thread = thread
         self._scanner_worker = worker
         thread.start()
+
+    def _scanner_thread_finished(self) -> None:
+        self._scanner_thread = None
+        self.library_refresh_button.setEnabled(True)
+        self.library_refresh_button.setText("Refresh")
+        self.library_refresh_button.setToolTip(
+            "Rescan every configured library folder"
+        )
+        if self._scan_refresh_pending:
+            self._scan_refresh_pending = False
+            QTimer.singleShot(0, self.refresh_library)
 
     def _scan_finished(self, items: object) -> None:
         self._scanner_worker = None
@@ -2010,6 +2038,29 @@ class MediaLibraryPage(QWidget):
             )
             return
         self.items = scanned_items
+        available_paths = {item.path.casefold() for item in scanned_items}
+        current_path = (
+            self.queue[self.queue_index].path
+            if 0 <= self.queue_index < len(self.queue)
+            else ""
+        )
+        self.queue = [
+            item for item in self.queue if item.path.casefold() in available_paths
+        ]
+        self._queue_source = [
+            item
+            for item in self._queue_source
+            if item.path.casefold() in available_paths
+        ]
+        self.queue_index = next(
+            (
+                index
+                for index, item in enumerate(self.queue)
+                if item.path == current_path
+            ),
+            0 if self.queue else -1,
+        )
+        self._update_queue_status()
         self.apply_filters()
         self._render_playlist_tracks()
         log_diagnostic(
@@ -3149,6 +3200,8 @@ class MediaLibraryPage(QWidget):
 
     def shutdown(self) -> None:
         log_diagnostic("PLAYER", "MediaLibraryPage shutdown requested")
+        self._shutting_down = True
+        self._scan_refresh_pending = False
         self.refresh_timer.stop()
         application = QApplication.instance()
         if application is not None and self._native_media_filter is not None:

@@ -399,11 +399,19 @@ class MainWindow(QMainWindow):
         self.cancel_button.setObjectName("dangerButton")
         self.cancel_button.setEnabled(False)
         self.cancel_button.clicked.connect(self._cancel_active_operation)
+        self.open_output_button = QPushButton("Open output")
+        self.open_output_button.setObjectName("secondaryButton")
+        self.open_output_button.setEnabled(False)
+        self.open_output_button.setToolTip(
+            "Open the folder used by the most recently completed operation"
+        )
+        self.open_output_button.clicked.connect(self._open_last_output)
         layout.addWidget(self.activity_progress, 0, 0, 1, 3)
         layout.addWidget(self.pulse_dot, 1, 0)
         layout.addWidget(self.activity_label, 1, 1)
         layout.addWidget(self.ai_status_badge, 1, 2, Qt.AlignmentFlag.AlignRight)
-        layout.addWidget(self.cancel_button, 0, 3, 2, 1)
+        layout.addWidget(self.open_output_button, 0, 3, 2, 1)
+        layout.addWidget(self.cancel_button, 0, 4, 2, 1)
         layout.setColumnStretch(1, 1)
         return bar
 
@@ -3063,7 +3071,23 @@ class MainWindow(QMainWindow):
         elif operation == "enrich_song":
             self._route_enriched_audio_song(output_text)
         if output_path:
-            self._last_output_folder = str(Path(output_path).parent)
+            path = Path(output_path).expanduser().resolve()
+            self._last_output_folder = str(path if path.is_dir() else path.parent)
+            self.open_output_button.setEnabled(
+                Path(self._last_output_folder).is_dir()
+            )
+
+    def _open_last_output(self) -> None:
+        folder = Path(self._last_output_folder).expanduser()
+        if not self._last_output_folder or not folder.is_dir():
+            self.open_output_button.setEnabled(False)
+            QMessageBox.warning(
+                self,
+                "Output folder unavailable",
+                "The most recent output folder no longer exists.",
+            )
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder.resolve())))
 
     def _add_history(self, operation: str, status: str, total: int, details: str) -> None:
         self._history.insert(0, {
@@ -3581,6 +3605,7 @@ class MainWindow(QMainWindow):
         self.log_view.clear()
         self._clear_dashboard()
         self._last_output_folder = ""
+        self.open_output_button.setEnabled(False)
 
     def _save_defaults(self) -> None:
         min_delay = self.settings_min_delay.value()

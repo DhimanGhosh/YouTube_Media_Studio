@@ -446,7 +446,9 @@ def _run_audio(params: dict[str, Any], token: CancellationToken) -> OperationSum
         enrichment = _enrich_download_results(
             results, enrichment_roots, params, token
         )
-    return _summarize_results("audio", results, enrichment)
+    return _summarize_results(
+        "audio", results, enrichment, output_roots=enrichment_roots
+    )
 
 
 def _run_video(params: dict[str, Any], token: CancellationToken) -> OperationSummary:
@@ -484,7 +486,15 @@ def _run_video(params: dict[str, Any], token: CancellationToken) -> OperationSum
             params,
             token,
         ) if not bool(params.get("info_mode", False)) else None
-    return _summarize_results("video", results, enrichment)
+    return _summarize_results(
+        "video",
+        results,
+        enrichment,
+        output_roots=[
+            video_output_dir or json_path.parent / "videos",
+            audio_output_dir or json_path.parent / "songs",
+        ],
+    )
 
 
 def _run_album(params: dict[str, Any], token: CancellationToken) -> OperationSummary:
@@ -516,7 +526,9 @@ def _run_album(params: dict[str, Any], token: CancellationToken) -> OperationSum
         enrichment = _enrich_download_results(
             results, [enrichment_root], params, token
         )
-    summary = _summarize_results("album", results, enrichment)
+    summary = _summarize_results(
+        "album", results, enrichment, output_roots=[enrichment_root]
+    )
     completed_albums = _completed_album_entries(params.get("input_data"), results)
     if completed_albums:
         summary = replace(
@@ -544,7 +556,12 @@ def _run_album_url(params, token, service, input_value):
     enrichment = _enrich_download_results(
         results, [output_dir or Path.cwd() / "album_tracks"], params, token
     )
-    return _summarize_results("album", results, enrichment)
+    return _summarize_results(
+        "album",
+        results,
+        enrichment,
+        output_roots=[output_dir or Path.cwd() / "album_tracks"],
+    )
 
 
 def _run_jukebox(params: dict[str, Any], token: CancellationToken) -> OperationSummary:
@@ -563,7 +580,9 @@ def _run_jukebox(params: dict[str, Any], token: CancellationToken) -> OperationS
         enrichment = _enrich_download_results(
             results, [enrichment_root], params, token
         )
-    summary = _summarize_results("jukebox", results, enrichment)
+    summary = _summarize_results(
+        "jukebox", results, enrichment, output_roots=[enrichment_root]
+    )
     completed_jukeboxes = _completed_album_entries(
         params.get("input_data"), results
     )
@@ -745,6 +764,8 @@ def _summarize_results(
     operation: str,
     results: list[DownloadResult],
     enrichment: Any | None = None,
+    *,
+    output_roots: list[Path] | None = None,
 ) -> OperationSummary:
     counts = {
         "downloaded": 0,
@@ -774,6 +795,7 @@ def _summarize_results(
         skipped=counts["skipped"],
         listed=counts["listed"],
         failed=counts["failed"],
+        output_path=_result_output_folder(results, output_roots or []),
         completed_items=tuple(
             result.song
             for result in results
@@ -790,6 +812,41 @@ def _summarize_results(
         tagged=summary.tagged + len(enrichment.updated),
         failed=summary.failed + len(enrichment.failed),
     )
+
+
+def _result_output_folder(
+    results: list[DownloadResult], roots: list[Path]
+) -> str:
+    """Return the most specific existing folder containing a completed output."""
+
+    completed = [
+        result
+        for result in results
+        if result.status.value in {"downloaded", "tagged", "already_exists"}
+    ]
+    if not completed:
+        return ""
+
+    resolved_roots = [root.expanduser().resolve() for root in roots]
+    for result in completed:
+        raw_name = str(result.file_name or "").strip()
+        if not raw_name:
+            continue
+        reported = Path(raw_name).expanduser()
+        candidates = (
+            [reported.resolve()]
+            if reported.is_absolute()
+            else [root / reported for root in resolved_roots]
+        )
+        for candidate in candidates:
+            if candidate.is_file():
+                return str(candidate.parent)
+            if candidate.is_dir():
+                return str(candidate)
+            if candidate.parent.is_dir():
+                return str(candidate.parent)
+
+    return str(resolved_roots[0]) if resolved_roots else ""
 
 
 def _enrich_download_results(
