@@ -579,6 +579,10 @@ class MediaLibraryPage(QWidget):
         )
         self._suggestions_by_text: dict[str, LibraryItem] = {}
         self._seeking = False
+        self._player_fullscreen = False
+        self._fullscreen_hidden_widgets: list[tuple[QWidget, bool]] = []
+        self._fullscreen_window: QWidget | None = None
+        self._fullscreen_window_state = Qt.WindowState.WindowNoState
         self._consecutive_playback_errors = 0
         self._last_media_command_at = 0.0
         self._native_media_filter: WindowsMediaKeyFilter | None = None
@@ -1752,7 +1756,6 @@ class MediaLibraryPage(QWidget):
         self._player_host_layout = QVBoxLayout(self._player_host)
         self._player_host_layout.setContentsMargins(0, 0, 0, 0)
         self._player_host_layout.setSpacing(0)
-        self._player_fullscreen = False
         card = GlassCard()
         self.player_card = card
         card.setObjectName("playerCard")
@@ -1857,7 +1860,6 @@ class MediaLibraryPage(QWidget):
         grid.addWidget(self.volume, 3, 11, 1, 2)
         grid.setColumnStretch(4, 1)
         grid.setColumnStretch(9, 1)
-        card.installEventFilter(self)
         self.fullscreen_shortcut = QShortcut(QKeySequence("Esc"), card)
         self.fullscreen_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         self.fullscreen_shortcut.activated.connect(self.exit_video_fullscreen)
@@ -1868,18 +1870,10 @@ class MediaLibraryPage(QWidget):
         if watched is self.video and event.type() == QEvent.Type.MouseButtonDblClick:
             self.toggle_video_fullscreen()
             return True
-        if (
-            watched is self.player_card
-            and event.type() == QEvent.Type.Close
-            and self._player_fullscreen
-        ):
-            event.ignore()
-            self.exit_video_fullscreen()
-            return True
         return super().eventFilter(watched, event)
 
     def toggle_video_fullscreen(self) -> None:
-        """Move the complete video player, including controls, in or out of full screen."""
+        """Show the existing video player and controls in a full-screen window."""
 
         if self._player_fullscreen:
             self.exit_video_fullscreen()
@@ -1887,17 +1881,29 @@ class MediaLibraryPage(QWidget):
         if not self.video.isVisible():
             return
         self._player_fullscreen = True
-        self._player_host_layout.removeWidget(self.player_card)
-        self.player_card.setParent(None)
-        self.player_card.setWindowFlag(Qt.WindowType.Window, True)
-        self.player_card.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
-        self.player_card.setMinimumSize(0, 0)
+        self._fullscreen_window = self.window()
+        self._fullscreen_window_state = self._fullscreen_window.windowState()
+        self._fullscreen_hidden_widgets = []
+        branch: QWidget = self.player_card
+        parent = branch.parentWidget()
+        while parent is not None:
+            for sibling in parent.findChildren(
+                QWidget, options=Qt.FindChildOption.FindDirectChildrenOnly
+            ):
+                if sibling is branch:
+                    continue
+                was_hidden = sibling.isHidden()
+                self._fullscreen_hidden_widgets.append((sibling, was_hidden))
+                sibling.hide()
+            if parent is self._fullscreen_window:
+                break
+            branch = parent
+            parent = branch.parentWidget()
         self.video.setMinimumHeight(0)
         self.video.setMaximumHeight(16_777_215)
         self.player_grid.setRowStretch(0, 1)
         self.fullscreen_button.setText("Exit full screen")
-        self.player_card.showFullScreen()
-        self.player.setVideoOutput(self.video)
+        self._fullscreen_window.showFullScreen()
         self.video.setFocus()
 
     def exit_video_fullscreen(self) -> None:
@@ -1906,18 +1912,18 @@ class MediaLibraryPage(QWidget):
         if not self._player_fullscreen:
             return
         self._player_fullscreen = False
-        self.player_card.hide()
-        self.player_card.setWindowFlag(Qt.WindowType.FramelessWindowHint, False)
-        self.player_card.setWindowFlag(Qt.WindowType.Window, False)
-        self.player_card.setParent(self._player_host)
-        self._player_host_layout.addWidget(self.player_card)
-        self.player_card.setMinimumHeight(166)
+        fullscreen_window = self._fullscreen_window
+        if fullscreen_window is not None:
+            fullscreen_window.setWindowState(self._fullscreen_window_state)
+            fullscreen_window.show()
+        for widget, was_hidden in self._fullscreen_hidden_widgets:
+            widget.setVisible(not was_hidden)
+        self._fullscreen_hidden_widgets = []
+        self._fullscreen_window = None
         self.video.setMinimumHeight(320)
         self.video.setMaximumHeight(520)
         self.player_grid.setRowStretch(0, 0)
         self.fullscreen_button.setText("Full screen")
-        self.player_card.show()
-        self.player.setVideoOutput(self.video)
 
     @staticmethod
     def _new_media_table(labels: list[str]) -> QTableWidget:

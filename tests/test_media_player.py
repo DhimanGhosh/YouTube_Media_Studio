@@ -829,15 +829,16 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.app.processEvents()
 
         self.assertTrue(self.page._player_fullscreen)
-        self.assertTrue(self.page.player_card.isFullScreen())
+        self.assertTrue(self.page.window().isFullScreen())
         self.assertEqual(self.page.video.maximumHeight(), 16_777_215)
         self.assertEqual(
             self.page.fullscreen_button.text(), "Exit full screen"
         )
-        self.assertIs(self.page.position.window(), self.page.player_card)
-        self.assertIs(self.page.volume.window(), self.page.player_card)
+        self.assertIs(self.page.position.window(), self.page.window())
+        self.assertIs(self.page.volume.window(), self.page.window())
+        self.assertTrue(self.page.library_splitter.isHidden())
 
-        QTest.keyClick(self.page.player_card, Qt.Key.Key_Escape)
+        QTest.keyClick(self.page.video, Qt.Key.Key_Escape)
         self.app.processEvents()
         self.assertFalse(self.page._player_fullscreen)
 
@@ -854,6 +855,7 @@ class MediaPlayerPageTest(unittest.TestCase):
 
         self.assertFalse(self.page._player_fullscreen)
         self.assertIs(self.page.player_card.parent(), self.page._player_host)
+        self.assertFalse(self.page.library_splitter.isHidden())
         self.assertEqual(self.page.video.maximumHeight(), 520)
         self.assertEqual(self.page.fullscreen_button.text(), "Full screen")
         self.page.clear_playback_queue()
