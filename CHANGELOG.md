@@ -4,6 +4,11 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [2.7.2] - 2026-08-12
+
+### Fixed
+
+- fix: preserve per-track artists in album editor (#21) (`2275401`)
 ## [2.7.1] - 2026-08-12
 
 ### Fixed
