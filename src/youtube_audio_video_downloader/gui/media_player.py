@@ -98,6 +98,19 @@ from youtube_audio_video_downloader.services.library_recommendations import (
 )
 from youtube_audio_video_downloader.services.ai_provider import configured_primary_identity
 
+MEDIA_TYPE_ALL = "all"
+MEDIA_TYPE_AUDIO = "audio"
+MEDIA_TYPE_VIDEO = "video"
+MEDIA_TYPE_OPTIONS = (
+    ("All media", MEDIA_TYPE_ALL, "Songs and videos"),
+    ("Music", MEDIA_TYPE_AUDIO, "Music"),
+    ("Videos", MEDIA_TYPE_VIDEO, "Videos"),
+)
+VALID_MEDIA_TYPES = frozenset(option[1] for option in MEDIA_TYPE_OPTIONS)
+EMBEDDED_VIDEO_MIN_HEIGHT = 320
+EMBEDDED_VIDEO_MAX_HEIGHT = 520
+FULLSCREEN_VIDEO_MAX_HEIGHT = 16_777_215
+
 
 class LibraryScanner(QObject):
     finished = pyqtSignal(object)
@@ -572,7 +585,7 @@ class MediaLibraryPage(QWidget):
         self._last_recommendations: list[LibraryRecommendation] = []
         self._search_request_id = 0
         self._applied_query = ""
-        self._applied_media_type = "all"
+        self._applied_media_type = MEDIA_TYPE_ALL
         self._search_pending = False
         self._suggestion_limit = max(
             1, int(self.settings.value("defaults/search_suggestions", 10))
@@ -750,11 +763,11 @@ class MediaLibraryPage(QWidget):
         self.clear_search_button.clicked.connect(self.search.clear)
         row.addWidget(self.clear_search_button)
         self.media_type_filter = QComboBox()
-        self.media_type_filter.addItem("All media", "all")
-        self.media_type_filter.addItem("Music", "audio")
-        self.media_type_filter.addItem("Videos", "video")
+        for label, media_type, _result_label in MEDIA_TYPE_OPTIONS:
+            self.media_type_filter.addItem(label, media_type)
         saved_media_type = str(
-            self.settings.value("library/media_type_filter", "all") or "all"
+            self.settings.value("library/media_type_filter", MEDIA_TYPE_ALL)
+            or MEDIA_TYPE_ALL
         )
         saved_index = self.media_type_filter.findData(saved_media_type)
         self.media_type_filter.setCurrentIndex(max(0, saved_index))
@@ -1766,8 +1779,8 @@ class MediaLibraryPage(QWidget):
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(8)
         self.video = QVideoWidget()
-        self.video.setMinimumHeight(320)
-        self.video.setMaximumHeight(520)
+        self.video.setMinimumHeight(EMBEDDED_VIDEO_MIN_HEIGHT)
+        self.video.setMaximumHeight(EMBEDDED_VIDEO_MAX_HEIGHT)
         self.video.setToolTip(
             "Double-click the video to enter or leave full-screen playback"
         )
@@ -1900,7 +1913,7 @@ class MediaLibraryPage(QWidget):
             branch = parent
             parent = branch.parentWidget()
         self.video.setMinimumHeight(0)
-        self.video.setMaximumHeight(16_777_215)
+        self.video.setMaximumHeight(FULLSCREEN_VIDEO_MAX_HEIGHT)
         self.player_grid.setRowStretch(0, 1)
         self.fullscreen_button.setText("Exit full screen")
         self._fullscreen_window.showFullScreen()
@@ -1920,8 +1933,8 @@ class MediaLibraryPage(QWidget):
             widget.setVisible(not was_hidden)
         self._fullscreen_hidden_widgets = []
         self._fullscreen_window = None
-        self.video.setMinimumHeight(320)
-        self.video.setMaximumHeight(520)
+        self.video.setMinimumHeight(EMBEDDED_VIDEO_MIN_HEIGHT)
+        self.video.setMaximumHeight(EMBEDDED_VIDEO_MAX_HEIGHT)
         self.player_grid.setRowStretch(0, 0)
         self.fullscreen_button.setText("Full screen")
 
@@ -2208,8 +2221,8 @@ class MediaLibraryPage(QWidget):
         self._set_suggestions(matches[: self._suggestion_limit])
 
     def _selected_media_type(self) -> str:
-        value = str(self.media_type_filter.currentData() or "all")
-        return value if value in {"all", "audio", "video"} else "all"
+        value = str(self.media_type_filter.currentData() or MEDIA_TYPE_ALL)
+        return value if value in VALID_MEDIA_TYPES else MEDIA_TYPE_ALL
 
     def _media_type_items(self) -> list[LibraryItem]:
         return filter_library(
@@ -2225,16 +2238,12 @@ class MediaLibraryPage(QWidget):
 
     def _sync_media_type_layout(self) -> None:
         media_type = self._selected_media_type()
-        labels = {
-            "all": "Songs and videos",
-            "audio": "Music",
-            "video": "Videos",
-        }
+        labels = {option[1]: option[2] for option in MEDIA_TYPE_OPTIONS}
         self.media_results_label.setText(labels[media_type])
         self.all_tracks_button.setText(
-            "‹ All videos" if media_type == "video" else "‹ All tracks"
+            "‹ All videos" if media_type == MEDIA_TYPE_VIDEO else "‹ All tracks"
         )
-        show_albums = media_type != "video"
+        show_albums = media_type != MEDIA_TYPE_VIDEO
         self.library_splitter.widget(1).setVisible(show_albums)
         if not show_albums:
             self.album_stack.setCurrentIndex(0)
@@ -3087,14 +3096,16 @@ class MediaLibraryPage(QWidget):
             f"type={item.media_type} path={item.path!r}",
         )
         self.player.stop()
-        if item.media_type != "video":
+        if item.media_type != MEDIA_TYPE_VIDEO:
             self.exit_video_fullscreen()
-        self.player.setVideoOutput(self.video if item.media_type == "video" else None)
+        self.player.setVideoOutput(
+            self.video if item.media_type == MEDIA_TYPE_VIDEO else None
+        )
         self.player.setSource(QUrl.fromLocalFile(item.path))
         self.now_playing.setText(f"{item.title} — {item.artists}  •  {item.album}")
         self._set_now_playing_art(item)
-        self.video.setVisible(item.media_type == "video")
-        self.fullscreen_button.setEnabled(item.media_type == "video")
+        self.video.setVisible(item.media_type == MEDIA_TYPE_VIDEO)
+        self.fullscreen_button.setEnabled(item.media_type == MEDIA_TYPE_VIDEO)
         self._update_queue_status()
         self.player.play()
 

@@ -22,7 +22,12 @@ from PyQt6.QtMultimedia import QAudioBuffer, QAudioFormat, QMediaPlayer  # noqa:
 from PyQt6.QtTest import QSignalSpy, QTest  # noqa: E402
 from PyQt6.QtWidgets import QApplication, QMenu  # noqa: E402
 
-from youtube_audio_video_downloader.gui.media_player import MediaLibraryPage  # noqa: E402
+from youtube_audio_video_downloader.gui.media_player import (  # noqa: E402
+    EMBEDDED_VIDEO_MAX_HEIGHT,
+    EMBEDDED_VIDEO_MIN_HEIGHT,
+    FULLSCREEN_VIDEO_MAX_HEIGHT,
+    MediaLibraryPage,
+)
 from youtube_audio_video_downloader.gui.widgets import (  # noqa: E402
     BlankClickSelectionFilter,
 )
@@ -823,14 +828,18 @@ class MediaPlayerPageTest(unittest.TestCase):
 
         self.assertTrue(self.page.video.isVisibleTo(self.page))
         self.assertTrue(self.page.fullscreen_button.isEnabled())
-        self.assertGreaterEqual(self.page.video.minimumHeight(), 320)
+        self.assertGreaterEqual(
+            self.page.video.minimumHeight(), EMBEDDED_VIDEO_MIN_HEIGHT
+        )
 
         QTest.mouseDClick(self.page.video, Qt.MouseButton.LeftButton)
         self.app.processEvents()
 
         self.assertTrue(self.page._player_fullscreen)
         self.assertTrue(self.page.window().isFullScreen())
-        self.assertEqual(self.page.video.maximumHeight(), 16_777_215)
+        self.assertEqual(
+            self.page.video.maximumHeight(), FULLSCREEN_VIDEO_MAX_HEIGHT
+        )
         self.assertEqual(
             self.page.fullscreen_button.text(), "Exit full screen"
         )
@@ -856,7 +865,9 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.assertFalse(self.page._player_fullscreen)
         self.assertIs(self.page.player_card.parent(), self.page._player_host)
         self.assertFalse(self.page.library_splitter.isHidden())
-        self.assertEqual(self.page.video.maximumHeight(), 520)
+        self.assertEqual(
+            self.page.video.maximumHeight(), EMBEDDED_VIDEO_MAX_HEIGHT
+        )
         self.assertEqual(self.page.fullscreen_button.text(), "Full screen")
         self.page.clear_playback_queue()
         QTest.qWait(50)

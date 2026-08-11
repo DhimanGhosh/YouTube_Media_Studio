@@ -290,7 +290,7 @@ report the complete log block.
    or open the containing folder.
    During video playback, double-click the picture or select **Full screen** to move the
    complete player—including seek, transport, repeat/shuffle, and volume controls—to a
-   full-screen view. Double-click again, select **Exit full screen**, or press **Esc** to
+   full screen view. Double-click again, select **Exit full screen**, or press **Esc** to
    return to the library. The embedded video surface is also taller than the music player.
 6. Select **Playlists** in the page header to create, rename, delete, play, queue, or
    edit saved collections. Playlists store exact links to local file paths and remain
