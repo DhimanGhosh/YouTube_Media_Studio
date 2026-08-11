@@ -293,9 +293,13 @@ report the complete log block.
    or **Add anyway** to retain another occurrence. Right-click playlist tracks for the
    same Edit File and Add to playlist actions, or to remove them from that playlist.
    Smart Library Curator automatically treats each saved playlist name and its indexed
-   songs as positive taste examples. It uses this bounded context to favor related local
-   tracks and, when you explicitly select **Search YouTube too**, to prepare a taste-aware
-   online query. Rename or edit a playlist to change the context used on the next request.
+   songs as positive taste examples. The configured AI model—not a hardcoded synonym
+   table—decides whether a playlist theme is semantically relevant to the current request.
+   Songs in a relevant playlist can therefore appear as personal taste matches even when
+   the request uses different wording. It also uses this bounded context to favor related
+   local tracks and, when you explicitly select **Search YouTube too**, to prepare a
+   taste-aware online query. This is recalculated for every request and does not retrain or
+   alter the selected model's weights. Rename or edit a playlist to change the next request.
 7. Language, mood, style, activity, energy, and tempo are strict evidence gates: the
    curator rejects a model claim when catalog or web evidence conflicts with or cannot
    corroborate it. Semantic synonyms are accepted only when the verifier quotes an exact

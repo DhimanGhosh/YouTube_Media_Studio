@@ -111,6 +111,21 @@ class _SemanticOutput(BaseModel):
     matches: list[_SemanticMatch] = Field(max_length=MAX_SEMANTIC_CANDIDATES)
 
 
+class _TastePlaylistMatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    relevant: bool
+    confidence: float = Field(ge=0, le=1)
+    matched_filters: list[str] = Field(max_length=MAX_MATCHED_FILTERS)
+
+
+class _TastePlaylistOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    matches: list[_TastePlaylistMatch] = Field(max_length=MAX_TASTE_PLAYLISTS)
+
+
 class _EvidenceJudgment(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -204,6 +219,14 @@ def recommend_library_tracks(
     )
     plan = _promote_evidence_languages(plan, evidence)
     semantic_filters = (*plan.languages, *plan.semantic_filters)
+    taste_matches, taste_reasons = _verify_playlist_taste(
+        request_text,
+        candidates,
+        taste_profile,
+        semantic_filters,
+        model=selected_model,
+        timeout=timeout,
+    )
     verified = _verify_semantics(
         request_text, semantic_candidates, semantic_filters, evidence,
         languages=plan.languages,
@@ -219,6 +242,10 @@ def recommend_library_tracks(
             languages=plan.languages,
             semantic_filters=plan.semantic_filters,
         )
+    for item in taste_matches:
+        if all(id(existing) != id(item) for existing in candidates):
+            candidates.append(item)
+        reasons[id(item)] = taste_reasons[id(item)]
     print(f"[AI-AGENT] Semantic verifier | matches={len(candidates)}")
     if not candidates:
         return []
@@ -379,6 +406,86 @@ def _promote_evidence_languages(
         time_preference=plan.time_preference,
         use_web_evidence=plan.use_web_evidence,
     )
+
+
+def _verify_playlist_taste(
+    request_text: str,
+    candidates: list[LibraryItem],
+    taste_profile: list[_TastePlaylist],
+    filters: tuple[str, ...],
+    *,
+    model: str,
+    timeout: float,
+) -> tuple[list[LibraryItem], dict[int, tuple[str, ...]]]:
+    """Let the model relate playlist meaning to a request without fixed mappings."""
+
+    if not taste_profile or not filters:
+        return [], {}
+    try:
+        payload = run_structured_agent(
+            name="Playlist taste matcher",
+            role="Relate the user's own playlist themes to the current listening request.",
+            instructions=(
+                "Evaluate each supplied playlist as a positive user-curated taste signal. "
+                "Decide semantic relevance from the request, playlist name, and member-track "
+                "metadata; do not rely on fixed keyword mappings or require exact word overlap. "
+                "For example, tempo, activity, genre, mood, and language concepts may be "
+                "closely related even when phrased differently, but make that judgment from "
+                "meaning rather than spelling. Mark relevant true only when the playlist theme "
+                "satisfies the whole requested listening intent. matched_filters must contain "
+                "every supplied filter the playlist supports. Never invent playlist IDs or "
+                "track facts. Playlist membership is user preference evidence, not public "
+                "catalog evidence."
+            ),
+            input_data={
+                "request": request_text,
+                "filters": filters,
+                "playlists": [
+                    {"id": index, **playlist}
+                    for index, playlist in enumerate(taste_profile)
+                ],
+            },
+            output_schema=_TastePlaylistOutput,
+            requested_model=model,
+            timeout=timeout,
+            temperature=0,
+            max_tokens=1200,
+        )
+    except Exception as exc:
+        print(f"[AI-STATIC-FALLBACK] Playlist taste matcher | {exc}")
+        return [], {}
+
+    relevant: dict[tuple[str, tuple[str, ...]], tuple[str, ...]] = {}
+    for row in payload.matches:
+        if (
+            not 0 <= row.id < len(taste_profile)
+            or not row.relevant
+            or row.confidence < 0.65
+        ):
+            continue
+        matched = _clean_strings(row.matched_filters)
+        if not _covers_filters(matched, filters):
+            continue
+        playlist = taste_profile[row.id]
+        reason = (*filters, f'saved playlist "{playlist["name"]}"')
+        for track in playlist["tracks"]:
+            identity = (
+                _text_key(track["title"]),
+                tuple(sorted(_text_key(artist) for artist in track["artists"])),
+            )
+            relevant[identity] = reason
+
+    selected: list[LibraryItem] = []
+    reasons: dict[int, tuple[str, ...]] = {}
+    for item in candidates:
+        reason = relevant.get(_song_identity(item))
+        if reason is None:
+            continue
+        selected.append(item)
+        reasons[id(item)] = reason
+    if selected:
+        print(f"[AI-AGENT] Playlist taste matcher | matches={len(selected)}")
+    return selected, reasons
 
 
 def _verify_semantics(
