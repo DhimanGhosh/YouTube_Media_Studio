@@ -292,13 +292,18 @@ report the complete log block.
    **Skip duplicates** to omit existing tracks and add the rest of an album/selection,
    or **Add anyway** to retain another occurrence. Right-click playlist tracks for the
    same Edit File and Add to playlist actions, or to remove them from that playlist.
+   Smart Library Curator automatically treats each saved playlist name and its indexed
+   songs as positive taste examples. It uses this bounded context to favor related local
+   tracks and, when you explicitly select **Search YouTube too**, to prepare a taste-aware
+   online query. Rename or edit a playlist to change the context used on the next request.
 7. Language, mood, style, activity, energy, and tempo are strict evidence gates: the
    curator rejects a model claim when catalog or web evidence conflicts with or cannot
    corroborate it. Semantic synonyms are accepted only when the verifier quotes an exact
    supporting phrase from evidence for that recording. Only requested filters appear in
    result reasons.
 8. The curator never redirects automatically. If the local result is empty, select the
-   explicit **Search YouTube too** action only when you want an online search.
+   explicit **Search YouTube too** action only when you want an online search. Playlist
+   file paths are never included in the AI or online-search context.
 
 The songs-and-videos table shows every matching scanned item; it does not truncate a
 large library. The count beside the table is the number of rows currently available

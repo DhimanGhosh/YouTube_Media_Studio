@@ -91,6 +91,7 @@ from youtube_audio_video_downloader.services.media_playlists import (
 )
 from youtube_audio_video_downloader.services.library_recommendations import (
     LibraryRecommendation,
+    playlist_taste_search_query,
     recommend_library_tracks,
 )
 from youtube_audio_video_downloader.services.ai_provider import configured_primary_identity
@@ -185,6 +186,7 @@ class LibraryRecommendationWorker(QObject):
         limit: int,
         *,
         language_continuation: bool = False,
+        playlists: dict[str, list[str]] | None = None,
     ) -> None:
         super().__init__()
         self.request_text = request_text
@@ -192,6 +194,7 @@ class LibraryRecommendationWorker(QObject):
         self.model = model
         self.limit = limit
         self.language_continuation = language_continuation
+        self.playlists = playlists or {}
 
     @pyqtSlot()
     def run(self) -> None:
@@ -202,6 +205,7 @@ class LibraryRecommendationWorker(QObject):
                 model=self.model,
                 limit=self.limit,
                 language_continuation=self.language_continuation,
+                playlists=self.playlists,
             )
         except Exception as exc:  # worker boundary must report failures to the UI
             self.finished.emit([], str(exc))
@@ -943,6 +947,7 @@ class MediaLibraryPage(QWidget):
             model,
             limit,
             language_continuation=language_continuation,
+            playlists={name: list(paths) for name, paths in self.playlists.items()},
         )
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
@@ -1128,6 +1133,7 @@ class MediaLibraryPage(QWidget):
             self.recommendation_status.setText("Describe what to search")
             return
         self.recommendation_status.setText("Opening YouTube search…")
+        query = playlist_taste_search_query(query, self.items, self.playlists)
         self.request_search_song.emit(query)
 
     def _play_recommended_item(self, row: QListWidgetItem) -> None:

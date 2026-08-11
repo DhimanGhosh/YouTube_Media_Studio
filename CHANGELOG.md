@@ -8,6 +8,8 @@ abbreviated hashes to the next version section.
 
 ### Added
 
+- Let Smart Library Curator learn bounded taste context from saved playlist names and
+  their indexed tracks when ranking local suggestions or preparing a YouTube search.
 - Add persistent path-based Media Library playlists with create, rename, delete,
   play, queue, and track removal controls; add tracks from track, album, artist, and
   playlist context menus or the main track/album action rows.

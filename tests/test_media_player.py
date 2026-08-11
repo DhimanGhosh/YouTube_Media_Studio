@@ -598,6 +598,7 @@ class MediaPlayerPageTest(unittest.TestCase):
             2022, 1000, "audio", 1,
         )
         self.page.items = [item]
+        self.page.playlists = {"Calm favourites": [item.path]}
         self.page.settings.setValue("defaults/agentic_model", "library-agent:test")
         self.page.ai_identity_resolver = Mock(
             return_value=("Groq", "openai/gpt-oss-120b")
@@ -623,6 +624,10 @@ class MediaPlayerPageTest(unittest.TestCase):
         )
         self.page.ai_identity_resolver.assert_called_once_with()
         self.assertEqual(recommendation_mock.call_args.kwargs["limit"], 10)
+        self.assertEqual(
+            recommendation_mock.call_args.kwargs["playlists"],
+            {"Calm favourites": [item.path]},
+        )
         self.assertTrue(self.page.recommendations.isVisibleTo(self.page))
         self.assertIn("[LOCAL] Calm Song", self.page.recommendations.item(0).text())
         self.assertTrue(self.page.recommendation_button.isEnabled())

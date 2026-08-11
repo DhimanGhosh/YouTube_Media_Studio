@@ -56,7 +56,8 @@ you invoke. The information sent depends on the feature and may include:
   metadata used for lookup, enrichment, or verification;
 - artwork searches and URLs;
 - natural-language requests, structured task instructions, bounded catalog or web
-  evidence, and derived media metadata sent to a configured AI provider;
+  evidence, derived media metadata, and bounded playlist names plus member-track
+  metadata sent to a configured AI provider; playlist file paths are omitted;
 - API keys or other credentials required to authenticate directly with the service;
 - standard network information, such as your IP address and request headers, which the
   receiving service normally obtains when your device connects to it.
