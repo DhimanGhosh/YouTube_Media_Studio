@@ -4,6 +4,11 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [2.5.2] - 2026-08-11
+
+### Changed
+
+- Personalize Smart Library Curator with playlist taste (#15) (`e92cfcd`)
 ## [2.5.1] - 2026-08-11
 
 ### Added
