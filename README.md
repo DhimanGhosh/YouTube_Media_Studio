@@ -252,6 +252,9 @@ language. Language, mood, style, activity, energy, and tempo labels must agree w
 or web evidence; a model assertion alone cannot admit a track or invent extra result traits.
 When a related term such as `melancholic` supports `sad`, the verifier must cite that
 exact phrase from the bounded evidence for the same recording.
+Saved playlist names and their indexed track metadata also act as positive taste examples.
+The curator favors related local discoveries and includes a concise version of that taste
+context when **Search YouTube too** is selected; media paths and files are not sent.
 
 Provider keys are stored separately: switching providers does not copy one provider's
 credential into another, and clearing a key remains cleared after **Save and apply

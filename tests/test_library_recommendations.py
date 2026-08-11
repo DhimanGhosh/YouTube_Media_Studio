@@ -12,6 +12,7 @@ from unittest.mock import patch
 from youtube_audio_video_downloader.services.library_recommendations import (
     MAX_EVIDENCE_LOOKUPS,
     MAX_SEMANTIC_CANDIDATES,
+    playlist_taste_search_query,
     recommend_library_tracks,
 )
 from youtube_audio_video_downloader.services.media_library import LibraryItem
@@ -63,6 +64,62 @@ def plan(
 
 
 class LibraryRecommendationsTest(unittest.TestCase):
+    def test_playlist_names_and_tracks_ground_taste_ranking_without_paths(self) -> None:
+        unrelated = track("C:/private/unrelated.mp3", "Other", "Other Artist")
+        related = track("C:/private/related.mp3", "New Favourite", "Liked Artist")
+        seed = track("C:/private/seed.mp3", "Beloved Song", "Liked Artist")
+        items = [unrelated, related, seed]
+        with patch(
+            "youtube_audio_video_downloader.services.library_recommendations."
+            "run_structured_agent",
+            side_effect=[
+                plan(),
+                response(
+                    {
+                        "matches": [
+                            {"id": index, "matches": True, "confidence": 0.9,
+                             "matched_filters": []}
+                            for index in range(3)
+                        ]
+                    }
+                ),
+                response({"ids": []}),
+            ],
+        ) as agent:
+            result = recommend_library_tracks(
+                "songs",
+                items,
+                model="model",
+                playlists={"Slow Bengali": [seed.path]},
+            )
+
+        self.assertEqual(result[0].item, related)
+        self.assertIn("saved playlist taste", result[0].reason)
+        planner_context = agent.call_args_list[0].kwargs["input_data"]
+        curator_context = agent.call_args_list[2].kwargs["input_data"]
+        self.assertEqual(planner_context["playlist_taste_profile"][0]["name"], "Slow Bengali")
+        self.assertEqual(
+            planner_context["playlist_taste_profile"][0]["tracks"][0]["title"],
+            "Beloved Song",
+        )
+        self.assertEqual(
+            curator_context["playlist_taste_profile"],
+            planner_context["playlist_taste_profile"],
+        )
+        self.assertNotIn("C:/private", str(planner_context))
+
+    def test_youtube_taste_query_contains_bounded_playlist_examples(self) -> None:
+        seed = track("C:/private/seed.mp3", "Smriti", "Bhoomi")
+
+        query = playlist_taste_search_query(
+            "more songs for a quiet evening",
+            [seed],
+            {"Slow Bengali": [seed.path]},
+        )
+
+        self.assertIn("Slow Bengali: Smriti by Bhoomi", query)
+        self.assertNotIn(seed.path, query)
+
     def test_only_indexed_ids_are_returned_and_local_availability_is_checked(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
             local_path = Path(folder) / "local.mp3"

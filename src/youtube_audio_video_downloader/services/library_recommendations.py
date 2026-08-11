@@ -6,7 +6,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Literal
+from typing import Iterable, Literal, Mapping, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -23,6 +23,9 @@ MAX_SEMANTIC_CANDIDATES = 120
 MAX_EVIDENCE_LOOKUPS = 20
 MAX_RECOMMENDATIONS = 20
 MAX_MATCHED_FILTERS = 12
+MAX_TASTE_PLAYLISTS = 20
+MAX_TASTE_TRACKS = 80
+MAX_TASTE_TRACKS_PER_PLAYLIST = 12
 
 _QUERY_SCAFFOLD_TOKENS = {
     "a", "all", "an", "and", "any", "by", "find", "for", "from", "get",
@@ -44,6 +47,18 @@ class LibraryRecommendation:
     item: LibraryItem
     reason: str
     exists_locally: bool
+
+
+class _TasteTrack(TypedDict):
+    title: str
+    artists: list[str]
+    album: str
+    year: int | None
+
+
+class _TastePlaylist(TypedDict):
+    name: str
+    tracks: list[_TasteTrack]
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,6 +139,7 @@ def recommend_library_tracks(
     limit: int = 8,
     timeout: float = 90,
     language_continuation: bool = False,
+    playlists: Mapping[str, Iterable[str]] | None = None,
 ) -> list[LibraryRecommendation]:
     """Plan, filter, verify, and rank a natural-language local-library request."""
 
@@ -137,11 +153,12 @@ def recommend_library_tracks(
     all_items = list(items)
     if not all_items:
         raise ValueError("The indexed library has no tracks to recommend.")
+    taste_profile = _playlist_taste_profile(all_items, playlists or {})
 
     literal_artists = _requested_artists(request_text, all_items)
     plan = _plan_request(
         request_text, all_items, literal_artists=literal_artists,
-        model=selected_model, timeout=timeout,
+        taste_profile=taste_profile, model=selected_model, timeout=timeout,
     )
     plan = _recover_omitted_constraints(request_text, plan)
     if language_continuation:
@@ -166,6 +183,7 @@ def recommend_library_tracks(
         all_items, request_text, artist_intent=artist_matches
     )
     candidates = _apply_time_preference(candidates, plan.time_preference)
+    candidates = _rank_by_playlist_taste(candidates, taste_profile)
     if not candidates:
         return []
     print(f"[AI-AGENT] Local catalog filter | candidates={len(candidates)}")
@@ -206,14 +224,21 @@ def recommend_library_tracks(
         return []
 
     ranked = _curate_candidates(
-        request_text, candidates, reasons, plan, model=selected_model,
+        request_text, candidates, reasons, plan, taste_profile=taste_profile,
+        model=selected_model,
         limit=bounded_limit, timeout=timeout,
     )
     print(f"[AI-AGENT] Smart Library Curator | recommendations={len(ranked)}")
     return [
         LibraryRecommendation(
             item,
-            _recommendation_reason(item, reasons.get(id(item), ()), plan, artist_matches),
+            _recommendation_reason(
+                item,
+                reasons.get(id(item), ()),
+                plan,
+                artist_matches,
+                playlist_affinity=_playlist_affinity(item, taste_profile) > 0,
+            ),
             Path(item.path).is_file(),
         )
         for item in ranked
@@ -225,6 +250,7 @@ def _plan_request(
     items: list[LibraryItem],
     *,
     literal_artists: tuple[str, ...],
+    taste_profile: list[_TastePlaylist],
     model: str,
     timeout: float,
 ) -> _QueryPlan:
@@ -238,6 +264,7 @@ def _plan_request(
         "literal_local_artist_matches": list(literal_artists),
         "available_artists": artists[:500],
         "library_year_range": [min(years), max(years)] if years else [],
+        "playlist_taste_profile": taste_profile,
     }
     try:
         payload = run_structured_agent(
@@ -257,7 +284,8 @@ def _plan_request(
                 "non-language, non-time constraint: how the music should sound or feel, its "
                 "genre, tempo, energy, mood, occasion, or an activity it should suit. Do not "
                 "silently drop such a descriptor. Empty arrays mean that dimension was not "
-                "requested. Never "
+                "requested. Playlist names and their tracks are preference hints for vague "
+                "requests, not hard filters and not proof of a track's language or traits. Never "
                 "turn descriptive words into an artist merely because the request ends in "
                 "'songs'."
             ),
@@ -473,6 +501,7 @@ def _curate_candidates(
     reasons: dict[int, tuple[str, ...]],
     plan: _QueryPlan,
     *,
+    taste_profile: list[_TastePlaylist],
     model: str,
     limit: int,
     timeout: float,
@@ -487,12 +516,17 @@ def _curate_candidates(
             role="Produce the final diverse, ranked local-library selection.",
             instructions=(
                 "Rank only supplied IDs. Preserve all verified filters, follow the requested "
-                "release-time preference, prefer strong metadata identity, and provide a "
+                "release-time preference, and treat playlist names plus their member tracks "
+                "as the user's positive taste examples. Prefer candidates related by artist, "
+                "album, era, or the playlist's stated theme while still keeping the result "
+                "diverse. A playlist is a preference hint, never independent factual proof. "
+                "Prefer strong metadata identity and provide a "
                 f"diverse useful set of at most {limit} IDs. Never invent IDs."
             ),
             input_data={
                 "request": request_text,
                 "time_preference": plan.time_preference,
+                "playlist_taste_profile": taste_profile,
                 "catalog": catalog,
             },
             output_schema=_CuratorOutput,
@@ -520,6 +554,126 @@ def _curate_candidates(
     # Some local models return an empty structured ID list even after the preceding
     # evidence gates have produced valid candidates.
     return selected or candidates[:limit]
+
+
+def _playlist_taste_profile(
+    items: Iterable[LibraryItem],
+    playlists: Mapping[str, Iterable[str]],
+) -> list[_TastePlaylist]:
+    """Build bounded, path-free positive taste examples from saved playlists."""
+
+    by_path = {item.path.casefold(): item for item in items}
+    profile: list[_TastePlaylist] = []
+    remaining_tracks = MAX_TASTE_TRACKS
+    for raw_name, paths in sorted(
+        playlists.items(), key=lambda pair: str(pair[0]).casefold()
+    )[:MAX_TASTE_PLAYLISTS]:
+        name = str(raw_name).strip()
+        if not name or remaining_tracks <= 0:
+            continue
+        tracks: list[_TasteTrack] = []
+        seen: set[tuple[str, tuple[str, ...]]] = set()
+        for raw_path in paths:
+            item = by_path.get(str(raw_path).casefold())
+            if item is None:
+                continue
+            identity = _song_identity(item)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            tracks.append(
+                {
+                    "title": item.title,
+                    "artists": split_artists(item.artists),
+                    "album": item.album,
+                    "year": item.year,
+                }
+            )
+            remaining_tracks -= 1
+            if (
+                remaining_tracks <= 0
+                or len(tracks) >= MAX_TASTE_TRACKS_PER_PLAYLIST
+            ):
+                break
+        if tracks:
+            profile.append({"name": name, "tracks": tracks})
+    return profile
+
+
+def _playlist_affinity(
+    item: LibraryItem, taste_profile: list[_TastePlaylist]
+) -> int:
+    """Score metadata similarity to positive playlist examples without guessing traits."""
+
+    item_artists = {_text_key(value) for value in split_artists(item.artists)}
+    item_album = _text_key(item.album)
+    item_identity = _song_identity(item)
+    score = 0
+    for playlist in taste_profile:
+        name_tokens = {
+            token for token in _text_key(playlist["name"]).split()
+            if len(token) > 2 and token not in _QUERY_SCAFFOLD_TOKENS
+        }
+        metadata_tokens = set(
+            _text_key(f"{item.title} {item.artists} {item.album}").split()
+        )
+        score += len(name_tokens & metadata_tokens)
+        for raw_track in playlist["tracks"]:
+            taste_artists = {
+                _text_key(value)
+                for value in raw_track["artists"]
+            }
+            if item_artists & taste_artists:
+                score += 5
+            taste_album = _text_key(raw_track["album"])
+            if item_album and taste_album and item_album == taste_album:
+                score += 3
+            taste_identity = (
+                _text_key(raw_track["title"]),
+                tuple(sorted(taste_artists)),
+            )
+            if item_identity == taste_identity:
+                # Playlist members are examples; slightly prefer a related discovery.
+                score -= 1
+    return score
+
+
+def _rank_by_playlist_taste(
+    candidates: list[LibraryItem], taste_profile: list[_TastePlaylist]
+) -> list[LibraryItem]:
+    if not taste_profile:
+        return candidates
+    original_order = {id(item): index for index, item in enumerate(candidates)}
+    return sorted(
+        candidates,
+        key=lambda item: (-_playlist_affinity(item, taste_profile), original_order[id(item)]),
+    )
+
+
+def playlist_taste_search_query(
+    request_text: str,
+    items: Iterable[LibraryItem],
+    playlists: Mapping[str, Iterable[str]],
+) -> str:
+    """Add a concise playlist-derived taste profile to external discovery requests."""
+
+    profile = _playlist_taste_profile(items, playlists)
+    examples: list[str] = []
+    for playlist in profile[:4]:
+        tracks = playlist["tracks"]
+        labels = [
+            f"{track['title']} by {', '.join(track['artists'])}"
+            for track in tracks[:3]
+        ]
+        if labels:
+            examples.append(f"{playlist['name']}: " + "; ".join(labels))
+    request = request_text.strip()
+    if not examples:
+        return request
+    return (
+        f"{request}. Suggest similar songs based on my saved playlists: "
+        + " | ".join(examples)
+    )
 
 
 def _collect_catalog_evidence(
@@ -684,11 +838,15 @@ def _recommendation_reason(
     matched_filters: tuple[str, ...],
     plan: _QueryPlan,
     artists: tuple[str, ...],
+    *,
+    playlist_affinity: bool = False,
 ) -> str:
     parts: list[str] = []
     if artists:
         parts.append("artist")
     parts.extend(matched_filters)
+    if playlist_affinity:
+        parts.append("saved playlist taste")
     if plan.time_preference != "any" and item.year:
         parts.append(f"{plan.time_preference} release ({item.year})")
     if not parts:
