@@ -163,7 +163,7 @@ flowchart LR
 
     subgraph EditAlbum["Edit Album"]
         Folder["Selected album folder"] --> Inspect["Inspect all supported files"]
-        Inspect --> Shared["Album, year, shared track artist(s)"]
+        Inspect --> Shared["Album, year, optional shared track-artist override"]
         Shared --> Stage["Stage metadata changes and new names"]
         Stage --> Apply["Apply across every file"]
         Apply --> Rollback{"Any failure?"}
@@ -172,9 +172,11 @@ flowchart LR
     end
 ```
 
-Edit Album changes the normal artist tag for every track, not a separate compilation-only
-album-artist value. Titles and track numbers are preserved while filenames are rebuilt
-from the title and new shared album identity.
+Edit Album changes the normal artist tag only when a shared **Artist(s) override** is
+entered; it never changes the separate compilation-only album-artist value. When the
+override is blank, every file keeps its own track artist, making soundtrack and compilation
+folders safe to update. Titles and track numbers are preserved while filenames are rebuilt
+from the title, new shared album identity, and each resulting track artist.
 
 ## 7. Media Library scan, filter, and browse
 

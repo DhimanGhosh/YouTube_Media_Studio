@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from mutagen.id3 import ID3, TIT2
+from mutagen.id3 import ID3, TIT2, TPE1
 
 from youtube_audio_video_downloader.core.cancellation import CancellationToken
 from youtube_audio_video_downloader.gui.operations import execute_operation
@@ -90,6 +90,50 @@ def test_edit_updates_only_requested_album_level_fields_for_every_file() -> None
             == {"album": "New Album", "year": "2026", "artists": "Solo Artist, Guest"}
             for call in replace_mock.call_args_list
         )
+
+
+def test_blank_artist_override_preserves_each_tracks_existing_artist() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        first = root / "one.mp3"
+        second = root / "two.m4a"
+        first.touch()
+        second.touch()
+
+        def metadata(path: Path) -> EditableMediaMetadata:
+            is_first = Path(path).name == "one.mp3"
+            return EditableMediaMetadata(
+                title="First Song" if is_first else "Second Song",
+                artists="Artist One" if is_first else "Artist Two, Guest",
+            )
+
+        with (
+            patch(
+                "youtube_audio_video_downloader.services.album_editor.read_media_metadata",
+                side_effect=metadata,
+            ),
+            patch(
+                "youtube_audio_video_downloader.services.album_editor.replace_media_metadata"
+            ) as replace_mock,
+            patch(
+                "youtube_audio_video_downloader.services.album_editor._rename_album_file",
+                side_effect=lambda path, _title, _values: path,
+            ) as rename_mock,
+        ):
+            result = edit_album_folder(
+                root,
+                {"album": "Soundtrack", "year": "2026", "artists": ""},
+            )
+
+        assert result.updated == (first, second)
+        assert [call.args[1] for call in replace_mock.call_args_list] == [
+            {"album": "Soundtrack", "year": "2026"},
+            {"album": "Soundtrack", "year": "2026"},
+        ]
+        assert [call.args[2]["artists"] for call in rename_mock.call_args_list] == [
+            "Artist One",
+            "Artist Two, Guest",
+        ]
 
 
 def test_edit_applies_one_artwork_image_to_every_file() -> None:
@@ -175,6 +219,42 @@ def test_edit_embeds_artwork_and_shared_tags_in_real_album_files() -> None:
             assert loaded.artwork_present
 
 
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="needs FFmpeg")
+def test_blank_override_preserves_real_per_track_artist_tags_and_names() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        sources = [root / "one.mp3", root / "two.mp3"]
+        expected = {"Song 1": "Artist One", "Song 2": "Artist Two, Guest"}
+        for index, source in enumerate(sources, start=1):
+            subprocess.run(
+                [
+                    "ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+                    "-i", f"sine=frequency={400 + index}:duration=0.1",
+                    "-codec:a", "libmp3lame", str(source),
+                ],
+                check=True,
+            )
+            title = f"Song {index}"
+            tags = ID3(source)
+            tags.add(TIT2(encoding=3, text=title))
+            tags.add(TPE1(encoding=3, text=expected[title]))
+            tags.save(source)
+
+        result = edit_album_folder(
+            root,
+            {"album": "Soundtrack", "year": "2006", "artists": ""},
+        )
+
+        assert result.failed == ()
+        assert len(result.updated) == 2
+        for updated_path in result.updated:
+            loaded = read_media_metadata(updated_path)
+            assert loaded.artists == expected[loaded.title]
+            assert updated_path.name == (
+                f"{loaded.title} - Soundtrack (2006) - {loaded.artists}.mp3"
+            )
+
+
 def test_edit_renames_each_file_from_title_and_new_album_year_and_artists() -> None:
     with tempfile.TemporaryDirectory() as directory:
         source = Path(directory) / "old-name.mp3"
@@ -228,8 +308,6 @@ def test_edit_validates_album_and_year_before_writing() -> None:
                 edit_album_folder(
                     directory, {"album": "", "year": "2026", "artists": "Artist"}
                 )
-            with pytest.raises(ValueError, match="Artist"):
-                edit_album_folder(directory, {"album": "Album", "artists": ""})
             with pytest.raises(ValueError, match="four-digit"):
                 edit_album_folder(
                     directory, {"album": "Album", "year": "old", "artists": "Artist"}

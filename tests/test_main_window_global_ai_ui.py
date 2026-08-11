@@ -564,6 +564,44 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         self.assertFalse(params["remove_artwork"])
         self.assertFalse(params["ai_enabled"])
 
+    def test_album_editor_blank_artist_preserves_per_track_artists(self) -> None:
+        album = self.data_directory / "Soundtrack"
+        album.mkdir()
+        summary = AlbumFolderMetadata(
+            album,
+            (album / "one.mp3", album / "two.flac"),
+            "Soundtrack",
+            "2006",
+            "",
+            ("artists",),
+        )
+        self.window.edit_album_folder.set_text(str(album))
+        self.window.edit_album_name.setText("Soundtrack")
+        self.window.edit_album_year.setText("2006")
+        self.window.edit_album_artist.clear()
+
+        with (
+            patch(
+                "youtube_audio_video_downloader.gui.main_window.inspect_album_folder",
+                return_value=summary,
+            ),
+            patch.object(QMessageBox, "warning") as warning,
+            patch.object(
+                QMessageBox,
+                "question",
+                return_value=QMessageBox.StandardButton.Yes,
+            ) as question,
+            patch.object(self.window, "_start_operation") as start,
+        ):
+            self.window._start_edit_album()
+
+        warning.assert_not_called()
+        self.assertIn(
+            "preserve each file's existing artist(s)", question.call_args.args[2]
+        )
+        start.assert_called_once()
+        self.assertEqual(start.call_args.args[1]["metadata"]["artists"], "")
+
     def test_album_enricher_name_is_used_in_the_workspace(self) -> None:
         labels = {
             widget.text()

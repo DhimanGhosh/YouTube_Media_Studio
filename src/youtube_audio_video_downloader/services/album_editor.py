@@ -78,22 +78,20 @@ def edit_album_folder(
     remove_artwork: bool = False,
     cancellation_token: CancellationToken | None = None,
 ) -> AlbumEditResult:
-    """Apply shared album tags and optional artwork to every supported file."""
+    """Apply shared album tags while optionally preserving per-track artists."""
 
     root = _album_folder(folder)
     files = _media_files(root)
     if not files:
         raise ValueError("The selected folder contains no supported media files.")
-    values = {
+    shared_values = {
         "album": str(metadata.get("album") or "").strip(),
         "year": str(metadata.get("year") or "").strip(),
-        "artists": str(metadata.get("artists") or "").strip(),
     }
-    if not values["album"]:
+    artist_override = str(metadata.get("artists") or "").strip()
+    if not shared_values["album"]:
         raise ValueError("Album name is required.")
-    if not values["artists"]:
-        raise ValueError("Artist(s) is required.")
-    if values["year"] and not re.fullmatch(r"\d{4}", values["year"]):
+    if shared_values["year"] and not re.fullmatch(r"\d{4}", shared_values["year"]):
         raise ValueError("Release year must be a four-digit year or blank.")
     selected_artwork = str(artwork_path or "").strip()
     if selected_artwork and remove_artwork:
@@ -105,13 +103,20 @@ def edit_album_folder(
         token.raise_if_cancelled()
         try:
             current = read_media_metadata(path)
+            file_values = dict(shared_values)
+            if artist_override:
+                file_values["artists"] = artist_override
             replace_media_metadata(
                 path,
-                values,
+                file_values,
                 artwork_path=selected_artwork or None,
                 remove_artwork=remove_artwork,
             )
-            updated_path = _rename_album_file(path, current.title, values)
+            rename_values = {
+                **file_values,
+                "artists": artist_override or current.artists.strip(),
+            }
+            updated_path = _rename_album_file(path, current.title, rename_values)
         except (OSError, RuntimeError, ValueError) as exc:
             failed.append((path, str(exc)))
             print(f"[ALBUM-EDIT-FAILED] {path.name} | {exc}")
