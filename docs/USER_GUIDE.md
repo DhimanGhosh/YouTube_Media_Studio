@@ -274,6 +274,9 @@ report the complete log block.
    **×** removal action; **Refresh** in the page header rescans every configured folder.
 2. Search by title, performer, or album; **Clear** resets the search text. Selecting an
    artist filters both tracks and albums until **All tracks** or **All albums** is used.
+   Use **All media**, **Music**, or **Videos** beside search to keep audio and video
+   results, queues, and curator requests separate. Video mode hides the album browser so
+   the video list and cinema player receive the available space.
 3. Expand **Smart Library Curator** for a natural-language request such as `latest
    Arijit Singh Hindi dance songs` or `old Bengali songs`, enable AI, and select **Find in my
    library**. Agno plans the constraints, filters local artist/language/time metadata,
@@ -285,6 +288,10 @@ report the complete log block.
    tempo constraints. Use shuffle or repeat as required.
 5. Use file and album context actions to edit metadata, enrich an album, reorder tracks,
    or open the containing folder.
+   During video playback, double-click the picture or select **Full screen** to move the
+   complete player—including seek, transport, repeat/shuffle, and volume controls—to a
+   full screen view. Double-click again, select **Exit full screen**, or press **Esc** to
+   return to the library. The embedded video surface is also taller than the music player.
 6. Select **Playlists** in the page header to create, rename, delete, play, queue, or
    edit saved collections. Playlists store exact links to local file paths and remain
    available after restart. Use **Add to playlist** beside track and album actions, or

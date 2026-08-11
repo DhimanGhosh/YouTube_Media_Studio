@@ -22,7 +22,12 @@ from PyQt6.QtMultimedia import QAudioBuffer, QAudioFormat, QMediaPlayer  # noqa:
 from PyQt6.QtTest import QSignalSpy, QTest  # noqa: E402
 from PyQt6.QtWidgets import QApplication, QMenu  # noqa: E402
 
-from youtube_audio_video_downloader.gui.media_player import MediaLibraryPage  # noqa: E402
+from youtube_audio_video_downloader.gui.media_player import (  # noqa: E402
+    EMBEDDED_VIDEO_MAX_HEIGHT,
+    EMBEDDED_VIDEO_MIN_HEIGHT,
+    FULLSCREEN_VIDEO_MAX_HEIGHT,
+    MediaLibraryPage,
+)
 from youtube_audio_video_downloader.gui.widgets import (  # noqa: E402
     BlankClickSelectionFilter,
 )
@@ -112,6 +117,36 @@ class MediaPlayerPageTest(unittest.TestCase):
             for row in range(self.page.table.rowCount())
         }
         self.assertEqual(displayed_paths, {item.path for item in matches})
+
+    def test_media_type_selector_separates_music_and_video_browsing(self) -> None:
+        video = LibraryItem(
+            "C:/Movie.mp4", "Movie", "Test Movie", "Test Artist",
+            2024, 60_000, "video", 1,
+        )
+        self.page.items = [*self.page.items, video]
+
+        self.page.media_type_filter.setCurrentIndex(
+            self.page.media_type_filter.findData("video")
+        )
+        self.assertTrue(
+            wait_until(
+                lambda: self.page.filtered == [video]
+                and self.page.media_results_label.text() == "Videos"
+            )
+        )
+        self.assertTrue(self.page.library_splitter.widget(1).isHidden())
+
+        self.page.media_type_filter.setCurrentIndex(
+            self.page.media_type_filter.findData("audio")
+        )
+        self.assertTrue(
+            wait_until(
+                lambda: len(self.page.filtered) == 2
+                and all(item.media_type == "audio" for item in self.page.filtered)
+            )
+        )
+        self.assertEqual(self.page.media_results_label.text(), "Music")
+        self.assertFalse(self.page.library_splitter.widget(1).isHidden())
 
     def test_table_refresh_preserves_selected_song_by_path_after_sorting(self) -> None:
         short_row = next(
@@ -777,6 +812,65 @@ class MediaPlayerPageTest(unittest.TestCase):
         QTest.qWait(350)
         self.assertGreater(slider.value(), 450)
         self.assertLess(slider.value(), 550)
+
+    def test_video_player_enters_full_screen_with_controls_and_restores(self) -> None:
+        video_path = Path(self.temporary.name) / "movie.mp4"
+        video_path.write_bytes(b"video")
+        video = LibraryItem(
+            str(video_path), "Movie", "Test Movie", "Test Artist",
+            2024, 60_000, "video", 1,
+        )
+        self.page.items = [video]
+        self.page._replace_queue([video])
+        self.page.resize(1200, 800)
+        self.page.show()
+        self.app.processEvents()
+
+        self.assertTrue(self.page.video.isVisibleTo(self.page))
+        self.assertTrue(self.page.fullscreen_button.isEnabled())
+        self.assertGreaterEqual(
+            self.page.video.minimumHeight(), EMBEDDED_VIDEO_MIN_HEIGHT
+        )
+
+        QTest.mouseDClick(self.page.video, Qt.MouseButton.LeftButton)
+        self.app.processEvents()
+
+        self.assertTrue(self.page._player_fullscreen)
+        self.assertTrue(self.page.window().isFullScreen())
+        self.assertEqual(
+            self.page.video.maximumHeight(), FULLSCREEN_VIDEO_MAX_HEIGHT
+        )
+        self.assertEqual(
+            self.page.fullscreen_button.text(), "Exit full screen"
+        )
+        self.assertIs(self.page.position.window(), self.page.window())
+        self.assertIs(self.page.volume.window(), self.page.window())
+        self.assertTrue(self.page.library_splitter.isHidden())
+
+        QTest.keyClick(self.page.video, Qt.Key.Key_Escape)
+        self.app.processEvents()
+        self.assertFalse(self.page._player_fullscreen)
+
+        QTest.mouseClick(
+            self.page.fullscreen_button, Qt.MouseButton.LeftButton
+        )
+        self.app.processEvents()
+        self.assertTrue(self.page._player_fullscreen)
+
+        QTest.mouseClick(
+            self.page.fullscreen_button, Qt.MouseButton.LeftButton
+        )
+        self.app.processEvents()
+
+        self.assertFalse(self.page._player_fullscreen)
+        self.assertIs(self.page.player_card.parent(), self.page._player_host)
+        self.assertFalse(self.page.library_splitter.isHidden())
+        self.assertEqual(
+            self.page.video.maximumHeight(), EMBEDDED_VIDEO_MAX_HEIGHT
+        )
+        self.assertEqual(self.page.fullscreen_button.text(), "Full screen")
+        self.page.clear_playback_queue()
+        QTest.qWait(50)
 
     def test_cached_album_art_is_bounded_to_thumbnail_dimensions(self) -> None:
         source = QPixmap(1200, 1200)
