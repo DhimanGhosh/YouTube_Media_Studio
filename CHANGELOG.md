@@ -4,6 +4,11 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [2.6.0] - 2026-08-12
+
+### Added
+
+- feat: separate media modes and add fullscreen video (#18) (`08b6fb6`)
 ## [2.5.4] - 2026-08-11
 
 ### Fixed
