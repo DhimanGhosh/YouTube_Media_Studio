@@ -86,6 +86,11 @@ jobs:
           fi
           .wheel-smoke/bin/python -m pip install dist/*.whl
           .wheel-smoke/bin/python -c "import os; from importlib.metadata import version; from youtube_audio_video_downloader import MediaStudio, Operation, run_operation; assert version('youtube-media-studio') == os.environ['EXPECTED_VERSION']; assert Operation.AUDIO in Operation; assert 'audio' in MediaStudio().operations; assert callable(run_operation)"
+          package_info="$(.wheel-smoke/bin/python -m pip show youtube-media-studio)"
+          grep -Fqx 'Home-page: https://github.com/DhimanGhosh/YouTube_Media_Studio' <<<"$package_info"
+          grep -Fqx 'Author: Dhiman Ghosh' <<<"$package_info"
+          grep -Fqx 'Author-email: dgkiitcsedual@gmail.com' <<<"$package_info"
+          grep -Fqx 'License-Expression: MIT' <<<"$package_info"
       - run: uv run python tools/release.py build --target raspi
       - uses: actions/upload-artifact@v4
         with:

@@ -16,6 +16,8 @@ def test_python_library_guide_documents_install_upgrade_and_every_operation() ->
     assert "python -m pip install -U youtube-media-studio" in guide
     assert "OperationSummary" in guide
     assert "CancellationToken" in guide
+    assert "Author-email: dgkiitcsedual@gmail.com" in guide
+    assert "License-Expression: MIT" in guide
     for operation in SUPPORTED_OPERATIONS:
         assert f"`{operation}`" in guide
 

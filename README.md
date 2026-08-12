@@ -473,6 +473,11 @@ Download only material you are authorized to access. Follow source-service terms
 applicable law. Packaged releases contain third-party runtimes; their sources,
 copyrights, and licenses are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
+## License
+
+YouTube Media Studio is available under the [MIT License](LICENSE).
+Copyright (c) 2026 Dhiman Ghosh.
+
 ---
 
 <p align="center">
