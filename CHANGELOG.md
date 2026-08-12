@@ -4,6 +4,15 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [2.9.4] - 2026-08-12
+
+### Fixed
+
+- fix(package): add MIT and project metadata (`ba47599`)
+
+### Changed
+
+- Merge pull request #27 from DhimanGhosh/codex/package-metadata (`02fdef5`)
 ## [2.9.3] - 2026-08-12
 
 ### Fixed
