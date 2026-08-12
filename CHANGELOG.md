@@ -4,6 +4,12 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [2.9.2] - 2026-08-12
+
+### Changed
+
+- Merge pull request #25 from DhimanGhosh/codex/python-library-guide (`cf51aa0`)
+- docs: add complete Python library guide (`d7c06d7`)
 ## [2.9.1] - 2026-08-12
 
 ### Fixed
