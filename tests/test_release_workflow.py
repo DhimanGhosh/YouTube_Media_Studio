@@ -27,3 +27,6 @@ def test_every_successful_main_push_builds_and_publishes_a_versioned_release() -
     assert "dist/*-installer.run" in workflow
     assert "dist/*-installer.dmg" in workflow
     assert "SHA256SUMS.txt" in workflow
+    assert "python -m pip install .wheel-previous/*.whl" in workflow
+    assert "python -m pip install dist/*.whl" in workflow
+    assert "version('youtube-media-studio') == os.environ['EXPECTED_VERSION']" in workflow
