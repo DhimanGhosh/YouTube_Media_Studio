@@ -4,6 +4,15 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [2.9.1] - 2026-08-12
+
+### Fixed
+
+- fix: version wheel filenames and verify upgrades (`3e13586`)
+
+### Changed
+
+- Merge pull request #24 from DhimanGhosh/codex/versioned-wheel-upgrades (`f13b5c1`)
 ## [2.9.0] - 2026-08-12
 
 ### Added
