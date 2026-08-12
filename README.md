@@ -48,6 +48,33 @@ yt-dlp:  installed
 Bundled tools: .../runtime-tools
 ```
 
+The release also includes a standard Python wheel. Install it and call the same
+background workflows used by the desktop forms:
+
+```python
+from youtube_audio_video_downloader import MediaStudio
+
+studio = MediaStudio(defaults={"ai_enabled": False, "workers": 4})
+result = studio.audio(
+    input_data={
+        "Example": {
+            "url": "https://www.youtube.com/watch?v=...",
+            "album": "Example Album",
+            "artists": "Example Artist",
+        }
+    },
+    output_dir="downloads",
+)
+print(result.as_dict())
+```
+
+`MediaStudio.operations` lists every supported GUI workflow. Each name is also a
+method on the client (`audio`, `video`, `album`, `jukebox`, `edit_media`,
+`edit_album`, `album_metadata_enricher`, and the remaining desktop operations).
+Use `run_operation(name, params)` for dynamic dispatch and `studio.cancel()` for
+cooperative cancellation from another thread. The public API does not import PyQt6,
+so the base wheel is sufficient for library-only use.
+
 ## Download
 
 Get the newest tested build from **[GitHub Releases](https://github.com/DhimanGhosh/YouTube_Media_Studio/releases/latest)**.

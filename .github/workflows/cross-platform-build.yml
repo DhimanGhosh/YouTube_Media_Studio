@@ -73,6 +73,12 @@ jobs:
           python-version: "3.11"
       - run: uv version "${{ needs.prepare-version.outputs.version }}"
       - run: uv run python tools/release.py build --target wheel
+      - name: Verify released wheel as an installed Python library
+        shell: bash
+        run: |
+          uv venv --python 3.11 .wheel-smoke
+          uv pip install --python .wheel-smoke/bin/python dist/*.whl
+          .wheel-smoke/bin/python -c "from youtube_audio_video_downloader import MediaStudio, Operation, run_operation; assert Operation.AUDIO in Operation; assert 'audio' in MediaStudio().operations; assert callable(run_operation)"
       - run: uv run python tools/release.py build --target raspi
       - uses: actions/upload-artifact@v4
         with:

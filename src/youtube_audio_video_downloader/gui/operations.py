@@ -52,6 +52,26 @@ from youtube_audio_video_downloader.utils.duplicate_links import find_duplicate_
 from youtube_audio_video_downloader.utils.track_timestamp_parser import parse_tracks_to_json
 
 
+SUPPORTED_OPERATIONS = (
+    "audio",
+    "video",
+    "album",
+    "jukebox",
+    "track_reorder",
+    "audio_trimmer",
+    "redownload",
+    "edit_media",
+    "edit_album",
+    "album_consolidator",
+    "album_metadata_enricher",
+    "duplicate_links",
+    "format_artists",
+    "parse_tracks",
+    "search_song",
+    "enrich_song",
+)
+
+
 @dataclass(frozen=True, slots=True)
 class OperationSummary:
     """Serializable summary returned to the UI after one operation."""
