@@ -15,7 +15,7 @@ import numpy as np
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtCore import (  # noqa: E402
-    QBuffer, QByteArray, QEvent, QIODevice, QPoint, QPointF, QRectF, QSettings,
+    QBuffer, QByteArray, QEvent, QIODevice, QPoint, QPointF, QRect, QRectF, QSettings,
     QSize, Qt, QTimer,
 )
 from PyQt6.QtGui import QColor, QIcon, QPixmap, QWheelEvent  # noqa: E402
@@ -427,6 +427,47 @@ class MediaPlayerPageTest(unittest.TestCase):
                 self.assertIsNone(foreground)
         self.page.queue_toggle_button.setChecked(True)
         self.assertFalse(self.page.queue_drawer.isHidden())
+
+    def test_queue_rebuild_cancels_drag_overlay_before_delete_and_enqueue(self) -> None:
+        third = media("Third", 2010, 180_000)
+        replacement = media("Replacement", 2011, 180_000)
+        self.page.queue = [*self.page.items, third]
+        self.page._queue_source = list(self.page.queue)
+        self.page.queue_index = 0
+        self.page._sync_queue_drawer()
+        self.page.queue_list.setCurrentRow(2)
+
+        moving = self.page.queue_list.currentItem()
+        snapshot = QPixmap(120, 40)
+        snapshot.fill(QColor("#334d8f"))
+        self.page.queue_list._animate_drop(
+            moving,
+            snapshot,
+            QRect(0, 0, 120, 40),
+            QRect(0, 40, 120, 40),
+        )
+        overlay = self.page.queue_list._drop_overlay
+        self.assertIsNotNone(overlay)
+        self.assertFalse(overlay.isHidden())
+
+        self.page._remove_selected_queue_entry()
+        self.page._append_to_queue([replacement])
+        self.app.processEvents()
+
+        self.assertTrue(overlay.isHidden())
+        self.assertIsNone(self.page.queue_list._drop_overlay)
+        self.assertEqual(
+            [item.title for item in self.page.queue],
+            ["Short", "Long", "Replacement"],
+        )
+        self.assertEqual(self.page.queue_list.count(), 3)
+        self.assertEqual(
+            [
+                self.page.queue_list.item(row).data(Qt.ItemDataRole.UserRole)
+                for row in range(self.page.queue_list.count())
+            ],
+            [item.path for item in self.page.queue],
+        )
 
     def test_album_context_actions_emit_the_exact_physical_folder(self) -> None:
         album_folder = Path(self.temporary.name) / "Test Album (2024)"

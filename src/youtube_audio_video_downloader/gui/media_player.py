@@ -612,6 +612,37 @@ class AnimatedQueueList(QListWidget):
         self._drop_item: QListWidgetItem | None = None
         self._drop_foreground = None
 
+    def clear(self) -> None:
+        """Discard transient drag visuals before their source items are deleted."""
+
+        self.cancel_drop_animation()
+        super().clear()
+
+    def cancel_drop_animation(self) -> None:
+        """Remove a drag snapshot even when a queue rebuild interrupts its animation."""
+
+        animation = self._drop_animation
+        overlay = self._drop_overlay
+        moving = self._drop_item
+        foreground = self._drop_foreground
+        self._drop_animation = None
+        self._drop_overlay = None
+        self._drop_item = None
+        self._drop_foreground = None
+
+        if animation is not None:
+            animation.stop()
+            animation.deleteLater()
+        if overlay is not None:
+            overlay.hide()
+            overlay.deleteLater()
+        if moving is not None and foreground is not None:
+            try:
+                moving.setForeground(foreground)
+            except RuntimeError:
+                # A model reset may already have deleted the wrapped Qt item.
+                pass
+
     def dropEvent(self, event) -> None:  # noqa: N802
         moving = self.currentItem()
         old_row = self.row(moving) if moving is not None else -1
@@ -633,12 +664,7 @@ class AnimatedQueueList(QListWidget):
         start: QRect,
         finish: QRect,
     ) -> None:
-        if self._drop_animation is not None:
-            self._drop_animation.stop()
-        if self._drop_item is not None and self._drop_foreground is not None:
-            self._drop_item.setForeground(self._drop_foreground)
-        if self._drop_overlay is not None:
-            self._drop_overlay.deleteLater()
+        self.cancel_drop_animation()
         foreground = moving.foreground()
         moving.setForeground(QColor(0, 0, 0, 0))
         overlay = QLabel(self.viewport())
@@ -659,13 +685,8 @@ class AnimatedQueueList(QListWidget):
         self._drop_animation = animation
 
         def finish_animation() -> None:
-            moving.setForeground(foreground)
-            overlay.deleteLater()
-            if self._drop_item is moving:
-                self._drop_item = None
-                self._drop_foreground = None
-                self._drop_overlay = None
-                self._drop_animation = None
+            if self._drop_animation is animation:
+                self.cancel_drop_animation()
 
         animation.finished.connect(finish_animation)
         animation.start()
