@@ -4,6 +4,15 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [2.9.0] - 2026-08-12
+
+### Added
+
+- feat: expose GUI workflows as a Python API (`4b058c5`)
+
+### Changed
+
+- Merge pull request #23 from DhimanGhosh/codex/python-library-api (`0d06a49`)
 ## [2.8.0] - 2026-08-12
 
 ### Added
