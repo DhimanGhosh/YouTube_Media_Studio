@@ -3,6 +3,12 @@ name = "youtube-media-studio"
 version = "2.9.3"
 description = "AI-powered desktop and command-line toolkit for downloading, tagging, splitting, playing, and organizing media."
 readme = "README.md"
+authors = [
+    { name = "Dhiman Ghosh" },
+    { email = "dgkiitcsedual@gmail.com" },
+]
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
     "mutagen>=1.47.0",
@@ -15,6 +21,11 @@ dependencies = [
     "ddgs>=9.11,<10",
     "anthropic>=0.75,<1",
 ]
+
+[project.urls]
+Homepage = "https://github.com/DhimanGhosh/YouTube_Media_Studio"
+Repository = "https://github.com/DhimanGhosh/YouTube_Media_Studio"
+Issues = "https://github.com/DhimanGhosh/YouTube_Media_Studio/issues"
 
 [project.optional-dependencies]
 gui = ["PyQt6>=6.8.0"]

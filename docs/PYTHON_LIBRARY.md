@@ -100,6 +100,20 @@ python -m pip show youtube-media-studio
 python -m pip check
 ```
 
+The package metadata identifies the project as follows:
+
+```text
+Home-page: https://github.com/DhimanGhosh/YouTube_Media_Studio
+Author: Dhiman Ghosh
+Author-email: dgkiitcsedual@gmail.com
+License-Expression: MIT
+```
+
+Current pip releases display the standards-based `License-Expression` field.
+Older pip releases may label the same value as `License`. The complete MIT
+license is installed with the wheel and is also available in the repository's
+[`LICENSE`](../LICENSE) file.
+
 Uninstall only the Python package and its installed files:
 
 ```console
