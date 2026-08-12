@@ -262,3 +262,26 @@ def test_raspi_bundle_installs_an_uninstall_command(monkeypatch, tmp_path) -> No
         assert install_text and uninstall_text
         assert "youtube-media-studio-uninstall" in install_text.read().decode()
         assert "youtube-media-tools" in uninstall_text.read().decode()
+
+
+def test_python_wheel_uses_installable_v_prefixed_release_name(
+    monkeypatch, tmp_path
+) -> None:
+    root = tmp_path / "project"
+    dist = root / "dist"
+    canonical = dist / "youtube_media_studio-2.10.0-py3-none-any.whl"
+
+    def fake_run(_command, *, cwd=release_tool.ROOT):
+        dist.mkdir(parents=True, exist_ok=True)
+        canonical.touch()
+
+    monkeypatch.setattr(release_tool, "ROOT", root)
+    monkeypatch.setattr(release_tool, "DIST", dist)
+    monkeypatch.setattr(release_tool, "project_version", lambda: "2.10.0")
+    monkeypatch.setattr(release_tool, "run", fake_run)
+
+    wheel = release_tool.build_python()
+
+    assert wheel.name == "youtube_media_studio-v2.10.0-py3-none-any.whl"
+    assert wheel.is_file()
+    assert not canonical.exists()

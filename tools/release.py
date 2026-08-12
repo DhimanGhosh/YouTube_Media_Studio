@@ -218,9 +218,32 @@ def clean_build_outputs() -> None:
     DIST.mkdir(parents=True, exist_ok=True)
 
 
-def build_python() -> None:
+def build_python() -> Path:
+    """Build Python artifacts and give the wheel a user-facing version label.
+
+    Wheel filenames require compatibility tags, so the published form is
+    ``youtube_media_studio-v<version>-py3-none-any.whl``.  A leading ``v`` is
+    valid and normalizes to the same package version in Python packaging tools.
+    """
+
     DIST.mkdir(parents=True, exist_ok=True)
     run(["uv", "run", "--group", "package", "python", "-m", "build", "--outdir", str(DIST)])
+    version = project_version()
+    distribution = PACKAGE_DISTRIBUTION.replace("-", "_")
+    candidates = sorted(
+        DIST.glob(f"{distribution}-{version}-*.whl"),
+        key=lambda item: item.stat().st_mtime,
+    )
+    if not candidates:
+        raise FileNotFoundError(f"Python build did not create a wheel for version {version}")
+    canonical = candidates[-1]
+    published = canonical.with_name(
+        canonical.name.replace(f"-{version}-", f"-v{version}-", 1)
+    )
+    if published.exists():
+        published.unlink()
+    canonical.replace(published)
+    return published
 
 
 def newest_wheel() -> Path:

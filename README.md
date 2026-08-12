@@ -51,6 +51,13 @@ Bundled tools: .../runtime-tools
 The release also includes a standard Python wheel. Install it and call the same
 background workflows used by the desktop forms:
 
+```console
+python -m pip install youtube_media_studio-v2.10.0-py3-none-any.whl
+```
+
+Installing a newer wheel with the same command automatically removes the older
+`youtube-media-studio` package version and installs the new version in its place.
+
 ```python
 from youtube_audio_video_downloader import MediaStudio
 
