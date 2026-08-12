@@ -22,3 +22,9 @@ def test_python_library_guide_documents_install_upgrade_and_every_operation() ->
 
 def test_readme_links_to_python_library_guide() -> None:
     assert "docs/PYTHON_LIBRARY.md" in README.read_text(encoding="utf-8")
+
+
+def test_python_library_guide_is_included_in_source_distribution() -> None:
+    manifest = (ROOT / "MANIFEST.in").read_text(encoding="utf-8")
+
+    assert "include docs/PYTHON_LIBRARY.md" in manifest.splitlines()
