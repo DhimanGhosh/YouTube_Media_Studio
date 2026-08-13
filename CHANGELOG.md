@@ -4,6 +4,12 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [2.9.5] - 2026-08-13
+
+### Changed
+
+- Merge pull request #28 from DhimanGhosh/codex/fix-frozen-queue-overlay (`64f711a`)
+- Fix frozen queue row after drag deletion (`0ea1c22`)
 ## [2.9.4] - 2026-08-12
 
 ### Fixed
