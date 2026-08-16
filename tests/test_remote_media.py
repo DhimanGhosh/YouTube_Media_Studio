@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import socket
 import tempfile
 import threading
 import urllib.error
@@ -135,3 +136,23 @@ def test_pin_authentication_rate_limits_repeated_failures() -> None:
     assert server.authenticate_pin("192.168.1.20", wrong_pin) == (False, True)
     assert server.authenticate_pin("192.168.1.20", server.pin) == (False, True)
     assert server.authenticate_pin("192.168.1.21", server.pin) == (True, False)
+
+
+def test_stopping_remote_access_closes_active_client_connections() -> None:
+    server = RemoteMediaServer(
+        lambda _action: None,
+        host="127.0.0.1",
+        port=0,
+        html="",
+    )
+    server_side, client_side = socket.socketpair()
+    server.start()
+    try:
+        server._register_connection(server_side)
+        server.stop()
+        client_side.settimeout(1)
+        assert client_side.recv(1) == b""
+    finally:
+        server.stop()
+        server_side.close()
+        client_side.close()

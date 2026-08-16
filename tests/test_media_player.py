@@ -719,6 +719,78 @@ class MediaPlayerPageTest(unittest.TestCase):
         )
         self.page._remote_server = None
 
+    def test_phone_access_switch_stops_restarts_and_persists(self) -> None:
+        running = Mock()
+        running.urls = ["http://192.168.1.10:8765"]
+        running.pin = "123456"
+        running.port = 8765
+        self.page._remote_server = running
+        self.page._set_phone_access_switch(True, "On")
+        self.page.phone_access_details_button.setVisible(True)
+        self.page.phone_access_switch.setEnabled(True)
+
+        self.page.phone_access_switch.setChecked(False)
+
+        running.stop.assert_called_once_with()
+        self.assertIsNone(self.page._remote_server)
+        self.assertFalse(
+            self.page.settings.value(
+                "library/remote_access_enabled",
+                True,
+                type=bool,
+            )
+        )
+        self.assertEqual(self.page.phone_access_switch.text(), "Phone access · Off")
+        self.assertTrue(self.page.phone_access_details_button.isHidden())
+
+        restarted = Mock()
+        restarted.urls = ["http://192.168.1.10:8765"]
+        restarted.pin = "654321"
+        restarted.port = 8765
+        with (
+            patch.dict(os.environ, {"YMS_DISABLE_REMOTE_ACCESS": ""}),
+            patch(
+                "youtube_audio_video_downloader.gui.media_player.RemoteMediaServer",
+                return_value=restarted,
+            ) as server_type,
+        ):
+            self.page.phone_access_switch.setChecked(True)
+
+        server_type.assert_called_once()
+        restarted.start.assert_called_once_with()
+        restarted.update_state.assert_called_once()
+        self.assertIs(self.page._remote_server, restarted)
+        self.assertTrue(
+            self.page.settings.value(
+                "library/remote_access_enabled",
+                False,
+                type=bool,
+            )
+        )
+        self.assertEqual(self.page.phone_access_switch.text(), "Phone access · On")
+        self.assertFalse(self.page.phone_access_details_button.isHidden())
+
+    def test_saved_phone_access_off_prevents_server_startup(self) -> None:
+        settings = QSettings(
+            str(Path(self.temporary.name) / "remote-off.ini"),
+            QSettings.Format.IniFormat,
+        )
+        settings.setValue("library/remote_access_enabled", False)
+        with (
+            patch.dict(os.environ, {"YMS_DISABLE_REMOTE_ACCESS": ""}),
+            patch(
+                "youtube_audio_video_downloader.gui.media_player.RemoteMediaServer"
+            ) as server_type,
+        ):
+            page = MediaLibraryPage(settings)
+        try:
+            server_type.assert_not_called()
+            self.assertFalse(page.phone_access_switch.isChecked())
+            self.assertEqual(page.phone_access_switch.text(), "Phone access · Off")
+        finally:
+            page.shutdown()
+            page.deleteLater()
+
     def test_phone_curator_request_uses_desktop_ai_configuration(self) -> None:
         self.page.request_ai_recommendations = Mock()
 

@@ -351,9 +351,12 @@ Phone access starts automatically with the desktop Media Library and remains ava
 only while YouTube Media Studio is running:
 
 1. Connect the PC and phone to the same trusted Wi-Fi network. Select **Phone access · On**
-   in the Media Library header. Open one of the displayed addresses in any current iOS or
-   Android browser and enter the six-digit PIN. The PIN is regenerated each time the app
-   starts. If Windows asks about firewall access, allow the app on private networks only.
+   in the Media Library header, then select **Details**. Open one of the displayed addresses
+   in any current iOS or Android browser and enter the six-digit PIN. Turn the
+   **Phone access** switch off to stop the LAN server and disconnect phone clients
+   immediately; the on/off choice persists across app restarts. Turning it on again starts
+   a new session with a fresh PIN. If Windows asks about firewall access, allow the app on
+   private networks only.
 2. Use **Songs**, **Albums**, and their broad text/year/type filters to browse the scanned
    library. **Phone** streams the selected local file to the phone; **PC** starts it on the
    desktop, and **Queue** appends it to the desktop queue.

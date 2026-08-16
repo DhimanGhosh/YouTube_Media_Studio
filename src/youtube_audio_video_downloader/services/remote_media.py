@@ -79,6 +79,7 @@ class RemoteMediaServer:
         }
         self._media_paths: dict[str, str] = {}
         self._login_failures: dict[str, list[float]] = {}
+        self._connections: set[socket.socket] = set()
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
 
@@ -118,6 +119,7 @@ class RemoteMediaServer:
         self._thread = None
         if server is not None:
             server.shutdown()
+            self._close_connections()
             server.server_close()
         if thread is not None and thread is not threading.current_thread():
             thread.join(timeout=2)
@@ -156,6 +158,28 @@ class RemoteMediaServer:
     def dispatch(self, action: dict[str, object]) -> None:
         self.action_callback(action)
 
+    def _register_connection(self, connection: socket.socket) -> None:
+        with self._lock:
+            self._connections.add(connection)
+
+    def _unregister_connection(self, connection: socket.socket) -> None:
+        with self._lock:
+            self._connections.discard(connection)
+
+    def _close_connections(self) -> None:
+        with self._lock:
+            connections = list(self._connections)
+            self._connections.clear()
+        for connection in connections:
+            try:
+                connection.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            try:
+                connection.close()
+            except OSError:
+                pass
+
     def authenticate_pin(self, address: str, candidate: str) -> tuple[bool, bool]:
         """Validate a PIN and rate-limit repeated failures from one client."""
 
@@ -179,6 +203,16 @@ class RemoteMediaServer:
     def _handler_type(self) -> type[BaseHTTPRequestHandler]:
         class Handler(BaseHTTPRequestHandler):
             server_version = "YouTubeMediaStudioLAN/1"
+
+            def setup(self) -> None:
+                super().setup()
+                self.owner._register_connection(self.connection)
+
+            def finish(self) -> None:
+                try:
+                    super().finish()
+                finally:
+                    self.owner._unregister_connection(self.connection)
 
             @property
             def owner(self) -> RemoteMediaServer:
