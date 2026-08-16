@@ -12,6 +12,7 @@ from mutagen.mp3 import MP3
 
 from youtube_audio_video_downloader.domain.models import ParsedSongMetadata, Song
 from youtube_audio_video_downloader.core.file_access import retry_file_operation
+from youtube_audio_video_downloader.utils.artist_name_formatter import format_artist_names
 
 
 class MetadataTagger:
@@ -34,7 +35,8 @@ class MetadataTagger:
                 pass
 
         tags = audio.tags or ID3()
-        artist_text = ", ".join(metadata.artists)
+        artist_text = format_artist_names(", ".join(metadata.artists))
+        artists = [part.strip() for part in artist_text.split(",") if part.strip()]
 
         tags.delall("TIT2")
         tags.delall("TALB")
@@ -46,7 +48,7 @@ class MetadataTagger:
 
         tags.add(TIT2(encoding=3, text=metadata.title))
         tags.add(TALB(encoding=3, text=metadata.album))
-        tags.add(TPE1(encoding=3, text=metadata.artists))
+        tags.add(TPE1(encoding=3, text=artists))
         tags.add(TPE2(encoding=3, text=artist_text))
 
         if song.release_year:

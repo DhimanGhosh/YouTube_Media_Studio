@@ -55,6 +55,8 @@ from PyQt6.QtWidgets import (
     QCompleter,
     QCheckBox,
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
     QFrame,
     QGraphicsScene,
@@ -70,6 +72,7 @@ from PyQt6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
+    QProgressDialog,
     QScrollArea,
     QSizePolicy,
     QSlider,
@@ -98,6 +101,11 @@ from youtube_audio_video_downloader.services.media_playlists import (
     add_playlist_paths,
     decode_playlists,
     encode_playlists,
+)
+from youtube_audio_video_downloader.services.artist_canonicalizer import (
+    ArtistRenameSuggestion,
+    repair_artist_metadata,
+    suggest_artist_renames,
 )
 from youtube_audio_video_downloader.services.remote_media import (
     RemoteMediaServer,
@@ -588,6 +596,62 @@ class WindowsMediaKeyFilter(QAbstractNativeEventFilter):
             return False, 0
 
 
+class ArtistRepairDialog(QDialog):
+    """Editable review of artist-name repairs before media tags are changed."""
+
+    def __init__(
+        self,
+        suggestions: list[ArtistRenameSuggestion],
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Review artist name fixes")
+        self.resize(720, 460)
+        layout = QVBoxLayout(self)
+        explanation = QLabel(
+            "Review every detected artist variant. Edit any proposed replacement, "
+            "then choose Apply to update all affected tracks."
+        )
+        explanation.setWordWrap(True)
+        layout.addWidget(explanation)
+        self.table = QTableWidget(len(suggestions), 3)
+        self.table.setHorizontalHeaderLabels(
+            ["Detected in library", "Change to", "Affected tracks"]
+        )
+        self.table.setSelectionBehavior(
+            QAbstractItemView.SelectionBehavior.SelectRows
+        )
+        for row, suggestion in enumerate(suggestions):
+            detected = QTableWidgetItem(suggestion.detected)
+            detected.setFlags(detected.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            replacement = QTableWidgetItem(suggestion.replacement)
+            count = QTableWidgetItem(str(suggestion.tracks))
+            count.setFlags(count.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.table.setItem(row, 0, detected)
+            self.table.setItem(row, 1, replacement)
+            self.table.setItem(row, 2, count)
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        layout.addWidget(self.table, 1)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok
+            | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Apply fixes")
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def replacements(self) -> dict[str, str]:
+        return {
+            self.table.item(row, 0).text(): self.table.item(row, 1).text().strip()
+            for row in range(self.table.rowCount())
+            if self.table.item(row, 1).text().strip()
+        }
+
+
 class SortableTableItem(QTableWidgetItem):
     """Display friendly text while sorting on a separate typed value."""
 
@@ -943,6 +1007,13 @@ class MediaLibraryPage(QWidget):
         self.library_refresh_button.setToolTip("Rescan every configured library folder")
         self.library_refresh_button.clicked.connect(self.refresh_library)
         header.addWidget(self.library_refresh_button)
+        self.artist_repair_button = QPushButton("Fix artist names")
+        self.artist_repair_button.setObjectName("secondaryButton")
+        self.artist_repair_button.setToolTip(
+            "Review and repair duplicate or abbreviated artist identities"
+        )
+        self.artist_repair_button.clicked.connect(self.review_artist_name_repairs)
+        header.addWidget(self.artist_repair_button)
         self.playlist_toggle_button = QPushButton("Playlists (0) ‹")
         self.playlist_toggle_button.setObjectName("secondaryButton")
         self.playlist_toggle_button.setCheckable(True)
@@ -962,8 +1033,7 @@ class MediaLibraryPage(QWidget):
         )
         subtitle.setObjectName("mutedLabel")
         main_layout.addWidget(subtitle)
-        main_layout.addWidget(self._build_folder_card())
-        main_layout.addLayout(self._build_search_row())
+        main_layout.addWidget(self._build_library_controls())
         main_layout.addWidget(self._build_recommendation_card())
         self.library_splitter = QSplitter(Qt.Orientation.Vertical)
         self.library_splitter.addWidget(self._build_browser())
@@ -973,13 +1043,20 @@ class MediaLibraryPage(QWidget):
         self.library_splitter.setSizes([320, 430])
         main_layout.addWidget(self.library_splitter, 1)
         main_layout.addWidget(self._build_player())
+        self.drawer_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.drawer_splitter.setChildrenCollapsible(False)
         self.playlist_drawer = self._build_playlist_drawer()
         self.playlist_drawer.setVisible(False)
-        layout.addWidget(self.playlist_drawer)
-        layout.addWidget(main, 1)
+        self.drawer_splitter.addWidget(self.playlist_drawer)
+        self.drawer_splitter.addWidget(main)
         self.queue_drawer = self._build_queue_drawer()
         self.queue_drawer.setVisible(False)
-        layout.addWidget(self.queue_drawer)
+        self.drawer_splitter.addWidget(self.queue_drawer)
+        self.drawer_splitter.setStretchFactor(0, 0)
+        self.drawer_splitter.setStretchFactor(1, 1)
+        self.drawer_splitter.setStretchFactor(2, 0)
+        self.drawer_splitter.splitterMoved.connect(self._save_drawer_widths)
+        layout.addWidget(self.drawer_splitter, 1)
         self._sync_queue_drawer()
         self._render_playlists()
         self._sync_media_type_layout()
@@ -1277,7 +1354,24 @@ class MediaLibraryPage(QWidget):
         row.addWidget(add_button)
         return card
 
+    def _build_library_controls(self) -> QWidget:
+        """Place folder management and search filters in one compact 30/70 row."""
+
+        controls = QWidget()
+        row = QHBoxLayout(controls)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(8)
+        self.folder_controls = self._build_folder_card()
+        self.search_controls = QWidget()
+        self.search_controls.setLayout(self._build_search_row())
+        row.addWidget(self.folder_controls, 3)
+        row.addWidget(self.search_controls, 7)
+        row.setStretch(0, 3)
+        row.setStretch(1, 7)
+        return controls
+
     def _render_folder_chips(self) -> None:
+        self.folder_chip_host.setMinimumWidth(0)
         while self.folder_chip_layout.count():
             item = self.folder_chip_layout.takeAt(0)
             if item.widget() is not None:
@@ -1304,9 +1398,13 @@ class MediaLibraryPage(QWidget):
             chip_row.addWidget(remove)
             self.folder_chip_layout.addWidget(chip)
         self.folder_chip_layout.addStretch(1)
+        self.folder_chip_host.setMinimumWidth(
+            self.folder_chip_layout.sizeHint().width()
+        )
 
     def _build_search_row(self) -> QHBoxLayout:
         row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
         self.search = QLineEdit()
         self.search.setSizePolicy(
             QSizePolicy.Policy.Expanding,
@@ -1363,8 +1461,11 @@ class MediaLibraryPage(QWidget):
             row.addWidget(spin)
         self.year_from.valueChanged.connect(self._year_from_changed)
         self.year_to.valueChanged.connect(self._year_to_changed)
-        self.online_search_button = QPushButton("Search online if missing")
+        self.online_search_button = QPushButton("Search online")
         self.online_search_button.setObjectName("secondaryButton")
+        self.online_search_button.setToolTip(
+            "Search online when no matching local media is available"
+        )
         self.online_search_button.setSizePolicy(
             QSizePolicy.Policy.Fixed,
             QSizePolicy.Policy.Fixed,
@@ -1775,10 +1876,14 @@ class MediaLibraryPage(QWidget):
 
     def _build_browser(self) -> QWidget:
         widget = QWidget()
-        grid = QGridLayout(widget)
-        grid.setContentsMargins(0, 0, 0, 0)
-        grid.setHorizontalSpacing(10)
-        grid.addWidget(QLabel("Artists • select one or several"), 0, 0)
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.artist_track_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.artist_track_splitter.setChildrenCollapsible(False)
+        artist_pane = QWidget()
+        artist_layout = QVBoxLayout(artist_pane)
+        artist_layout.setContentsMargins(0, 0, 0, 0)
+        artist_layout.addWidget(QLabel("Artists • select one or several"))
         self.facets = QListWidget()
         self.facets.setProperty("persistentFilterSelection", True)
         self.facets.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
@@ -1787,7 +1892,11 @@ class MediaLibraryPage(QWidget):
         self.facets.customContextMenuRequested.connect(
             self._show_artist_context_menu
         )
-        grid.addWidget(self.facets, 1, 0)
+        artist_layout.addWidget(self.facets, 1)
+
+        track_pane = QWidget()
+        track_layout = QVBoxLayout(track_pane)
+        track_layout.setContentsMargins(0, 0, 0, 0)
 
         actions = QHBoxLayout()
         actions.setSpacing(8)
@@ -1834,7 +1943,7 @@ class MediaLibraryPage(QWidget):
             button.setObjectName("primaryButton" if primary else "secondaryButton")
             button.clicked.connect(handler)
             actions.addWidget(button)
-        grid.addLayout(actions, 0, 1)
+        track_layout.addLayout(actions)
 
         self.table = self._new_media_table(
             ["Title", "Artwork", "Artist", "Album", "Year", "Type", "Length"]
@@ -1863,9 +1972,23 @@ class MediaLibraryPage(QWidget):
         self.media_view_stack = QStackedWidget()
         self.media_view_stack.addWidget(self.table)
         self.media_view_stack.addWidget(self.video_grid)
-        grid.addWidget(self.media_view_stack, 1, 1)
-        grid.setColumnStretch(0, 1)
-        grid.setColumnStretch(1, 4)
+        track_layout.addWidget(self.media_view_stack, 1)
+        self.artist_track_splitter.addWidget(artist_pane)
+        self.artist_track_splitter.addWidget(track_pane)
+        self.artist_track_splitter.setStretchFactor(0, 1)
+        self.artist_track_splitter.setStretchFactor(1, 4)
+        self.artist_track_splitter.setSizes(
+            [
+                max(180, int(self.settings.value("library/artist_pane_width", 240))),
+                960,
+            ]
+        )
+        self.artist_track_splitter.splitterMoved.connect(
+            lambda _position, _index: self.settings.setValue(
+                "library/artist_pane_width", self.artist_track_splitter.sizes()[0]
+            )
+        )
+        layout.addWidget(self.artist_track_splitter, 1)
         return widget
 
     def _build_album_section(self) -> QWidget:
@@ -1986,8 +2109,7 @@ class MediaLibraryPage(QWidget):
     def _build_playlist_drawer(self) -> QWidget:
         drawer = GlassCard()
         drawer.setObjectName("playlistDrawer")
-        drawer.setMinimumWidth(320)
-        drawer.setMaximumWidth(390)
+        drawer.setMinimumWidth(180)
         layout = QVBoxLayout(drawer)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(8)
@@ -2076,8 +2198,33 @@ class MediaLibraryPage(QWidget):
         layout.addLayout(track_actions)
         return drawer
 
+    def _save_drawer_widths(self, _position: int, _index: int) -> None:
+        sizes = self.drawer_splitter.sizes()
+        if self.playlist_drawer.isVisible() and sizes[0] > 0:
+            self.settings.setValue("library/playlist_drawer_width", sizes[0])
+        if self.queue_drawer.isVisible() and sizes[2] > 0:
+            self.settings.setValue("library/queue_drawer_width", sizes[2])
+
+    def _restore_drawer_widths(self) -> None:
+        sizes = self.drawer_splitter.sizes()
+        total = max(sum(sizes), self.drawer_splitter.width())
+        playlist = (
+            max(180, int(self.settings.value("library/playlist_drawer_width", 340)))
+            if self.playlist_drawer.isVisible()
+            else 0
+        )
+        queue = (
+            max(180, int(self.settings.value("library/queue_drawer_width", 330)))
+            if self.queue_drawer.isVisible()
+            else 0
+        )
+        center = max(320, total - playlist - queue)
+        self.drawer_splitter.setSizes([playlist, center, queue])
+
     def _toggle_playlist_drawer(self, visible: bool) -> None:
         self.playlist_drawer.setVisible(bool(visible))
+        if visible:
+            QTimer.singleShot(0, self._restore_drawer_widths)
         arrow = "›" if visible else "‹"
         self.playlist_toggle_button.setText(
             f"Playlists ({len(self.playlists)}) {arrow}"
@@ -2454,8 +2601,7 @@ class MediaLibraryPage(QWidget):
     def _build_queue_drawer(self) -> QWidget:
         drawer = GlassCard()
         drawer.setObjectName("playbackQueueDrawer")
-        drawer.setMinimumWidth(300)
-        drawer.setMaximumWidth(370)
+        drawer.setMinimumWidth(180)
         layout = QVBoxLayout(drawer)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(8)
@@ -3011,6 +3157,55 @@ class MediaLibraryPage(QWidget):
 
     def _save_folders(self) -> None:
         self.settings.setValue("library/folders", self.folders())
+
+    def review_artist_name_repairs(self) -> None:
+        """Review editable artist repairs, apply them, then rescan the library."""
+
+        suggestions = suggest_artist_renames(item.artists for item in self.items)
+        if not suggestions:
+            QMessageBox.information(
+                self,
+                "Artist names",
+                "No duplicate, dotted-initial, or abbreviated artist names were found.",
+            )
+            return
+        dialog = ArtistRepairDialog(suggestions, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        replacements = dialog.replacements()
+        if not replacements:
+            return
+        progress = QProgressDialog(
+            "Updating artist metadata…", "", 0, len(self.items), self
+        )
+        progress.setWindowTitle("Fixing artist names")
+        progress.setCancelButton(None)
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setMinimumDuration(0)
+
+        def update_progress(index: int, total: int, path: Path) -> None:
+            progress.setMaximum(total)
+            progress.setValue(index - 1)
+            progress.setLabelText(f"Updating {path.name}")
+            QApplication.processEvents()
+
+        report = repair_artist_metadata(
+            (item.path for item in self.items),
+            replacements,
+            progress=update_progress,
+        )
+        progress.setValue(report.scanned)
+        self.refresh_library()
+        message = f"Updated {len(report.updated)} track(s). The library is refreshing."
+        if report.failed:
+            details = "\n".join(report.failed[:12])
+            QMessageBox.warning(
+                self,
+                "Artist fixes completed with errors",
+                f"{message}\n\nCould not update {len(report.failed)} file(s):\n{details}",
+            )
+        else:
+            QMessageBox.information(self, "Artist fixes complete", message)
 
     def refresh_library(self) -> None:
         if self._shutting_down:
@@ -4071,6 +4266,8 @@ class MediaLibraryPage(QWidget):
 
     def _toggle_queue_drawer(self, visible: bool) -> None:
         self.queue_drawer.setVisible(bool(visible))
+        if visible:
+            QTimer.singleShot(0, self._restore_drawer_widths)
         arrow = "‹" if visible else "›"
         self.queue_toggle_button.setText(f"Queue ({len(self.queue)}) {arrow}")
 

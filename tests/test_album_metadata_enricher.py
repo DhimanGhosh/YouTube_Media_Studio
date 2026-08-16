@@ -20,6 +20,7 @@ from youtube_audio_video_downloader.services.album_metadata_enricher import (
     _catalog_recording_matches_file,
     _conflicting_album_year_paths,
     _normalize_display_title,
+    _normalize_enrichment_artists,
     _rename_enriched_audio,
     _title_track_album_hint,
     _verified_conflicting_album_years,
@@ -32,6 +33,14 @@ from youtube_audio_video_downloader.services.metadata_verifier import (
 
 
 class AlbumMetadataEnricherTest(unittest.TestCase):
+    def test_album_enricher_uses_canonical_artist_identities(self) -> None:
+        self.assertEqual(
+            _normalize_enrichment_artists(
+                "K.K., A. R. Rahman, Arijit, Abhijeet"
+            ),
+            "KK, AR Rahman, Arijit Singh, Abhijeet Bhattacharya",
+        )
+
     def setUp(self) -> None:
         targets = (
             "find_wikipedia_song_metadata",

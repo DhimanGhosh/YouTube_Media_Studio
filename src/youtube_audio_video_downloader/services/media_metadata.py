@@ -28,6 +28,7 @@ from mutagen.id3 import (
 from mutagen.mp4 import MP4Cover
 
 from youtube_audio_video_downloader.core.file_access import retry_file_operation
+from youtube_audio_video_downloader.utils.artist_name_formatter import format_artist_names
 
 
 @dataclass(slots=True)
@@ -330,8 +331,9 @@ def _number_pair(values: dict[str, Any], prefix: str) -> str:
 
 def _artists(value: Any) -> list[str]:
     if isinstance(value, (list, tuple)):
-        return [str(item).strip() for item in value if str(item).strip()]
-    return [item.strip() for item in str(value or "").split(",") if item.strip()]
+        value = ", ".join(str(item).strip() for item in value if str(item).strip())
+    formatted = format_artist_names(str(value or ""))
+    return [item.strip() for item in formatted.split(",") if item.strip()]
 
 
 def _clean(value: Any) -> str:

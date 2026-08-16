@@ -21,9 +21,10 @@ from PyQt6.QtCore import (  # noqa: E402
 from PyQt6.QtGui import QColor, QIcon, QPixmap, QWheelEvent  # noqa: E402
 from PyQt6.QtMultimedia import QAudioBuffer, QAudioFormat, QMediaPlayer  # noqa: E402
 from PyQt6.QtTest import QSignalSpy, QTest  # noqa: E402
-from PyQt6.QtWidgets import QApplication, QMenu  # noqa: E402
+from PyQt6.QtWidgets import QApplication, QListWidget, QMenu, QStackedWidget  # noqa: E402
 
 from youtube_audio_video_downloader.gui.media_player import (  # noqa: E402
+    ArtistRepairDialog,
     EMBEDDED_VIDEO_MAX_HEIGHT,
     EMBEDDED_VIDEO_MIN_HEIGHT,
     FULLSCREEN_VIDEO_MAX_HEIGHT,
@@ -36,6 +37,9 @@ from youtube_audio_video_downloader.gui.widgets import (  # noqa: E402
 )
 from youtube_audio_video_downloader.services.library_recommendations import (  # noqa: E402
     LibraryRecommendation,
+)
+from youtube_audio_video_downloader.services.artist_canonicalizer import (  # noqa: E402
+    ArtistRenameSuggestion,
 )
 from youtube_audio_video_downloader.services.media_library import LibraryItem  # noqa: E402
 from youtube_audio_video_downloader.services.media_playlists import (  # noqa: E402
@@ -115,6 +119,80 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.assertEqual(self.page.table.item(0, 0).text(), "Short")
         self.page.table.sortItems(4, Qt.SortOrder.AscendingOrder)
         self.assertEqual(self.page.table.item(0, 0).text(), "Long")
+
+    def test_playlist_and_queue_drawers_are_horizontally_resizable(self) -> None:
+        self.assertIs(self.page.drawer_splitter.widget(0), self.page.playlist_drawer)
+        self.assertIs(self.page.drawer_splitter.widget(2), self.page.queue_drawer)
+        self.assertEqual(self.page.playlist_drawer.maximumWidth(), 16_777_215)
+        self.assertEqual(self.page.queue_drawer.maximumWidth(), 16_777_215)
+
+        self.page.resize(2400, 900)
+        self.page.show()
+        self.page.playlist_toggle_button.setChecked(True)
+        self.page.queue_toggle_button.setChecked(True)
+        QTest.qWait(20)
+        self.page.drawer_splitter.setSizes([280, 760, 360])
+        self.page._save_drawer_widths(0, 0)
+
+        sizes = self.page.drawer_splitter.sizes()
+        self.assertGreater(sizes[0], 180)
+        self.assertGreater(sizes[2], 180)
+        self.assertEqual(
+            self.page.settings.value("library/playlist_drawer_width", type=int),
+            sizes[0],
+        )
+        self.assertEqual(
+            self.page.settings.value("library/queue_drawer_width", type=int),
+            sizes[2],
+        )
+
+    def test_artist_and_track_sections_are_horizontally_resizable(self) -> None:
+        self.assertIs(
+            self.page.artist_track_splitter.widget(0).findChild(QListWidget),
+            self.page.facets,
+        )
+        self.assertIs(
+            self.page.artist_track_splitter.widget(1).findChild(QStackedWidget),
+            self.page.media_view_stack,
+        )
+        self.page.artist_track_splitter.setSizes([310, 890])
+        self.page.artist_track_splitter.splitterMoved.emit(310, 1)
+        self.assertEqual(
+            self.page.settings.value("library/artist_pane_width", type=int),
+            self.page.artist_track_splitter.sizes()[0],
+        )
+
+    def test_folder_and_search_controls_share_one_thirty_seventy_row(self) -> None:
+        self.page.resize(1400, 900)
+        self.page.show()
+        QTest.qWait(20)
+
+        self.assertEqual(
+            self.page.folder_controls.mapTo(self.page, QPoint(0, 0)).y(),
+            self.page.search_controls.mapTo(self.page, QPoint(0, 0)).y(),
+        )
+        combined = self.page.folder_controls.width() + self.page.search_controls.width()
+        self.assertAlmostEqual(
+            self.page.folder_controls.width() / combined,
+            0.3,
+            delta=0.08,
+        )
+
+    def test_artist_repair_review_allows_editing_the_proposed_name(self) -> None:
+        dialog = ArtistRepairDialog(
+            [ArtistRenameSuggestion("K.K.", "KK", 12)], self.page
+        )
+        try:
+            dialog.table.item(0, 1).setText("Kumar Sanu")
+            self.assertEqual(dialog.replacements(), {"K.K.": "Kumar Sanu"})
+            self.assertFalse(
+                bool(dialog.table.item(0, 0).flags() & Qt.ItemFlag.ItemIsEditable)
+            )
+            self.assertTrue(
+                bool(dialog.table.item(0, 1).flags() & Qt.ItemFlag.ItemIsEditable)
+            )
+        finally:
+            dialog.deleteLater()
 
     def test_track_columns_resize_for_every_new_result_set(self) -> None:
         short = media("Compact", 2005, 60_000)

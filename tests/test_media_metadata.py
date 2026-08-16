@@ -69,6 +69,15 @@ class MediaMetadataTest(unittest.TestCase):
             replace_media_metadata(source, {"album_artist": "New Album Artist"})
             self.assertEqual(read_media_metadata(source).album_artist, "New Album Artist")
 
+            replace_media_metadata(
+                source,
+                {"artists": "K.K., A. R. Rahman, Arijit"},
+            )
+            self.assertEqual(
+                read_media_metadata(source).artists,
+                "KK, AR Rahman, Arijit Singh",
+            )
+
     @patch("youtube_audio_video_downloader.gui.operations.edit_media_file")
     def test_unified_gui_operation_routes_metadata_only_edit(self, edit_mock) -> None:
         edit_mock.return_value = [Path("song.mp3")]

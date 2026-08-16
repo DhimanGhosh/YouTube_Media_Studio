@@ -18,11 +18,16 @@ class ArtistNameFormatterTest(unittest.TestCase):
             "Javed Ali, Sonu Nigam, Shreya Ghoshal, Alka Yagnik",
         )
 
-    def test_preserves_comma_separated_names_and_dotted_initials(self) -> None:
+    def test_removes_dots_from_initials_and_expands_known_short_names(self) -> None:
         self.assertEqual(
-            format_artist_names("K.K., A. R. Rahman"),
-            "K.K., A. R. Rahman",
+            format_artist_names(
+                "K.K., K.K, KK, A. R. Rahman, A R Rahman, Arijit, Abhijeet"
+            ),
+            "KK, AR Rahman, Arijit Singh, Abhijeet Bhattacharya",
         )
+
+    def test_preserves_periods_in_a_stage_name_that_is_not_initials(self) -> None:
+        self.assertEqual(format_artist_names("will.i.am"), "will.i.am")
 
 
 if __name__ == "__main__":

@@ -280,10 +280,21 @@ Use the final per-file message in **Live Logs** as the authoritative outcome. If
 message and preceding AI explanation appear inconsistent, keep the file untouched and
 report the complete log block.
 
+Artist credits written during downloads and Album enricher runs use the same canonical
+identity rules as the Media Library repair tool. Initials lose periods (`K.K.` becomes
+`KK`, and `A. R. Rahman` becomes `AR Rahman`), known shortened credits use their full
+name, and an abbreviated name is expanded when the library contains one unambiguous
+longer form.
+
 ## Use the local media library
 
-1. Open **Media Library** and use **+** to add folders. Each compact folder chip has an
-   **×** removal action; **Refresh** in the page header rescans every configured folder.
+1. Open **Media Library** and use **+** to add folders. Libraries occupy the left 30% of
+   the compact control row and scroll horizontally when their chips exceed that space;
+   search and filters use the remaining 70%. Each folder chip has an **×** removal action,
+   and **Refresh** in the page header rescans every configured folder. Select
+   **Fix artist names** to review dotted initials, duplicate spellings, and abbreviated
+   credits across the whole library. Every proposed replacement is editable; files change
+   only after **Apply fixes**, and the library refreshes when the update completes.
 2. Search by title, performer, or album; **Clear** resets the search text. Selecting an
    artist filters both tracks and albums until **All tracks** or **All albums** is used.
    Track-table columns recalculate their content width after every album, artist, search,
@@ -305,6 +316,8 @@ report the complete log block.
    tempo constraints. Use shuffle or repeat as required.
 5. Use file and album context actions to edit metadata, enrich an album, reorder tracks,
    or open the containing folder.
+   Drag the divider between **Artists** and **Tracks** to give either pane more room; the
+   chosen artist-pane width is remembered.
    During video playback, double-click the picture or select **Full screen** to move the
    complete player—including seek, transport, repeat/shuffle, and volume controls—to a
    full screen view. Double-click again, select **Exit full screen**, or press **Esc** to
@@ -323,7 +336,9 @@ report the complete log block.
    its player controls have focus, leaving library search text unaffected.
 6. Select **Playlists** in the page header to create, rename, delete, play, queue, or
    edit saved collections. Playlists store exact links to local file paths and remain
-   available after restart. Use **Add to playlist** beside track and album actions, or
+   available after restart. Drag the divider beside the playlist or Now Playing drawer
+   to resize either side panel; those widths are remembered. Use **Add to playlist**
+   beside track and album actions, or
    right-click a track, album, or artist. If a selected path is already present, choose
    **Skip duplicates** to omit existing tracks and add the rest of an album/selection,
    or **Add anyway** to retain another occurrence. Right-click playlist tracks for the
