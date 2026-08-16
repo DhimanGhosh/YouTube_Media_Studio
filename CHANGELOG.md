@@ -4,6 +4,16 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [2.11.5] - 2026-08-17
+
+### Fixed
+
+- fix: make playback profiles non-destructive (`070c827`)
+
+### Changed
+
+- Merge pull request #38 from DhimanGhosh/codex/center-fullscreen-controls (`bc748e8`)
+- refactor: centralize video display profile resolution (`da0c76c`)
 ## [2.11.4] - 2026-08-17
 
 ### Changed
