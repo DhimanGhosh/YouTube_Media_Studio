@@ -204,6 +204,23 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         )
         self.assertIn(application_version(), self.window.windowTitle())
 
+    def test_dashboard_quick_launch_buttons_open_the_named_workspace(self) -> None:
+        expected_pages = {
+            "Open media library": 13,
+            "Consolidate albums": 9,
+            "Open utilities": 10,
+        }
+
+        for label, page_index in expected_pages.items():
+            with self.subTest(label=label):
+                button = next(
+                    button
+                    for button in self.window.findChildren(QPushButton)
+                    if button.text() == label
+                )
+                button.click()
+                self.assertEqual(self.window.pages.currentIndex(), page_index)
+
     def test_every_task_workspace_has_an_independent_ai_switch(self) -> None:
         expected = {
             "search_song",

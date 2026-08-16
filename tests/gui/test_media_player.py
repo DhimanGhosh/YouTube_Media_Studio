@@ -1651,7 +1651,12 @@ class MediaPlayerPageTest(unittest.TestCase):
             )
         )
 
-        QTest.qWait(1750)
+        deadline = time.monotonic() + 3
+        while (
+            self.page.video_viewport.message.isVisible()
+            and time.monotonic() < deadline
+        ):
+            QTest.qWait(50)
         self.assertFalse(self.page.video_viewport.message.isVisible())
 
     def test_video_display_modes_reset_unless_memory_is_enabled(self) -> None:

@@ -298,7 +298,7 @@ not permanent model-weight training; media paths and files are not sent.
 
 Provider keys are stored separately: switching providers does not copy one provider's
 credential into another, and clearing a key remains cleared after **Save and apply
-defaults** and restart. See the [desktop user guide](docs/USER_GUIDE.md#how-ai-helps)
+defaults** and restart. See the [desktop user guide](docs/USER_GUIDE.md#how-ai-and-internet-evidence-work)
 for configuration, fallback order, privacy notes, and log meanings.
 
 Album Enricher uses Wikipedia and Apple's public catalog by default. Users may add

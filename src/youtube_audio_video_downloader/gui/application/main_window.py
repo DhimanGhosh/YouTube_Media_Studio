@@ -744,7 +744,7 @@ class MainWindow(QMainWindow):
         actions_layout.addWidget(self._section_label("Quick launch"))
         buttons = QGridLayout()
         quick_items = [
-            ("Open media library", 12),
+            ("Open media library", 13),
             ("Search for music", 1),
             ("Download MP3", 2),
             ("Download video", 3),
@@ -753,8 +753,8 @@ class MainWindow(QMainWindow):
             ("Reorder album tracks", 6),
             ("Edit an existing file", 7),
             ("Trim or retag audio", 7),
-            ("Consolidate albums", 8),
-            ("Open utilities", 9),
+            ("Consolidate albums", 9),
+            ("Open utilities", 10),
         ]
         for index, (text, page_index) in enumerate(quick_items):
             button = QPushButton(text)
