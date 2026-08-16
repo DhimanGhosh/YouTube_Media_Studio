@@ -38,6 +38,9 @@ from youtube_audio_video_downloader.services.library_recommendations import (  #
     LibraryRecommendation,
 )
 from youtube_audio_video_downloader.services.media_library import LibraryItem  # noqa: E402
+from youtube_audio_video_downloader.services.media_playlists import (  # noqa: E402
+    decode_playlists,
+)
 
 
 def media(name: str, year: int, duration: int) -> LibraryItem:
@@ -537,6 +540,35 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.assertEqual(
             self.page.facets.contextMenuPolicy(),
             Qt.ContextMenuPolicy.CustomContextMenu,
+        )
+
+    def test_playlist_tracks_drag_reorder_persists_exact_order(self) -> None:
+        name = self.page.create_playlist("Road trip")
+        duplicate_path = self.page.items[0].path
+        original = [
+            duplicate_path,
+            self.page.items[1].path,
+            duplicate_path,
+        ]
+        self.page.playlists[name] = list(original)
+        self.page._save_playlists()
+        self.page._render_playlist_tracks()
+
+        moved = self.page.playlist_tracks.takeItem(1)
+        self.page.playlist_tracks.insertItem(0, moved)
+        self.page._playlist_tracks_reordered()
+
+        expected = [original[1], original[0], original[2]]
+        self.assertEqual(self.page.playlists[name], expected)
+        saved = decode_playlists(self.page.settings.value("library/playlists", ""))
+        self.assertEqual(saved[name], expected)
+        self.assertEqual(
+            self.page.playlist_tracks.dragDropMode(),
+            self.page.playlist_tracks.DragDropMode.InternalMove,
+        )
+        self.assertEqual(
+            self.page.playlist_tracks.selectionMode(),
+            self.page.playlist_tracks.SelectionMode.ExtendedSelection,
         )
 
     def test_player_controls_have_visible_icons_and_mode_labels(self) -> None:

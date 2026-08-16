@@ -593,14 +593,21 @@ class SortableTableItem(QTableWidgetItem):
         return self.text().casefold() < other.text().casefold()
 
 
-class AnimatedQueueList(QListWidget):
-    """Single-row internal-move list with a short visual glide after dropping."""
+class AnimatedReorderList(QListWidget):
+    """Internal-move list with a short visual glide after dropping."""
 
     orderChanged = pyqtSignal()
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        *,
+        selection_mode: QAbstractItemView.SelectionMode = (
+            QAbstractItemView.SelectionMode.SingleSelection
+        ),
+    ) -> None:
         super().__init__(parent)
-        self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.setSelectionMode(selection_mode)
         self.setDragEnabled(True)
         self.setAcceptDrops(True)
         self.setDropIndicatorShown(True)
@@ -1693,11 +1700,14 @@ class MediaLibraryPage(QWidget):
         self.playlist_track_status.setObjectName("mutedLabel")
         self.playlist_track_status.setWordWrap(True)
         layout.addWidget(self.playlist_track_status)
-        self.playlist_tracks = QListWidget()
-        self.playlist_tracks.setSelectionMode(
-            QAbstractItemView.SelectionMode.ExtendedSelection
+        self.playlist_tracks = AnimatedReorderList(
+            selection_mode=QAbstractItemView.SelectionMode.ExtendedSelection
         )
         self.playlist_tracks.setAccessibleName("Tracks in selected playlist")
+        self.playlist_tracks.setToolTip(
+            "Drag tracks up or down to save a new playlist order"
+        )
+        self.playlist_tracks.orderChanged.connect(self._playlist_tracks_reordered)
         self.playlist_tracks.itemDoubleClicked.connect(
             lambda _entry: self.play_selected_playlist_tracks()
         )
@@ -1815,6 +1825,21 @@ class MediaLibraryPage(QWidget):
             entry.setData(Qt.ItemDataRole.UserRole, item.path)
             entry.setToolTip(item.path)
             self.playlist_tracks.addItem(entry)
+
+    def _playlist_tracks_reordered(self) -> None:
+        """Persist the selected playlist's displayed order after a drag."""
+
+        if not self._active_playlist or self._active_playlist not in self.playlists:
+            return
+        reordered = [
+            str(self.playlist_tracks.item(row).data(Qt.ItemDataRole.UserRole) or "")
+            for row in range(self.playlist_tracks.count())
+        ]
+        if len(reordered) != len(self.playlists[self._active_playlist]):
+            self._render_playlist_tracks()
+            return
+        self.playlists[self._active_playlist] = reordered
+        self._save_playlists()
 
     def create_playlist(self, name: str | None = None) -> str:
         if name is None:
@@ -2020,7 +2045,7 @@ class MediaLibraryPage(QWidget):
         hint.setObjectName("mutedLabel")
         hint.setWordWrap(True)
         layout.addWidget(hint)
-        self.queue_list = AnimatedQueueList()
+        self.queue_list = AnimatedReorderList()
         self.queue_list.setAccessibleName("Current playback queue")
         self.queue_list.itemDoubleClicked.connect(self._play_queue_entry)
         self.queue_list.orderChanged.connect(self._queue_reordered)
