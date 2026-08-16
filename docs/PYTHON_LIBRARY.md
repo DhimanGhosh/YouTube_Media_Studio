@@ -516,7 +516,7 @@ files. Back up both roots before automating it.
 
 ```python
 summary = studio.duplicate_links(
-    input_path="config/songs.json",
+    input_path="/path/to/youtube-media-jobs/songs.json",
     output_path="reports/duplicates.json",
     ai_enabled=False,
 )
@@ -594,7 +594,7 @@ studio = MediaStudio(defaults={"ai_enabled": False})
 with ThreadPoolExecutor(max_workers=1) as executor:
     future = executor.submit(
         studio.audio,
-        input_path="config/songs.json",
+        input_path="/path/to/youtube-media-jobs/songs.json",
         output_dir="downloads/songs",
     )
     # From another event handler or control path:
