@@ -4,6 +4,11 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [2.10.2] - 2026-08-17
+
+### Fixed
+
+- fix: stop phone playback on disconnect (`90af2c3`)
 ## [2.10.1] - 2026-08-16
 
 ### Fixed
