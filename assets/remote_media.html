@@ -91,7 +91,8 @@
       return data;
     };
     const action = (type, payload={}) => api('/api/action',{method:'POST',body:JSON.stringify({type,...payload})});
-    function showLogin(){ token=''; localStorage.removeItem('ymsToken'); $('login').classList.remove('hidden'); $('app').classList.add('hidden'); $('nav').classList.add('hidden'); $('playerbar').classList.add('hidden'); }
+    function stopPhonePlayback(){ ['audio','video'].forEach(id=>{ const player=$(id); player.pause(); player.removeAttribute('src'); player.load(); player.classList.toggle('hidden',id==='video'); }); $('phoneNow').textContent='Phone playback'; $('playerbar').classList.add('hidden'); }
+    function showLogin(){ stopPhonePlayback(); token=''; localStorage.removeItem('ymsToken'); $('login').classList.remove('hidden'); $('app').classList.add('hidden'); $('nav').classList.add('hidden'); }
     function showApp(){ $('login').classList.add('hidden'); $('app').classList.remove('hidden'); $('nav').classList.remove('hidden'); poll(); }
     $('loginForm').onsubmit = async e => { e.preventDefault(); try { const result=await api('/api/login',{method:'POST',body:JSON.stringify({pin:$('pin').value})}); token=result.token; localStorage.setItem('ymsToken',token); $('loginError').textContent=''; showApp(); } catch(err){ $('loginError').textContent=err.message; } };
     $('logout').onclick=showLogin;
