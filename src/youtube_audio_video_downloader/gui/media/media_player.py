@@ -3399,6 +3399,28 @@ class MediaLibraryPage(QWidget):
                 self._video_aspect_index = aspect_index
                 self._apply_video_display_modes()
 
+    def _video_display_indices(self, path: str | Path) -> tuple[int, int]:
+        """Return canonical crop/aspect indices for one video's playback."""
+
+        crop, aspect = self.video_display_profile(path)
+        if crop != "Default" or aspect != "Default":
+            return (
+                _video_mode_index(VIDEO_CROP_MODES, crop),
+                _video_mode_index(VIDEO_ASPECT_MODES, aspect),
+            )
+        if self._remember_video_display_modes:
+            return (
+                _video_mode_index(
+                    VIDEO_CROP_MODES,
+                    self.settings.value("library/video_crop_mode", "Default"),
+                ),
+                _video_mode_index(
+                    VIDEO_ASPECT_MODES,
+                    self.settings.value("library/video_aspect_mode", "Default"),
+                ),
+            )
+        return 0, 0
+
     def _run_video_command(self, command: Callable[[], None]) -> None:
         if self.aspect_button.isEnabled():
             command()
@@ -4942,26 +4964,9 @@ class MediaLibraryPage(QWidget):
         if item.media_type != MEDIA_TYPE_VIDEO:
             self.exit_video_fullscreen()
         elif not preserve_video_display_modes:
-            profile_crop, profile_aspect = self.video_display_profile(item.path)
-            if profile_crop != "Default" or profile_aspect != "Default":
-                self._video_crop_index = _video_mode_index(
-                    VIDEO_CROP_MODES, profile_crop
-                )
-                self._video_aspect_index = _video_mode_index(
-                    VIDEO_ASPECT_MODES, profile_aspect
-                )
-            elif self._remember_video_display_modes:
-                self._video_crop_index = _video_mode_index(
-                    VIDEO_CROP_MODES,
-                    self.settings.value("library/video_crop_mode", "Default"),
-                )
-                self._video_aspect_index = _video_mode_index(
-                    VIDEO_ASPECT_MODES,
-                    self.settings.value("library/video_aspect_mode", "Default"),
-                )
-            else:
-                self._video_aspect_index = 0
-                self._video_crop_index = 0
+            self._video_crop_index, self._video_aspect_index = (
+                self._video_display_indices(item.path)
+            )
             self._apply_video_display_modes()
         self._reset_video_display_on_play = False
         self.player.setVideoOutput(
