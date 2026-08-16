@@ -84,6 +84,11 @@ def build_parser() -> argparse.ArgumentParser:
             "Without this option, existing MP3s are skipped and only metadata is refreshed."
         ),
     )
+    parser.add_argument(
+        "--write-report",
+        action="store_true",
+        help="Write the JSON result report. Disabled by default.",
+    )
     return parser
 
 
@@ -114,8 +119,12 @@ def run(args: argparse.Namespace) -> list:
 
     downloader = YouTubeAudioDownloader(settings=settings)
     if args.mode == "tag-existing":
-        return downloader.tag_existing_mp3_files_from_json(args.json_file)
-    return downloader.download_from_json(args.json_file)
+        return downloader.tag_existing_mp3_files_from_json(
+            args.json_file, write_report=args.write_report
+        )
+    return downloader.download_from_json(
+        args.json_file, write_report=args.write_report
+    )
 
 
 def _print_summary(results: list) -> None:

@@ -86,7 +86,7 @@ class YouTubeJukeboxSplitter(YouTubeAlbumSplitter):
         output_dir: Path | None = None,
         keep_temp: bool = False,
         overwrite: bool = False,
-        write_report: bool = True,
+        write_report: bool = False,
     ) -> list[DownloadResult]:
         """Split every jukebox job from a JSON/JSONC file."""
 

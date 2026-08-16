@@ -15,9 +15,6 @@ from youtube_audio_video_downloader.services.media.media_metadata import (
     write_media_metadata,
 )
 from youtube_audio_video_downloader.services.downloads.media_redownloader import AUDIO_EXTENSIONS, redownload_media
-from youtube_audio_video_downloader.services.media.video_transformer import (
-    permanently_transform_video,
-)
 
 
 def edit_media_file(
@@ -93,24 +90,13 @@ def edit_media_file(
             _restore_file_stat(result, source_stat)
         return [_rename_from_metadata(result, metadata) for result in results]
     if selected_action == "video_display":
-        result = permanently_transform_video(
-            source,
-            crop_ratio=crop_ratio,
-            aspect_ratio=aspect_ratio,
-            cancellation_token=token,
+        raise ValueError(
+            "Video crop/aspect is a Media Library playback profile and cannot "
+            "modify the media file"
         )
-        token.raise_if_cancelled()
-        write_media_metadata(
-            result,
-            metadata,
-            artwork_path=artwork_path,
-            remove_artwork=remove_artwork,
-        )
-        _restore_file_stat(result, source_stat)
-        return [result]
     raise ValueError(
         "Edit action must be Metadata only, Trim audio, Redownload media, "
-        "or Permanent video crop/aspect"
+        "or a supported non-destructive action"
     )
 
 

@@ -501,7 +501,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         self.assertEqual(params["start_timestamp"], "02:00")
         self.assertEqual(params["end_timestamp"], "03:00")
 
-    def test_edit_file_confirms_permanent_video_crop_and_aspect(self) -> None:
+    def test_edit_file_saves_video_playback_crop_and_aspect_profile(self) -> None:
         video = self.data_directory / "movie.mp4"
         video.write_bytes(b"video")
         self.window.edit_file_input.set_text(str(video))
@@ -525,15 +525,48 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
                 "question",
                 return_value=QMessageBox.StandardButton.Yes,
             ),
+            patch.object(
+                self.window.media_library, "set_video_display_profile"
+            ) as save_profile,
             patch.object(self.window, "_start_operation") as start_operation,
         ):
             self.window._start_edit_file_operation()
 
-        start_operation.assert_called_once()
-        self.assertEqual(start_operation.call_args.args[0], "edit_media")
-        self.assertEqual(
-            start_operation.call_args.args[1]["crop_ratio"], "2.35:1"
+        start_operation.assert_not_called()
+        save_profile.assert_called_once_with(
+            video, "2.35:1", "16:9"
         )
+        self.assertIn("media file unchanged", self.window.log_view.toPlainText())
+
+    def test_library_display_editor_uses_active_player_modes(self) -> None:
+        video = self.data_directory / "movie.mp4"
+        video.write_bytes(b"video")
+
+        self.window._edit_library_video_display(
+            str(video), "16:10", "2.39:1"
+        )
+
+        self.assertEqual(
+            self.window.edit_file_action.currentData(), "video_display"
+        )
+        self.assertEqual(self.window.edit_file_crop_ratio.currentText(), "16:10")
+        self.assertEqual(
+            self.window.edit_file_aspect_ratio.currentText(), "2.39:1"
+        )
+
+    def test_result_reports_are_disabled_by_default_everywhere(self) -> None:
+        report_controls = (
+            self.window.audio_report,
+            self.window.video_report,
+            self.window.album_report,
+            self.window.jukebox_report,
+        )
+
+        self.assertTrue(all(not control.isChecked() for control in report_controls))
+        self.assertFalse(self.window._audio_params()["write_report"])
+        self.assertFalse(self.window._video_params()["write_report"])
+        self.assertFalse(self.window._album_params()["write_report"])
+        self.assertFalse(self.window._jukebox_params()["write_report"])
 
     def test_blank_click_clears_highlights_across_the_application(self) -> None:
         library = self.window.media_library

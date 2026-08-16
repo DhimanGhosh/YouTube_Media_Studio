@@ -185,7 +185,7 @@ def _read_item(path: Path) -> LibraryItem:
         year = int(match.group()) if match else None
         if album != "Unknown Album":
             album = canonical_album_name(album, year)
-    except (OSError, RuntimeError, TypeError, ValueError):
+    except (MutagenError, OSError, RuntimeError, TypeError, ValueError):
         pass
     duration_ms = 0
     try:

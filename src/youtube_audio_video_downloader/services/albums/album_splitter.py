@@ -177,7 +177,7 @@ class YouTubeAlbumSplitter:
         trim_silence_padding: float = 0.25,
         keep_temp: bool = False,
         overwrite: bool = False,
-        write_report: bool = True,
+        write_report: bool = False,
     ) -> list[DownloadResult]:
         """Split one URL or every job from a JSON file into separate MP3 tracks."""
 

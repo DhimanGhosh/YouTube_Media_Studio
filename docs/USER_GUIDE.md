@@ -33,7 +33,7 @@ For installation packages and platform requirements, see the
 
 > [!IMPORTANT]
 > Download only media you are authorized to use. Keep a backup before running metadata,
-> editing, consolidation, duplicate-removal, or permanent crop/aspect operations over a
+> editing, consolidation, or duplicate-removal operations over a
 > valuable library. Test each workflow on a small copy first.
 
 ## Read the screenshots
@@ -119,7 +119,7 @@ workspace that already has a job, preventing that same task from being started t
 | **Album Splitter** | Auto-fill or manually define one album and split it into tagged tracks. | [Album Splitter](#album-splitter) |
 | **Jukebox Splitter** | Split a mixed compilation with per-track metadata. | [Jukebox Splitter](#jukebox-splitter) |
 | **Track Reorder** | Drag album tracks into order and rewrite only track-number tags. | [Reorder an album](#reorder-an-album) |
-| **Edit File** | Retag, trim, redownload, or permanently change video framing. | [Edit a local media file](#edit-a-local-media-file) |
+| **Edit File** | Retag, trim, redownload, or save non-destructive video playback framing. | [Edit a local media file](#edit-a-local-media-file) |
 | **Edit Album** | Apply shared album metadata/artwork behavior to a folder. | [Edit an album folder](#edit-an-album-folder) |
 | **Album Consolidator** | Enrich metadata, then route verified tracks to album folders. | [Enrich and organize](#enrich-and-organize-an-existing-music-folder) |
 | **Utilities** | Format artist credits and parse timestamp text into JSON. | [Use Utilities](#use-utilities) |
@@ -283,7 +283,7 @@ From scratch:
 | Callout | Area | Use |
 | --- | --- | --- |
 | 1 | AI policy | Enables optional preflight and post-download metadata verification. |
-| 2 | Audio job | Add/import songs, select download or retag mode, choose output, overwrite policy, and start. |
+| 2 | Audio job | Add/import songs, select download or retag mode, choose output, optional reporting, overwrite policy, and start. |
 | 3 | Song editor | Expand/collapse or remove one song and edit all fields belonging to that item. |
 
 ### Download MP3 files
@@ -298,7 +298,8 @@ From scratch:
 5. Use **Preview** to inspect a cover URL, **Find cover** to search for a square image,
    and **Find year** to search release evidence.
 6. Choose an optional output folder. Otherwise the saved default is used.
-7. Decide whether an existing destination MP3 may be overwritten, then select **Start
+7. Leave **Write result report** off unless a machine-readable JSON summary is needed.
+8. Decide whether an existing destination MP3 may be overwritten, then select **Start
    audio job**.
 
 The output filename is generated from `Title - Album - Artists`. The saved MP3 receives
@@ -330,7 +331,8 @@ normalized destination already exists.
    and MP3**.
 5. Choose separate optional video and audio output folders.
 6. Select the merge container: MP4, MKV, or WebM.
-7. Leave **Write result report** enabled when a machine-readable batch result is useful.
+7. **Write result report** is disabled by default. Enable it only when a machine-readable
+   batch result is useful.
 8. Enable overwrite only when replacing an existing output is intentional.
 9. Select **Start video job** and confirm the final path in Live Logs.
 
@@ -401,7 +403,8 @@ Verify it manually because an incorrect first boundary shifts the entire album.
   silence detection when explicit timestamps are unavailable.
 - **Trim padding** retains a small amount around detected boundaries.
 - **Keep temporary source audio** is useful for diagnosis but consumes extra disk space.
-- **Write result report** records batch outcomes.
+- **Write result report** records batch outcomes when explicitly enabled; it is disabled
+  by default in every downloader and splitter.
 - **Overwrite existing tracks** permits replacement; leave it off for the safest first
   run.
 
@@ -495,15 +498,20 @@ upper **Download start/end** range limits the replacement download and is indepe
 the lower local-trim range. Choose copy or replacement behavior and verify the proposed
 destination before selecting **Redownload and edit**.
 
-### Apply video crop / aspect permanently
+### Save a video playback crop / aspect profile
 
-Choose **Permanent crop ratio**, **Permanent aspect ratio**, or both. The confirmation
-shows the filename and selected ratios. FFmpeg re-encodes to a temporary file and
-replaces the source only after success. The edited pixels then play with player controls
-at **Aspect: Default** and **Crop: Default**. This cannot be undone without another copy.
+Choose **Playback crop ratio**, **Playback aspect ratio**, or both, then select **Save
+playback settings**. These values are application metadata stored by the Media Library
+for that video path. The video is not re-encoded, cropped, renamed, or written to in any
+way, and its encoded dimensions and original pixels remain unchanged.
+
+Every time that video plays, the saved crop/aspect is applied by the player to control
+how it fills the available viewing area. Other videos keep their own profiles or use the
+normal defaults. Opening this action from the active player copies its current Crop and
+Aspect selections into the editor. Saving both values as **Default** removes the profile.
 
 The Media Library can open a selected track directly in Edit File. A video context menu
-also exposes the permanent crop/aspect action.
+also exposes the playback crop/aspect profile action.
 
 ## Edit an album folder
 
@@ -756,7 +764,17 @@ Double-click video or select **Full screen** for a borderless monitor-sized surf
 Controls slide up when the mouse moves and hide while watching. Crop-to-fill uses the
 complete screen while the overlay is hidden. Double-click, select **Exit full screen**,
 or press Esc to return. Full-screen controls use the same theme and behavior as embedded
-controls.
+controls. The transport controls remain horizontally centered against the complete
+screen, while the volume controls stay aligned to the right.
+
+![Full-screen video player](media/user-guide/media-library/fullscreen-player.png)
+
+| Callout | Area | What it does |
+| --- | --- | --- |
+| 1 | Video surface | Uses the complete borderless playback area while the overlay is hidden. |
+| 2 | Playback heading and timeline | Shows the active title, elapsed time, duration, and clickable seek position. |
+| 3 | Centered transport controls | Keeps Shuffle through Exit full screen centered in every full-screen layout. |
+| 4 | Volume controls | Changes volume independently at the right edge and shows the current percentage. |
 
 | Key | Action |
 | --- | --- |
@@ -828,7 +846,8 @@ actions. Clear affects displayed log text only.
 - Folder names and generated filenames are sanitized for the current operating system.
 - Metadata edits use temporary files and atomic replacement where the workflow promises
   it.
-- Permanent crop/aspect re-encodes and replaces a video only after successful output.
+- Video playback crop/aspect profiles are app metadata; they never crop, re-encode, or
+  replace the media file.
 - Changing pages does not cancel work. Use **Stop** and confirm the log result.
 - Do not close the app or edit/delete active input files until cancellation or completion
   is recorded.

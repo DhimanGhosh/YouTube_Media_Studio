@@ -301,6 +301,7 @@ class GuiOperationsTest(unittest.TestCase):
 
             _, call_kwargs = downloader_class.return_value.download_from_json.call_args
             self.assertEqual(call_kwargs["output_dir"], output_dir)
+            self.assertFalse(call_kwargs["write_report"])
 
     def test_selected_song_enrichment_runs_through_the_background_adapter(self) -> None:
         enriched = {

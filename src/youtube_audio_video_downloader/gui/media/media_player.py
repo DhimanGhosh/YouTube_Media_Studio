@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import random
 import re
@@ -927,7 +928,7 @@ class MediaLibraryPage(QWidget):
 
     request_search_song = pyqtSignal(str)
     request_edit_file = pyqtSignal(str)
-    request_edit_video_display = pyqtSignal(str)
+    request_edit_video_display = pyqtSignal(str, str, str)
     request_edit_album = pyqtSignal(str)
     request_album_enricher = pyqtSignal(str)
     request_track_reorder = pyqtSignal(str)
@@ -1001,6 +1002,15 @@ class MediaLibraryPage(QWidget):
         self._fullscreen_hide_timer.timeout.connect(self._hide_fullscreen_controls)
         self._remember_video_display_modes = self.settings.value(
             "defaults/remember_video_display_modes", False, type=bool
+        )
+        try:
+            saved_profiles = json.loads(
+                str(self.settings.value("library/video_display_profiles", "{}"))
+            )
+        except (TypeError, ValueError):
+            saved_profiles = {}
+        self._video_display_profiles: dict[str, dict[str, str]] = (
+            saved_profiles if isinstance(saved_profiles, dict) else {}
         )
         self._video_aspect_index = (
             _video_mode_index(
@@ -3026,9 +3036,14 @@ class MediaLibraryPage(QWidget):
         self.fullscreen_position.seekRequested.connect(self.player_seek_requested)
         controls.addWidget(self.fullscreen_position)
 
-        row = QHBoxLayout()
+        bottom_row = QGridLayout()
+        bottom_row.setContentsMargins(0, 0, 0, 0)
+        transport_controls = QWidget(overlay)
+        transport_controls.setObjectName("fullscreenTransportControls")
+        self.fullscreen_transport_controls = transport_controls
+        row = QHBoxLayout(transport_controls)
+        row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(8)
-        row.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.fullscreen_shuffle_button = QPushButton()
         self.fullscreen_shuffle_button.setObjectName("playerModeButton")
         self.fullscreen_shuffle_button.setCheckable(True)
@@ -3081,22 +3096,34 @@ class MediaLibraryPage(QWidget):
         self.fullscreen_exit_button.setObjectName("playerModeButton")
         self.fullscreen_exit_button.clicked.connect(self.exit_video_fullscreen)
         row.addWidget(self.fullscreen_exit_button)
-        row.addStretch(1)
-        row.addWidget(QLabel("Volume"))
+
+        volume_controls = QWidget(overlay)
+        volume_controls.setObjectName("fullscreenVolumeControls")
+        self.fullscreen_volume_controls = volume_controls
+        volume_row = QHBoxLayout(volume_controls)
+        volume_row.setContentsMargins(0, 0, 0, 0)
+        volume_row.setSpacing(8)
+        volume_row.addWidget(QLabel("Volume"))
         self.fullscreen_volume = AnimatedSeekSlider()
         self.fullscreen_volume.setRange(0, 100)
         self.fullscreen_volume.setFixedWidth(190)
         self.fullscreen_volume.setValue(self.volume.value())
         self.fullscreen_volume.valueChanged.connect(self.volume.setValue)
         self.volume.valueChanged.connect(self.fullscreen_volume.setValue)
-        row.addWidget(self.fullscreen_volume)
+        volume_row.addWidget(self.fullscreen_volume)
         self.fullscreen_volume_percent = QLabel(f"{self.fullscreen_volume.value()}%")
         self.fullscreen_volume_percent.setMinimumWidth(38)
         self.fullscreen_volume.valueChanged.connect(
             lambda value: self.fullscreen_volume_percent.setText(f"{value}%")
         )
-        row.addWidget(self.fullscreen_volume_percent)
-        controls.addLayout(row)
+        volume_row.addWidget(self.fullscreen_volume_percent)
+        # Independent alignment keeps transport centered against the complete
+        # screen while volume remains pinned to the right edge.
+        bottom_row.addWidget(
+            transport_controls, 0, 0, Qt.AlignmentFlag.AlignHCenter
+        )
+        bottom_row.addWidget(volume_controls, 0, 0, Qt.AlignmentFlag.AlignRight)
+        controls.addLayout(bottom_row)
         for child in (overlay, *overlay.findChildren(QWidget)):
             child.setMouseTracking(True)
             child.installEventFilter(self)
@@ -3326,6 +3353,73 @@ class MediaLibraryPage(QWidget):
         else:
             self.settings.remove("library/video_aspect_mode")
             self.settings.remove("library/video_crop_mode")
+
+    @staticmethod
+    def _video_profile_key(path: str | Path) -> str:
+        return str(Path(path).expanduser().resolve()).casefold()
+
+    def video_display_profile(self, path: str | Path) -> tuple[str, str]:
+        """Return the Media Library playback profile saved for one video."""
+
+        profile = self._video_display_profiles.get(self._video_profile_key(path), {})
+        if not isinstance(profile, dict):
+            return "Default", "Default"
+        crop = str(profile.get("crop", "Default"))
+        aspect = str(profile.get("aspect", "Default"))
+        if _video_mode_index(VIDEO_CROP_MODES, crop) == 0:
+            crop = "Default"
+        if _video_mode_index(VIDEO_ASPECT_MODES, aspect) == 0:
+            aspect = "Default"
+        return crop, aspect
+
+    def set_video_display_profile(
+        self, path: str | Path, crop: str, aspect: str
+    ) -> None:
+        """Persist playback-only crop/aspect without modifying the media file."""
+
+        crop_index = _video_mode_index(VIDEO_CROP_MODES, crop)
+        aspect_index = _video_mode_index(VIDEO_ASPECT_MODES, aspect)
+        key = self._video_profile_key(path)
+        if crop_index == 0 and aspect_index == 0:
+            self._video_display_profiles.pop(key, None)
+        else:
+            self._video_display_profiles[key] = {
+                "crop": VIDEO_CROP_MODES[crop_index][0],
+                "aspect": VIDEO_ASPECT_MODES[aspect_index][0],
+            }
+        self.settings.setValue(
+            "library/video_display_profiles",
+            json.dumps(self._video_display_profiles, sort_keys=True),
+        )
+        self.settings.sync()
+        if 0 <= self.queue_index < len(self.queue):
+            current = self.queue[self.queue_index]
+            if self._video_profile_key(current.path) == key:
+                self._video_crop_index = crop_index
+                self._video_aspect_index = aspect_index
+                self._apply_video_display_modes()
+
+    def _video_display_indices(self, path: str | Path) -> tuple[int, int]:
+        """Return canonical crop/aspect indices for one video's playback."""
+
+        crop, aspect = self.video_display_profile(path)
+        if crop != "Default" or aspect != "Default":
+            return (
+                _video_mode_index(VIDEO_CROP_MODES, crop),
+                _video_mode_index(VIDEO_ASPECT_MODES, aspect),
+            )
+        if self._remember_video_display_modes:
+            return (
+                _video_mode_index(
+                    VIDEO_CROP_MODES,
+                    self.settings.value("library/video_crop_mode", "Default"),
+                ),
+                _video_mode_index(
+                    VIDEO_ASPECT_MODES,
+                    self.settings.value("library/video_aspect_mode", "Default"),
+                ),
+            )
+        return 0, 0
 
     def _run_video_command(self, command: Callable[[], None]) -> None:
         if self.aspect_button.isEnabled():
@@ -4416,21 +4510,39 @@ class MediaLibraryPage(QWidget):
                 selected_path
             )
         )
-        video_display_action = menu.addAction("Apply crop / aspect permanently…")
+        video_display_action = menu.addAction("Save playback crop / aspect…")
         video_display_action.setEnabled(
             len(items) == 1 and items[0].media_type == MEDIA_TYPE_VIDEO
         )
         video_display_action.setToolTip(
-            "Open the permanent video crop/aspect editor"
+            "Save how this video is framed during playback without modifying its file"
             if video_display_action.isEnabled()
-            else "Permanent crop/aspect editing requires one video"
+            else "Playback crop/aspect settings require one video"
+        )
+        display_crop, display_aspect = self._playback_display_edit_modes(
+            items[0].path
         )
         video_display_action.triggered.connect(
             lambda _checked=False, selected_path=items[0].path: (
-                self.request_edit_video_display.emit(selected_path)
+                self.request_edit_video_display.emit(
+                    selected_path, display_crop, display_aspect
+                )
             )
         )
         menu.exec(global_position)
+
+    def _playback_display_edit_modes(self, path: str | Path) -> tuple[str, str]:
+        """Return the active or saved playback profile for a video."""
+
+        if not 0 <= self.queue_index < len(self.queue):
+            return self.video_display_profile(path)
+        current = self.queue[self.queue_index]
+        selected = Path(path).expanduser().resolve()
+        if Path(current.path).expanduser().resolve() != selected:
+            return self.video_display_profile(path)
+        crop = VIDEO_CROP_MODES[self._video_crop_index][0]
+        aspect = VIDEO_ASPECT_MODES[self._video_aspect_index][0]
+        return crop, aspect
 
     def _add_playlist_destinations(
         self, menu: QMenu, items: list[LibraryItem], *, label: str = "Add to playlist"
@@ -4851,12 +4963,10 @@ class MediaLibraryPage(QWidget):
         self.player.stop()
         if item.media_type != MEDIA_TYPE_VIDEO:
             self.exit_video_fullscreen()
-        elif (
-            not self._remember_video_display_modes
-            and not preserve_video_display_modes
-        ):
-            self._video_aspect_index = 0
-            self._video_crop_index = 0
+        elif not preserve_video_display_modes:
+            self._video_crop_index, self._video_aspect_index = (
+                self._video_display_indices(item.path)
+            )
             self._apply_video_display_modes()
         self._reset_video_display_on_play = False
         self.player.setVideoOutput(
