@@ -48,6 +48,7 @@ flowchart TB
     subgraph Interfaces
         Launcher["launcher.py"]
         GUI["PyQt6 GUI"]
+        Phone["Responsive LAN browser client"]
         Commands["CLI modules"]
     end
 
@@ -63,6 +64,7 @@ flowchart TB
         Splitters["Album/jukebox splitters"]
         Metadata["Tagging, editing, enrichment, consolidation"]
         Library["Index, filter, curate, play queue"]
+        Remote["Authenticated LAN media server"]
         AI["Agno provider and safety agents"]
     end
 
@@ -75,6 +77,7 @@ flowchart TB
 
     Launcher --> GUI
     Launcher --> Commands
+    Phone --> Remote --> Library
     GUI --> Workers --> Dispatch
     Commands --> Services
     Dispatch --> Services
@@ -110,7 +113,10 @@ flowchart LR
 
 The Media Library is a persistent page with its own background scanner, search worker,
 recommendation worker, path-based playlist store, queue, and `QMediaPlayer`. Playback
-continues while the user visits other pages.
+continues while the user visits other pages. While the desktop runs, its embedded
+`ThreadingHTTPServer` publishes a path-hiding snapshot to PIN-authenticated browsers on
+the private LAN. Phone actions cross a Qt signal boundary before mutating the desktop
+queue, playlists, or curator, and clients poll snapshot revisions for bidirectional sync.
 
 ## 5. Deployment view
 

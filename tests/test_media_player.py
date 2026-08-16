@@ -41,6 +41,10 @@ from youtube_audio_video_downloader.services.media_library import LibraryItem  #
 from youtube_audio_video_downloader.services.media_playlists import (  # noqa: E402
     decode_playlists,
 )
+from youtube_audio_video_downloader.services.remote_media import (  # noqa: E402
+    RemoteMediaServer,
+    media_id,
+)
 
 
 def media(name: str, year: int, duration: int) -> LibraryItem:
@@ -73,7 +77,10 @@ class MediaPlayerPageTest(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def setUp(self) -> None:
-        self.environment_patch = patch.dict(os.environ, {"NVIDIA_API_KEY": ""})
+        self.environment_patch = patch.dict(
+            os.environ,
+            {"NVIDIA_API_KEY": "", "YMS_DISABLE_REMOTE_ACCESS": "1"},
+        )
         self.environment_patch.start()
         self.temporary = tempfile.TemporaryDirectory()
         settings = QSettings(
@@ -108,6 +115,57 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.assertEqual(self.page.table.item(0, 0).text(), "Short")
         self.page.table.sortItems(4, Qt.SortOrder.AscendingOrder)
         self.assertEqual(self.page.table.item(0, 0).text(), "Long")
+
+    def test_track_columns_resize_for_every_new_result_set(self) -> None:
+        short = media("Compact", 2005, 60_000)
+        long_artist = "An exceptionally long artist name " * 8
+        long = LibraryItem(
+            "C:/Wide.mp3",
+            "Wide",
+            "Test Album",
+            long_artist,
+            2005,
+            60_000,
+            "audio",
+            1,
+        )
+
+        self.page._populate_table(
+            self.page.table,
+            [short],
+            include_album_and_type=True,
+        )
+        compact_width = self.page.table.columnWidth(2)
+        self.page._populate_table(
+            self.page.table,
+            [long],
+            include_album_and_type=True,
+        )
+        expanded_width = self.page.table.columnWidth(2)
+        self.page._populate_table(
+            self.page.table,
+            [short],
+            include_album_and_type=True,
+        )
+
+        self.assertGreater(expanded_width, compact_width)
+        self.assertLess(self.page.table.columnWidth(2), expanded_width)
+
+        self.page._populate_table(
+            self.page.album_tracks,
+            [short],
+            include_album_and_type=False,
+        )
+        album_compact_width = self.page.album_tracks.columnWidth(1)
+        self.page._populate_table(
+            self.page.album_tracks,
+            [long],
+            include_album_and_type=False,
+        )
+        self.assertGreater(
+            self.page.album_tracks.columnWidth(1),
+            album_compact_width,
+        )
 
     def test_library_table_displays_every_match_beyond_previous_250_row_cap(self) -> None:
         matches = [media(f"Song {index:04d}", 2000, 60_000) for index in range(876)]
@@ -596,6 +654,89 @@ class MediaPlayerPageTest(unittest.TestCase):
             self.page.playlist_tracks.selectionMode(),
             self.page.playlist_tracks.SelectionMode.ExtendedSelection,
         )
+
+    def test_phone_playlist_actions_mutate_and_persist_desktop_state(self) -> None:
+        third = media("Third", 2012, 180_000)
+        self.page.items.append(third)
+        self.page._remote_path_by_id = {
+            media_id(item.path): item.path for item in self.page.items
+        }
+
+        self.page._handle_remote_action(
+            {"type": "create_playlist", "name": "Phone edits"}
+        )
+        self.page._handle_remote_action(
+            {
+                "type": "add_to_playlist",
+                "playlist": "Phone edits",
+                "media_ids": [media_id(item.path) for item in self.page.items],
+            }
+        )
+        self.page._handle_remote_action(
+            {
+                "type": "reorder_playlist",
+                "playlist": "Phone edits",
+                "visible_positions": [2, 0],
+            }
+        )
+        self.page._handle_remote_action(
+            {
+                "type": "remove_playlist_positions",
+                "playlist": "Phone edits",
+                "positions": [1],
+            }
+        )
+
+        expected = [third.path, self.page.items[0].path]
+        self.assertEqual(self.page.playlists["Phone edits"], expected)
+        saved = decode_playlists(self.page.settings.value("library/playlists", ""))
+        self.assertEqual(saved["Phone edits"], expected)
+
+    def test_desktop_playlist_edits_publish_path_hiding_phone_revision(self) -> None:
+        server = RemoteMediaServer(lambda _action: None, port=0, html="")
+        self.page._remote_server = server
+        name = self.page.create_playlist("Live sync")
+        self.page.playlists[name] = [item.path for item in self.page.items]
+        self.page._save_playlists()
+
+        self.page._publish_remote_state()
+        first = server.state()
+        self.assertEqual(first["revision"], 1)
+        self.assertEqual(
+            [track["title"] for track in first["playlists"][0]["tracks"]],
+            ["Short", "Long"],
+        )
+        self.assertNotIn("C:/", str(first))
+
+        self.page.playlists[name].reverse()
+        self.page._save_playlists()
+        self.page._publish_remote_state()
+        second = server.state()
+        self.assertEqual(second["revision"], 2)
+        self.assertEqual(
+            [track["title"] for track in second["playlists"][0]["tracks"]],
+            ["Long", "Short"],
+        )
+        self.page._remote_server = None
+
+    def test_phone_curator_request_uses_desktop_ai_configuration(self) -> None:
+        self.page.request_ai_recommendations = Mock()
+
+        self.page._handle_remote_action(
+            {
+                "type": "curate",
+                "query": "relaxing Bengali songs from the 2000s",
+                "limit": 12,
+            }
+        )
+
+        self.assertTrue(self.page.recommendation_ai_enabled.isChecked())
+        self.assertEqual(
+            self.page.recommendation_request.text(),
+            "relaxing Bengali songs from the 2000s",
+        )
+        self.assertEqual(self.page.recommendation_limit.value(), 12)
+        self.page.request_ai_recommendations.assert_called_once_with()
 
     def test_playlist_filter_searches_metadata_and_reorders_visible_matches(self) -> None:
         items = [

@@ -20,6 +20,7 @@ mindmap
   root((YouTube Media Studio))
     Interfaces
       PyQt6 desktop application
+      Authenticated LAN phone client
       Unified launcher
       CLI commands
       JSON batch files
@@ -34,6 +35,7 @@ mindmap
       Artist and year filters
       Album browser
       Queue and playback
+      Live phone synchronization
       Smart Library Curator
     Metadata
       ID3 and MP4 tags

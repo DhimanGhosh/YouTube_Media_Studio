@@ -286,6 +286,8 @@ report the complete log block.
    **×** removal action; **Refresh** in the page header rescans every configured folder.
 2. Search by title, performer, or album; **Clear** resets the search text. Selecting an
    artist filters both tracks and albums until **All tracks** or **All albums** is used.
+   Track-table columns recalculate their content width after every album, artist, search,
+   or filter change, so each column follows the largest value in the current result set.
    Use **All media**, **Music**, or **Videos** beside search to keep audio and video
    results, queues, and curator requests separate. Video mode hides the album browser so
    the video list and cinema player receive the available space. Its list rows are taller
@@ -342,6 +344,32 @@ report the complete log block.
 8. The curator never redirects automatically. If the local result is empty, select the
    explicit **Search YouTube too** action only when you want an online search. Playlist
    file paths are never included in the AI or online-search context.
+
+### Use the Media Library from a phone
+
+Phone access starts automatically with the desktop Media Library and remains available
+only while YouTube Media Studio is running:
+
+1. Connect the PC and phone to the same trusted Wi-Fi network. Select **Phone access · On**
+   in the Media Library header. Open one of the displayed addresses in any current iOS or
+   Android browser and enter the six-digit PIN. The PIN is regenerated each time the app
+   starts. If Windows asks about firewall access, allow the app on private networks only.
+2. Use **Songs**, **Albums**, and their broad text/year/type filters to browse the scanned
+   library. **Phone** streams the selected local file to the phone; **PC** starts it on the
+   desktop, and **Queue** appends it to the desktop queue.
+3. Use **Playlists** to create a list, add or remove tracks, and drag tracks (or use the
+   arrow controls) to reorder them. Every mutation is saved by the desktop immediately.
+   Desktop edits are reflected on connected phones automatically, and phone edits appear
+   on every other client during the next live-state refresh.
+4. Use **Curator** for a natural-language library request. The phone sends the request to
+   the running desktop, which uses its configured AI provider, local index, evidence rules,
+   and PC compute. Search and filter inputs themselves remain local to that phone.
+
+The service listens on port `8765` when available and chooses an available fallback port
+otherwise. Access is PIN/token protected, local paths are never exposed in the browser,
+repeated failed PIN attempts are rate-limited, and media requests are limited to files in
+the published library snapshot. This is plain HTTP intended for a trusted private LAN; do
+not expose the port through router forwarding, a public hotspot, or an untrusted network.
 
 ### Video browsing and preview details
 

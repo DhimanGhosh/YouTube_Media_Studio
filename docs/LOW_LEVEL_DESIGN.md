@@ -278,6 +278,13 @@ classDiagram
       +apply_filters()
       +add_items_to_playlist()
       +start_mix()
+      +_handle_remote_action()
+    }
+    class RemoteMediaServer {
+      +start()
+      +stop()
+      +update_state()
+      +dispatch()
     }
     class LibraryScanner {
       +run()
@@ -304,6 +311,7 @@ classDiagram
     MediaLibraryPage --> AlbumGridListWidget
     MediaLibraryPage --> MediaPlaylists
     MediaLibraryPage --> QMediaPlayer
+    MediaLibraryPage --> RemoteMediaServer
 ```
 
 Library scanning reads supported files recursively and returns fresh immutable
@@ -314,6 +322,17 @@ Playlists persist ordered file paths under `library/playlists`; resolving their 
 metadata against the latest scan keeps the link authoritative while still showing a
 clear missing-file state. Duplicate comparison is case-insensitive, and the caller must
 choose whether duplicates are skipped or deliberately retained.
+
+Every track-table rebuild calls `resizeColumnsToContents()` after its rows are populated;
+headers remain interactive, but album, artist, search, and year changes recalculate widths
+from the largest visible value in each current column.
+
+`RemoteMediaServer` owns only serialized state, opaque media IDs, an allowlist of indexed
+paths, a random launch PIN/token, and a callback. Its request threads never touch Qt
+widgets. `MediaLibraryPage.remote_action_requested` carries accepted actions to the GUI
+thread, where existing queue, playlist persistence, and curator methods remain the sole
+mutation paths. State publication is revisioned and protected by a re-entrant lock; the
+browser polls only until the desktop stops the server during shutdown.
 
 ## 10. Persistence keys and lifecycle
 
