@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import random
 import re
 import sys
@@ -84,6 +85,7 @@ from PyQt6.QtWidgets import (
 from youtube_audio_video_downloader.gui.widgets import GlassCard
 from youtube_audio_video_downloader.gui.audio_visualizer import SpectrumAnalyzer
 from youtube_audio_video_downloader.gui.crash_reporter import log_diagnostic
+from youtube_audio_video_downloader.gui.resources import asset_path
 from youtube_audio_video_downloader.services.media_library import (
     LibraryItem,
     artwork_bytes,
@@ -96,6 +98,10 @@ from youtube_audio_video_downloader.services.media_playlists import (
     add_playlist_paths,
     decode_playlists,
     encode_playlists,
+)
+from youtube_audio_video_downloader.services.remote_media import (
+    RemoteMediaServer,
+    media_id,
 )
 from youtube_audio_video_downloader.services.library_recommendations import (
     LibraryRecommendation,
@@ -775,6 +781,7 @@ class MediaLibraryPage(QWidget):
     spectrum_ready = pyqtSignal(object)
     spectrum_buffer_ready = pyqtSignal(object)
     visualizer_playback_changed = pyqtSignal(bool)
+    remote_action_requested = pyqtSignal(object)
 
     def __init__(self, settings: QSettings, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -818,6 +825,9 @@ class MediaLibraryPage(QWidget):
         self._recommendation_worker: LibraryRecommendationWorker | None = None
         self._last_recommendation_request = ""
         self._last_recommendations: list[LibraryRecommendation] = []
+        self._remote_server: RemoteMediaServer | None = None
+        self._remote_path_by_id: dict[str, str] = {}
+        self._remote_state_dirty = True
         self._search_request_id = 0
         self._applied_query = ""
         self._applied_media_type = MEDIA_TYPE_ALL
@@ -867,6 +877,7 @@ class MediaLibraryPage(QWidget):
         self._search_debounce.setInterval(180)
         self._search_debounce.timeout.connect(self._start_background_search)
         self._build_ui()
+        self.remote_action_requested.connect(self._handle_remote_action)
         application = QApplication.instance()
         self._application_event_filter_installed = application is not None
         if application is not None:
@@ -874,11 +885,16 @@ class MediaLibraryPage(QWidget):
         self._connect_player()
         self._install_media_shortcuts()
         self._load_folders()
+        self._start_remote_access()
         self.refresh_library()
         self.refresh_timer = QTimer(self)
         self.refresh_timer.setInterval(15000)
         self.refresh_timer.timeout.connect(self.refresh_library)
         self.refresh_timer.start()
+        self.remote_sync_timer = QTimer(self)
+        self.remote_sync_timer.setInterval(1000)
+        self.remote_sync_timer.timeout.connect(self._publish_remote_state)
+        self.remote_sync_timer.start()
 
     def _build_ui(self) -> None:
         layout = QHBoxLayout(self)
@@ -893,6 +909,13 @@ class MediaLibraryPage(QWidget):
         title.setObjectName("pageTitle")
         header.addWidget(title)
         header.addStretch(1)
+        self.phone_access_button = QPushButton("Phone access")
+        self.phone_access_button.setObjectName("secondaryButton")
+        self.phone_access_button.setToolTip(
+            "Open the Media Library from a phone on this Wi-Fi network"
+        )
+        self.phone_access_button.clicked.connect(self._show_remote_access)
+        header.addWidget(self.phone_access_button)
         self.library_refresh_button = QPushButton("Refresh")
         self.library_refresh_button.setObjectName("secondaryButton")
         self.library_refresh_button.setToolTip("Rescan every configured library folder")
@@ -938,6 +961,236 @@ class MediaLibraryPage(QWidget):
         self._sync_queue_drawer()
         self._render_playlists()
         self._sync_media_type_layout()
+
+    def _start_remote_access(self) -> None:
+        """Start the authenticated phone client on all LAN interfaces."""
+
+        if os.environ.get("YMS_DISABLE_REMOTE_ACCESS", "").casefold() in {
+            "1", "true", "yes",
+        }:
+            self.phone_access_button.setText("Phone access · Off")
+            return
+        try:
+            html = asset_path("remote_media.html").read_text(encoding="utf-8")
+            port = int(self.settings.value("library/remote_port", 8765))
+            server = RemoteMediaServer(
+                lambda action: self.remote_action_requested.emit(action),
+                port=port,
+                html=html,
+            )
+            server.start()
+            self._remote_server = server
+            self.phone_access_button.setText("Phone access · On")
+            addresses = server.urls
+            self.phone_access_button.setToolTip(
+                f"{addresses[0]} · PIN {server.pin}"
+                if addresses
+                else f"Listening on port {server.port} · PIN {server.pin}"
+            )
+            self._publish_remote_state()
+            log_diagnostic(
+                "REMOTE-LIBRARY",
+                f"LAN client started port={server.port} addresses={addresses!r}",
+            )
+        except (OSError, TypeError, ValueError) as exc:
+            self.phone_access_button.setText("Phone access · Unavailable")
+            self.phone_access_button.setToolTip(str(exc))
+            log_diagnostic("REMOTE-LIBRARY", f"Could not start LAN client: {exc}")
+
+    def _show_remote_access(self) -> None:
+        server = self._remote_server
+        if server is None:
+            QMessageBox.warning(
+                self,
+                "Phone access unavailable",
+                self.phone_access_button.toolTip(),
+            )
+            return
+        addresses = server.urls
+        url = addresses[0] if addresses else f"http://127.0.0.1:{server.port}"
+        application = QApplication.instance()
+        if application is not None:
+            application.clipboard().setText(url)
+        QMessageBox.information(
+            self,
+            "Phone access",
+            "Connect your phone to the same Wi-Fi, open:\n\n"
+            + "\n".join(addresses or [url])
+            + f"\n\nAccess PIN: {server.pin}\n\nThe first address was copied.",
+        )
+
+    def _remote_track_payload(self, item: LibraryItem) -> dict[str, object]:
+        return {
+            "id": media_id(item.path),
+            "title": item.title,
+            "artists": item.artists,
+            "album": item.album,
+            "year": item.year,
+            "duration_ms": item.duration_ms,
+            "type": item.media_type,
+            "path_name": Path(item.path).name,
+            "available": item.modified_ns > 0,
+        }
+
+    def _publish_remote_state(self) -> None:
+        server = self._remote_server
+        if server is None or not self._remote_state_dirty:
+            return
+        unique: dict[str, LibraryItem] = {}
+        for item in self.items:
+            unique.setdefault(item.path.casefold(), item)
+        for paths in self.playlists.values():
+            for path in paths:
+                unique.setdefault(path.casefold(), self._library_item_for_path(path))
+        items = list(unique.values())
+        payload_by_path = {
+            item.path.casefold(): self._remote_track_payload(item) for item in items
+        }
+        albums: dict[str, list[LibraryItem]] = {}
+        for item in items:
+            albums.setdefault(item.album or "Unknown Album", []).append(item)
+        album_payload = []
+        for name, tracks in sorted(albums.items(), key=lambda pair: pair[0].casefold()):
+            artists = sorted(
+                {item.artists for item in tracks if item.artists}, key=str.casefold
+            )
+            years = [item.year for item in tracks if item.year is not None]
+            album_payload.append(
+                {
+                    "name": name,
+                    "artists": ", ".join(artists),
+                    "year": min(years) if years else None,
+                    "tracks": [media_id(item.path) for item in tracks],
+                }
+            )
+        playlist_payload = []
+        for name in sorted(self.playlists, key=str.casefold):
+            tracks = []
+            for path in self.playlists[name]:
+                payload = dict(
+                    payload_by_path.get(
+                        path.casefold(),
+                        self._remote_track_payload(self._library_item_for_path(path)),
+                    )
+                )
+                payload["playlist"] = name
+                tracks.append(payload)
+            playlist_payload.append({"name": name, "tracks": tracks})
+        recommendations = []
+        for recommendation in self._last_recommendations:
+            payload = dict(self._remote_track_payload(recommendation.item))
+            payload["reason"] = recommendation.reason
+            recommendations.append(payload)
+        current = (
+            self.queue[self.queue_index]
+            if 0 <= self.queue_index < len(self.queue)
+            else None
+        )
+        state = {
+            "tracks": [payload_by_path[item.path.casefold()] for item in items],
+            "albums": album_payload,
+            "playlists": playlist_payload,
+            "recommendations": recommendations,
+            "curator": {
+                "status": self.recommendation_status.text(),
+                "request": self._last_recommendation_request,
+                "busy": self._recommendation_thread is not None,
+            },
+            "playback": {
+                "current_id": media_id(current.path) if current else "",
+                "queue_length": len(self.queue),
+                "queue_index": self.queue_index,
+            },
+        }
+        paths = {
+            media_id(item.path): item.path
+            for item in items
+            if item.modified_ns > 0
+        }
+        self._remote_path_by_id = {
+            media_id(item.path): item.path for item in items
+        }
+        server.update_state(state, paths)
+        self._remote_state_dirty = False
+
+    def _remote_items(self, identifiers: object) -> list[LibraryItem]:
+        if not isinstance(identifiers, list):
+            return []
+        result = []
+        for identifier in identifiers:
+            path = self._remote_path_by_id.get(str(identifier))
+            if path:
+                result.append(self._library_item_for_path(path))
+        return result
+
+    def _handle_remote_action(self, raw_action: object) -> None:
+        """Apply a validated phone request on the Qt UI thread."""
+
+        if not isinstance(raw_action, dict) or self._shutting_down:
+            return
+        self._remote_state_dirty = True
+        action = str(raw_action.get("type", ""))
+        if action == "create_playlist":
+            self.create_playlist(str(raw_action.get("name", ""))[:100])
+        elif action == "add_to_playlist":
+            name = str(raw_action.get("playlist", ""))
+            if name in self.playlists:
+                self.add_items_to_playlist(
+                    self._remote_items(raw_action.get("media_ids")),
+                    name,
+                    duplicate_policy="skip",
+                )
+        elif action == "remove_playlist_positions":
+            name = str(raw_action.get("playlist", ""))
+            positions = raw_action.get("positions")
+            paths = self.playlists.get(name)
+            if paths is not None and isinstance(positions, list):
+                valid = {
+                    int(position)
+                    for position in positions
+                    if isinstance(position, int) and 0 <= position < len(paths)
+                }
+                for position in sorted(valid, reverse=True):
+                    paths.pop(position)
+                self._save_playlists()
+                self._render_playlists()
+        elif action == "reorder_playlist":
+            name = str(raw_action.get("playlist", ""))
+            visible = raw_action.get("visible_positions")
+            paths = self.playlists.get(name)
+            if paths is not None and isinstance(visible, list):
+                positions = [value for value in visible if isinstance(value, int)]
+                if (
+                    len(positions) == len(set(positions))
+                    and all(0 <= position < len(paths) for position in positions)
+                ):
+                    reordered = list(paths)
+                    ordered_paths = [paths[position] for position in positions]
+                    for position, path in zip(
+                        sorted(positions), ordered_paths, strict=True
+                    ):
+                        reordered[position] = path
+                    self.playlists[name] = reordered
+                    self._save_playlists()
+                    self._render_playlists()
+        elif action in {"play", "queue"}:
+            items = self._remote_items([raw_action.get("media_id")])
+            if items:
+                if action == "play":
+                    self._replace_queue(items)
+                else:
+                    self._append_to_queue(items)
+        elif action == "curate":
+            query = str(raw_action.get("query", "")).strip()[:500]
+            if query and self._recommendation_thread is None:
+                limit = raw_action.get("limit", self._suggestion_limit)
+                self.recommendation_ai_enabled.setChecked(True)
+                self.recommendation_request.setText(query)
+                self.recommendation_limit.setValue(
+                    max(1, min(20, int(limit) if isinstance(limit, int) else 10))
+                )
+                self.request_ai_recommendations()
+        self._publish_remote_state()
 
     def _build_folder_card(self) -> QWidget:
         card = GlassCard()
@@ -1185,6 +1438,7 @@ class MediaLibraryPage(QWidget):
         return container
 
     def request_ai_recommendations(self) -> None:
+        self._remote_state_dirty = True
         self.recommendation_toggle.setChecked(True)
         if self._recommendation_thread is not None:
             return
@@ -1314,10 +1568,12 @@ class MediaLibraryPage(QWidget):
                 f"Library recommendations grounded={len(recommendations)}",
             )
         self.recommendations.setVisible(True)
+        self._remote_state_dirty = True
 
     def _recommendation_thread_finished(self) -> None:
         self._recommendation_thread = None
         self.recommendation_button.setEnabled(True)
+        self._remote_state_dirty = True
 
     def clear_ai_recommendations(self) -> None:
         """Clear the AI prompt and rendered suggestions without changing playback."""
@@ -1330,6 +1586,7 @@ class MediaLibraryPage(QWidget):
         self.recommendations.clear()
         self.recommendations.setVisible(False)
         self.recommendation_status.setText("AI idle")
+        self._remote_state_dirty = True
 
     def start_recommendation_mix(self) -> None:
         """Queue exact matches, then find verified same-language continuation tracks."""
@@ -1778,6 +2035,7 @@ class MediaLibraryPage(QWidget):
         )
         self.settings.setValue("library/active_playlist", self._active_playlist)
         self.settings.sync()
+        self._remote_state_dirty = True
 
     def _render_playlists(self) -> None:
         self.playlist_list.blockSignals(True)
@@ -2760,6 +3018,7 @@ class MediaLibraryPage(QWidget):
             )
             return
         self.items = scanned_items
+        self._remote_state_dirty = True
         valid_thumbnail_keys = {
             (item.path, item.modified_ns)
             for item in scanned_items
@@ -3200,9 +3459,10 @@ class MediaLibraryPage(QWidget):
                     table.model().index(current_row, 0),
                     QItemSelectionModel.SelectionFlag.NoUpdate,
                 )
-            if not bool(table.property("initialContentSizingDone")):
-                table.resizeColumnsToContents()
-                table.setProperty("initialContentSizingDone", True)
+            # Recalculate every column for the rows currently displayed. This
+            # keeps album details, artist facets, and every search result wide
+            # enough for the largest value in that specific result set.
+            table.resizeColumnsToContents()
             if video_rows:
                 table.setColumnWidth(0, max(340, table.columnWidth(0)))
                 table.setColumnWidth(
@@ -4004,6 +4264,7 @@ class MediaLibraryPage(QWidget):
             self.now_playing_art.setPixmap(icon.pixmap(QSize(104, 104)))
 
     def _update_queue_status(self, *, rebuild_drawer: bool = True) -> None:
+        self._remote_state_dirty = True
         if not self.queue:
             self.queue_status.setText("Queue is empty")
         else:
@@ -4228,6 +4489,11 @@ class MediaLibraryPage(QWidget):
         log_diagnostic("PLAYER", "MediaLibraryPage shutdown requested")
         self.exit_video_fullscreen()
         self._shutting_down = True
+        if hasattr(self, "remote_sync_timer"):
+            self.remote_sync_timer.stop()
+        if self._remote_server is not None:
+            self._remote_server.stop()
+            self._remote_server = None
         self._scan_refresh_pending = False
         self.refresh_timer.stop()
         application = QApplication.instance()

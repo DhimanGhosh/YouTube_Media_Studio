@@ -210,6 +210,31 @@ sequenceDiagram
     Page->>Page: Persist ordered path links in settings
 ```
 
+### LAN phone synchronization
+
+```mermaid
+sequenceDiagram
+    actor Phone
+    participant Server as RemoteMediaServer
+    participant Page as MediaLibraryPage (Qt thread)
+    participant Store as QSettings / media files
+
+    Phone->>Server: POST PIN
+    Server-->>Phone: Session token
+    Phone->>Server: Poll authenticated state revision
+    Server-->>Phone: Tracks, albums, playlists, queue, curator
+    Phone->>Server: Reorder/add/remove/play/queue/curate action
+    Server->>Page: Emit remote_action_requested
+    Page->>Store: Use existing desktop mutation path
+    Page->>Server: Publish revised path-hiding snapshot
+    Phone->>Server: Poll next revision
+    Server-->>Phone: Synchronized state
+```
+
+Media streaming accepts byte ranges for browser seeking but only resolves opaque IDs in
+the current server allowlist. Search filters execute in each phone client; curator actions
+execute through the desktop's configured AI and evidence stack.
+
 ## 8. Smart Library Curator multi-agent flow
 
 ```mermaid

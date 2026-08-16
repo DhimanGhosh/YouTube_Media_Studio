@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0b1022">
+  <title>YouTube Media Studio</title>
+  <style>
+    :root { color-scheme: dark; --bg:#080d1d; --card:#111a33; --line:#2a385f; --text:#f5f7ff; --muted:#aab6d6; --accent:#7188ff; --accent2:#9b5cff; --danger:#ff7891; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:linear-gradient(145deg,#080d1d,#10172d 55%,#151033); color:var(--text); font:15px/1.4 system-ui,-apple-system,sans-serif; min-height:100vh; }
+    button,input,select { font:inherit; }
+    button { color:var(--text); background:#1a2545; border:1px solid var(--line); border-radius:12px; padding:10px 13px; }
+    button.primary { border:0; background:linear-gradient(120deg,var(--accent),var(--accent2)); font-weight:700; }
+    button.danger { color:#ffdbe2; }
+    button:disabled { opacity:.45; }
+    input,select { width:100%; color:var(--text); background:#080f25; border:1px solid var(--line); border-radius:12px; padding:11px 12px; }
+    input:focus,select:focus { outline:2px solid var(--accent); border-color:transparent; }
+    #login { max-width:420px; margin:18vh auto; padding:24px; }
+    .shell { max-width:920px; margin:auto; padding:calc(12px + env(safe-area-inset-top)) 12px calc(110px + env(safe-area-inset-bottom)); }
+    .card { background:rgba(17,26,51,.92); border:1px solid var(--line); border-radius:18px; box-shadow:0 14px 38px #0005; }
+    header { position:sticky; top:0; z-index:5; padding:12px; margin-bottom:10px; backdrop-filter:blur(16px); }
+    h1 { font-size:20px; margin:0; } h2 { font-size:16px; margin:0 0 10px; } p { color:var(--muted); }
+    .status { color:var(--muted); font-size:13px; }
+    .row { display:flex; gap:8px; align-items:center; } .row > * { min-width:0; }
+    .grow { flex:1; } .hidden { display:none !important; }
+    nav { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; position:fixed; z-index:7; left:50%; bottom:calc(10px + env(safe-area-inset-bottom)); transform:translateX(-50%); width:min(94%,720px); padding:8px; }
+    nav button { padding:9px 4px; font-size:12px; } nav button.active { background:var(--accent); border-color:var(--accent); }
+    .filters { display:grid; grid-template-columns:1fr 95px 95px; gap:7px; margin:10px 0; }
+    .list { display:grid; gap:8px; }
+    .track { padding:11px; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:center; }
+    .track-title { font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .meta { color:var(--muted); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .actions { display:flex; gap:5px; } .actions button { padding:7px 9px; }
+    .album { padding:13px; } .album summary { cursor:pointer; font-weight:700; }
+    .playlist-tools { display:grid; grid-template-columns:1fr auto; gap:8px; margin-bottom:8px; }
+    .dragging { opacity:.45; } .drop-target { outline:2px solid var(--accent); }
+    .pill { display:inline-block; border:1px solid var(--line); color:var(--muted); border-radius:999px; padding:2px 8px; font-size:11px; }
+    .empty { padding:22px; color:var(--muted); text-align:center; }
+    #playerbar { position:fixed; z-index:6; left:50%; transform:translateX(-50%); bottom:calc(70px + env(safe-area-inset-bottom)); width:min(94%,720px); padding:8px 10px; }
+    audio,video { width:100%; max-height:180px; }
+    @media (max-width:560px) { .filters { grid-template-columns:1fr 82px 82px; } .track { grid-template-columns:1fr; } .actions { justify-content:flex-end; } }
+  </style>
+</head>
+<body>
+  <section id="login" class="card">
+    <h1>YouTube Media Studio</h1>
+    <p>Enter the six-digit PIN shown by the desktop app. Your phone and PC must be on the same Wi-Fi.</p>
+    <form id="loginForm" class="row"><input id="pin" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="Access PIN" autofocus><button class="primary">Connect</button></form>
+    <p id="loginError" class="status"></p>
+  </section>
+
+  <main id="app" class="shell hidden">
+    <header class="card row"><div class="grow"><h1>YouTube Media Studio</h1><div id="sync" class="status">Connecting…</div></div><button id="logout">Disconnect</button></header>
+    <section id="libraryView" class="view">
+      <div class="filters"><input id="search" placeholder="Filter any song details"><input id="fromYear" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="From year"><input id="toYear" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="To year"></div>
+      <div class="row" style="margin-bottom:10px"><select id="mediaType"><option value="all">All media</option><option value="audio">Music</option><option value="video">Videos</option></select><select id="addTarget" class="grow"></select></div>
+      <div id="tracks" class="list"></div>
+    </section>
+    <section id="albumsView" class="view hidden">
+      <div class="filters"><input id="albumSearch" placeholder="Filter albums or tracks"><input id="albumFromYear" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="From year"><input id="albumToYear" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="To year"></div>
+      <div id="albums" class="list"></div>
+    </section>
+    <section id="playlistsView" class="view hidden">
+      <div class="playlist-tools"><input id="newPlaylist" placeholder="New playlist name"><button id="createPlaylist" class="primary">Create</button></div>
+      <div class="row" style="margin-bottom:10px"><select id="playlistSelect" class="grow"></select><input id="playlistFilter" class="grow" placeholder="Filter this playlist"></div>
+      <p id="playlistHint" class="status">Drag tracks or use the arrows. Changes are saved to the desktop immediately.</p>
+      <div id="playlistTracks" class="list"></div>
+    </section>
+    <section id="curatorView" class="view hidden">
+      <div class="card" style="padding:14px"><h2>Smart Library Curator</h2><p>Uses the AI provider and computing power configured on your PC.</p><div class="row"><input id="curatorQuery" class="grow" placeholder="e.g. relaxing Bengali songs from the 2000s"><button id="curate" class="primary">Find</button></div><p id="curatorStatus" class="status">AI idle</p></div>
+      <div id="recommendations" class="list" style="margin-top:10px"></div>
+    </section>
+  </main>
+  <div id="playerbar" class="card hidden"><div id="phoneNow" class="status">Phone playback</div><audio id="audio" controls></audio><video id="video" controls class="hidden"></video></div>
+  <nav id="nav" class="card hidden"><button data-view="libraryView" class="active">Songs</button><button data-view="albumsView">Albums</button><button data-view="playlistsView">Playlists</button><button data-view="curatorView">Curator</button></nav>
+
+  <script>
+  (() => {
+    const $ = id => document.getElementById(id);
+    let token = localStorage.getItem('ymsToken') || '';
+    let state = null, revision = -1, dragged = null;
+    const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const api = async (path, options={}) => {
+      options.headers = {...(options.headers||{}), ...(token ? {Authorization:`Bearer ${token}`} : {})};
+      if (options.body) options.headers['Content-Type']='application/json';
+      const response = await fetch(path, options);
+      if (response.status === 401 && path !== '/api/login') showLogin();
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Request failed');
+      return data;
+    };
+    const action = (type, payload={}) => api('/api/action',{method:'POST',body:JSON.stringify({type,...payload})});
+    function showLogin(){ token=''; localStorage.removeItem('ymsToken'); $('login').classList.remove('hidden'); $('app').classList.add('hidden'); $('nav').classList.add('hidden'); $('playerbar').classList.add('hidden'); }
+    function showApp(){ $('login').classList.add('hidden'); $('app').classList.remove('hidden'); $('nav').classList.remove('hidden'); poll(); }
+    $('loginForm').onsubmit = async e => { e.preventDefault(); try { const result=await api('/api/login',{method:'POST',body:JSON.stringify({pin:$('pin').value})}); token=result.token; localStorage.setItem('ymsToken',token); $('loginError').textContent=''; showApp(); } catch(err){ $('loginError').textContent=err.message; } };
+    $('logout').onclick=showLogin;
+    $('pin').oninput=e=>e.target.value=e.target.value.replace(/\D/g,'').slice(0,6);
+    document.querySelectorAll('nav button').forEach(button => button.onclick=()=>{ document.querySelectorAll('.view').forEach(v=>v.classList.add('hidden')); document.querySelectorAll('nav button').forEach(v=>v.classList.remove('active')); $(button.dataset.view).classList.remove('hidden'); button.classList.add('active'); });
+    async function poll(){ if(!token)return; try { const next=await api('/api/state'); $('sync').textContent=`Connected · sync ${new Date().toLocaleTimeString()}`; if(next.revision!==revision){ state=next; revision=next.revision; render(); } } catch(err){ $('sync').textContent=err.message; } setTimeout(poll,1500); }
+    const terms = value => value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    function matches(track, query){ const hay=[track.title,track.artists,track.album,track.year,track.type,track.path_name,track.playlist].join(' ').toLowerCase(); return terms(query).every(term=>hay.includes(term)); }
+    function filteredTracks(){ if(!state)return[]; const from=Number($('fromYear').value)||0, to=Number($('toYear').value)||0, type=$('mediaType').value; return state.tracks.filter(t=>matches(t,$('search').value)&&(!from||t.year>=from)&&(!to||t.year<=to)&&(type==='all'||t.type===type)); }
+    function trackCard(t, extra=''){ const unavailable=t.available===false?'disabled':''; return `<article class="track card" data-id="${t.id}"><div><div class="track-title">${esc(t.title)}</div><div class="meta">${esc(t.artists)} · ${esc(t.album)}${t.year?' · '+t.year:''}${extra}</div></div><div class="actions"><button data-phone="${t.id}" ${unavailable}>${unavailable?'Missing':'▶ Phone'}</button><button data-play="${t.id}" ${unavailable}>PC</button><button data-queue="${t.id}" ${unavailable}>Queue</button><button data-add="${t.id}">＋</button></div></article>`; }
+    function bindTrackActions(root){ root.querySelectorAll('[data-phone]').forEach(b=>b.onclick=()=>phonePlay(b.dataset.phone)); root.querySelectorAll('[data-play]').forEach(b=>b.onclick=()=>action('play',{media_id:b.dataset.play})); root.querySelectorAll('[data-queue]').forEach(b=>b.onclick=()=>action('queue',{media_id:b.dataset.queue})); root.querySelectorAll('[data-add]').forEach(b=>b.onclick=()=>{ const playlist=$('addTarget').value; if(playlist) action('add_to_playlist',{playlist,media_ids:[b.dataset.add]}); }); }
+    function renderTracks(){ const list=filteredTracks(); $('tracks').innerHTML=list.length?list.map(t=>trackCard(t)).join(''):'<div class="empty card">No matching tracks</div>'; bindTrackActions($('tracks')); }
+    function renderAlbums(){
+      const query=$('albumSearch').value, from=Number($('albumFromYear').value)||0, to=Number($('albumToYear').value)||0;
+      const albums=state.albums.filter(album=>{ const tracks=album.tracks.map(id=>state.tracks.find(t=>t.id===id)).filter(Boolean); const searchable={title:album.name,artists:album.artists,album:album.name,year:album.year,type:'album',path_name:tracks.map(t=>[t.title,t.artists,t.path_name].join(' ')).join(' ')}; return matches(searchable,query)&&(!from||album.year>=from)&&(!to||album.year<=to); });
+      $('albums').innerHTML=albums.map(a=>`<details class="album card"><summary>${esc(a.name)} <span class="pill">${a.tracks.length} tracks</span></summary><p>${esc(a.artists)}${a.year?' · '+a.year:''}</p><div class="list">${a.tracks.map(id=>state.tracks.find(t=>t.id===id)).filter(Boolean).map(t=>trackCard(t)).join('')}</div></details>`).join('')||'<div class="empty card">No matching albums</div>'; bindTrackActions($('albums'));
+    }
+    function renderPlaylistOptions(){
+      const names=state.playlists.map(p=>p.name), previous=$('playlistSelect').value;
+      const current=previous==='__all__'||names.includes(previous)?previous:(names[0]||'__all__');
+      const options=names.map(n=>`<option ${n===current?'selected':''}>${esc(n)}</option>`).join('');
+      $('playlistSelect').innerHTML=`<option value="__all__" ${current==='__all__'?'selected':''}>All playlists</option>`+options;
+      $('addTarget').innerHTML='<option value="">Add to playlist…</option>'+names.map(n=>`<option>${esc(n)}</option>`).join('');
+      renderPlaylist();
+    }
+    function renderPlaylist(){
+      const selected=$('playlistSelect').value, all=selected==='__all__';
+      const playlists=all?state.playlists:state.playlists.filter(p=>p.name===selected);
+      $('playlistHint').textContent=all?'Filtering every playlist. Choose one playlist to reorder tracks.':'Drag tracks or use the arrows. Changes are saved to the desktop immediately.';
+      if(!state.playlists.length){$('playlistTracks').innerHTML='<div class="empty card">Create a playlist to begin</div>';return;}
+      const rows=playlists.flatMap(playlist=>playlist.tracks.map((track,index)=>({...track,index,playlistName:playlist.name}))).filter(t=>matches({...t,playlist:t.playlistName},$('playlistFilter').value));
+      $('playlistFilter').placeholder=all?'Filter all playlists':'Filter this playlist';
+      $('playlistTracks').innerHTML=rows.map((t,viewIndex)=>`<article class="track card" ${all?'':'draggable="true"'} data-position="${t.index}"><div><div class="track-title">${esc(t.title)}</div><div class="meta">${esc(t.artists)} · ${esc(t.album)}${all?' · '+esc(t.playlistName):''}</div></div><div class="actions">${all?'':`<button data-up="${viewIndex}" ${viewIndex===0?'disabled':''}>↑</button><button data-down="${viewIndex}" ${viewIndex===rows.length-1?'disabled':''}>↓</button>`}<button data-remove="${t.index}" data-playlist="${esc(t.playlistName)}" class="danger">Remove</button></div></article>`).join('')||'<div class="empty card">No matching tracks</div>';
+      const playlist=playlists[0];
+      const reorder=(from,to)=>{ if(all||!playlist||from===to)return; const positions=rows.map(r=>r.index), moved=positions.splice(from,1)[0]; positions.splice(to,0,moved); action('reorder_playlist',{playlist:playlist.name,visible_positions:positions}); };
+      $('playlistTracks').querySelectorAll('[data-up]').forEach(b=>b.onclick=()=>reorder(+b.dataset.up,+b.dataset.up-1)); $('playlistTracks').querySelectorAll('[data-down]').forEach(b=>b.onclick=()=>reorder(+b.dataset.down,+b.dataset.down+1)); $('playlistTracks').querySelectorAll('[data-remove]').forEach(b=>b.onclick=()=>action('remove_playlist_positions',{playlist:b.dataset.playlist,positions:[+b.dataset.remove]}));
+      $('playlistTracks').querySelectorAll('[draggable]').forEach((row,index)=>{ row.ondragstart=()=>{dragged=index;row.classList.add('dragging')}; row.ondragend=()=>{dragged=null;row.classList.remove('dragging')}; row.ondragover=e=>{e.preventDefault();row.classList.add('drop-target')}; row.ondragleave=()=>row.classList.remove('drop-target'); row.ondrop=e=>{e.preventDefault();row.classList.remove('drop-target');if(dragged!==null)reorder(dragged,index)}; });
+    }
+    function renderCurator(){ $('curatorStatus').textContent=state.curator.status; $('recommendations').innerHTML=state.recommendations.map(r=>trackCard(r,` · ${esc(r.reason)}`)).join(''); bindTrackActions($('recommendations')); }
+    function render(){ renderTracks(); renderAlbums(); renderPlaylistOptions(); renderCurator(); }
+    function phonePlay(id){ const track=state.tracks.find(t=>t.id===id); if(!track)return; const isVideo=track.type==='video', player=isVideo?$('video'):$('audio'), other=isVideo?$('audio'):$('video'); other.pause(); other.classList.add('hidden'); player.classList.remove('hidden'); player.src=`/media/${id}?token=${encodeURIComponent(token)}`; player.play(); $('phoneNow').textContent=`${track.title} · ${track.artists}`; $('playerbar').classList.remove('hidden'); }
+    function bindYearRange(fromId,toId,renderFn){ [fromId,toId].forEach(id=>$(id).oninput=e=>{ e.target.value=e.target.value.replace(/\D/g,'').slice(0,4); const from=Number($(fromId).value)||0, to=Number($(toId).value)||0; if(from&&to&&to<from){ if(e.target.id===fromId) $(toId).value=String(from); else $(fromId).value=String(to); } renderFn(); }); }
+    ['search','mediaType'].forEach(id=>$(id).oninput=renderTracks);
+    $('albumSearch').oninput=renderAlbums;
+    bindYearRange('fromYear','toYear',renderTracks);
+    bindYearRange('albumFromYear','albumToYear',renderAlbums);
+    $('playlistFilter').oninput=renderPlaylist; $('playlistSelect').onchange=renderPlaylist;
+    $('createPlaylist').onclick=()=>{ const name=$('newPlaylist').value.trim(); if(name){action('create_playlist',{name});$('newPlaylist').value='';} };
+    $('curate').onclick=()=>{ const query=$('curatorQuery').value.trim(); if(query)action('curate',{query,limit:10}); };
+    if(token) showApp(); else showLogin();
+  })();
+  </script>
+</body>
+</html>
