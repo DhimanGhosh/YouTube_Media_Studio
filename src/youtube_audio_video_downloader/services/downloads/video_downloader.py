@@ -1091,6 +1091,8 @@ class YouTubeVideoDownloader:
     ) -> dict[str, Any]:
         """Return yt-dlp options for one video's independently selected range."""
 
+        from .download_progress import accelerated_download_options
+
         return {
             "format": selected.format_selector,
             "outtmpl": str(output_dir / f"{file_name}.%(ext)s"),
@@ -1102,6 +1104,11 @@ class YouTubeVideoDownloader:
             "no_warnings": False,
             "retries": self.settings.max_retries,
             "fragment_retries": self.settings.max_retries,
+            **accelerated_download_options(
+                video.json_key,
+                self.settings.segment_connections,
+                self.cancellation_token,
+            ),
             **build_download_range_options(video.start_timestamp, video.end_timestamp),
         }
 

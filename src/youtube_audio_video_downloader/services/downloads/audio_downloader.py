@@ -343,6 +343,8 @@ class YouTubeAudioDownloader:
     ) -> dict[str, Any]:
         """Build yt-dlp options for one song's independently selected range."""
 
+        from .download_progress import accelerated_download_options
+
         return {
             "format": "bestaudio/best",
             "outtmpl": str(output_dir / f"{file_name}.%(ext)s"),
@@ -353,6 +355,11 @@ class YouTubeAudioDownloader:
             "no_warnings": False,
             "retries": self.settings.max_retries,
             "fragment_retries": self.settings.max_retries,
+            **accelerated_download_options(
+                song.json_key,
+                self.settings.segment_connections,
+                self.cancellation_token,
+            ),
             "postprocessors": [
                 {
                     "key": "FFmpegExtractAudio",

@@ -13,6 +13,7 @@ sequenceDiagram
     participant Worker as OperationWorker
     participant Dispatch as execute_operation
     participant Service as Selected service
+    participant Telemetry as Download progress panel
 
     User->>Page: Fill form and select Start
     Page->>Window: Operation key and parameters
@@ -24,6 +25,7 @@ sequenceDiagram
     loop Per item or phase
         Service-->>Worker: stdout/stderr progress lines
         Worker-->>Window: Log, phase, progress, item result
+        Worker-->>Telemetry: Percent, bytes, speed, ETA, connections/fragments
     end
     Service-->>Dispatch: OperationSummary
     Dispatch-->>Worker: Summary
@@ -49,7 +51,8 @@ sequenceDiagram
     par For each Song in bounded pool
         Service->>Range: Validate this Song's timestamps
         Range-->>Service: Full-source or section options
-        Service->>YTDLP: Download best audio with entry options
+        Service->>YTDLP: Download best audio with up to N fragment connections
+        YTDLP-->>Editor: Structured percent, size, speed, ETA, segment telemetry
         YTDLP-->>Service: Source converted to MP3
         Service->>Tagger: Apply title, album, artists, year, art, track number
         Tagger-->>Service: Tagged MP3
@@ -78,7 +81,7 @@ sequenceDiagram
     Video->>Video: Prepare all media selections on main worker
     par Execute prepared plans
         alt Video or both
-            Video->>YTDLP: Download selected formats using VideoJob range
+            Video->>YTDLP: Download selected formats/range with parallel fragments
         end
         alt MP3 or both
             Video->>Audio: Build Song carrying VideoJob range

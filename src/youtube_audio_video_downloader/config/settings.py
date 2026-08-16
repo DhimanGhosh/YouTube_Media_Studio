@@ -36,6 +36,7 @@ class DownloadSettings:
     """Runtime settings for the downloader."""
 
     max_workers: int = field(default_factory=machine_parallel_workers)
+    segment_connections: int = 8
     min_delay_seconds: int = 10
     max_delay_seconds: int = 25
     max_retries: int = 3

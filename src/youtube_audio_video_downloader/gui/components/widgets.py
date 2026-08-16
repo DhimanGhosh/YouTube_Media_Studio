@@ -40,6 +40,7 @@ from PyQt6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPlainTextEdit,
+    QProgressBar,
     QPushButton,
     QTextEdit,
     QVBoxLayout,
@@ -71,6 +72,91 @@ def _finish_async_button(button: QPushButton, text: str) -> None:
     if _qt_alive(button):
         button.setEnabled(True)
         button.setText(text)
+
+
+class DownloadProgressPanel(QFrame):
+    """Compact per-workspace download status with an IDM-style connection strip."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("downloadProgressPanel")
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(7)
+        header = QHBoxLayout()
+        self.title = QLabel("Download activity")
+        self.status = QLabel("Idle")
+        self.status.setAlignment(Qt.AlignmentFlag.AlignRight)
+        header.addWidget(self.title, 1)
+        header.addWidget(self.status)
+        layout.addLayout(header)
+        self.overall = QProgressBar()
+        self.overall.setRange(0, 1000)
+        self.overall.setValue(0)
+        self.overall.setFormat("Ready")
+        layout.addWidget(self.overall)
+        self.connection_row = QHBoxLayout()
+        self.connection_row.setSpacing(3)
+        self.connection_bars: list[QProgressBar] = []
+        layout.addLayout(self.connection_row)
+        self.stats = QLabel("Size -- · Speed -- · ETA --:-- · Connections --")
+        self.stats.setWordWrap(True)
+        layout.addWidget(self.stats)
+
+    def update_download(self, event: dict) -> None:
+        label = str(event.get("label") or event.get("file") or "Media")
+        percent = max(0.0, min(100.0, float(event.get("percent") or 0)))
+        configured = max(1, int(event.get("connections_configured") or 1))
+        used = max(1, int(event.get("connections_used") or 1))
+        self.title.setText(label)
+        self.status.setText(
+            "Complete" if event.get("status") == "finished" else "Downloading"
+        )
+        total = int(event.get("total") or 0)
+        if total:
+            self.overall.setRange(0, 1000)
+            self.overall.setValue(round(percent * 10))
+            self.overall.setFormat(f"{percent:.1f}%")
+        else:
+            self.overall.setRange(0, 0)
+            self.overall.setFormat("Receiving data…")
+        while len(self.connection_bars) != configured:
+            for bar in self.connection_bars:
+                bar.deleteLater()
+            self.connection_bars.clear()
+            for index in range(configured):
+                bar = QProgressBar()
+                bar.setRange(0, 100)
+                bar.setTextVisible(False)
+                bar.setFixedHeight(7)
+                bar.setValue(round(percent) if index < used else 0)
+                bar.setToolTip(
+                    f"Connection {index + 1}: "
+                    + ("active" if index < used else "available when the source supports it")
+                )
+                self.connection_row.addWidget(bar, 1)
+                self.connection_bars.append(bar)
+        for index, bar in enumerate(self.connection_bars):
+            bar.setValue(round(percent) if index < used else 0)
+        downloaded = self._size(int(event.get("downloaded") or 0))
+        total_text = self._size(total) if total else "unknown"
+        speed = self._size(int(event.get("speed") or 0)) + "/s" if event.get("speed") else "--"
+        eta = int(event.get("eta") or 0)
+        eta_text = f"{eta // 60:02d}:{eta % 60:02d}" if eta else "--:--"
+        source_note = "parallel fragments" if event.get("fragmented") else "single source stream"
+        self.stats.setText(
+            f"{downloaded} / {total_text} · {speed} · ETA {eta_text} · "
+            f"Connections {used}/{configured} ({source_note})"
+        )
+
+    @staticmethod
+    def _size(value: int) -> str:
+        amount = float(value)
+        for unit in ("B", "KB", "MB", "GB"):
+            if amount < 1024 or unit == "GB":
+                return f"{amount:.1f} {unit}"
+            amount /= 1024
+        return f"{amount:.1f} GB"
 
 
 class BlankClickSelectionFilter(QObject):

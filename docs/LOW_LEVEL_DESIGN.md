@@ -30,13 +30,13 @@ parse arguments and delegate; GUI pages build parameter dictionaries and delegat
 | `launcher.py` | Select GUI, CLI command, or runtime doctor; configure bundled tools |
 | `gui/application/app.py` | Create `QApplication`, storage, crash reporting, palette, and `MainWindow` |
 | `gui/application/main_window.py` | Navigation, forms, settings, operation lifecycle, dashboard, live logs |
-| `gui/components/widgets.py` | Reusable controls, batch editors, collapsible sections, async form helpers |
-| `gui/runtime/workers.py` | Background execution, retries, log capture, cancellation, progress signals |
+| `gui/components/widgets.py` | Reusable controls, batch editors, download telemetry panels, collapsible sections, async form helpers |
+| `gui/runtime/workers.py` | Background execution, retries, log capture, cancellation, item and structured download-progress signals |
 | `gui/runtime/operations.py` | Map operation names to service calls and normalize summaries |
 | `gui/media/media_player.py` | Library scan/search, album browser, queue, playback, curator presentation |
 | `domain/models.py` | Immutable normalized download and selection records |
 | `loaders/json_loader.py` | Validate batch JSON and construct domain models |
-| `services/downloads/` | Search, download, extraction, range, and redownload workflows |
+| `services/downloads/` | Search, download, parallel-fragment telemetry, extraction, range, and redownload workflows |
 | `services/albums/` | Album discovery, editing, enrichment, splitting, ordering, and organization |
 | `services/media/` | Library scanning, playlists, local editing, metadata access, and remote media |
 | `services/metadata/` | Evidence gathering, verification, tracking, release years, and enrichment |

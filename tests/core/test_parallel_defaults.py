@@ -26,6 +26,7 @@ class ParallelDefaultsTest(unittest.TestCase):
         self.assertEqual(settings.max_workers, machine_parallel_workers())
         self.assertEqual(settings.min_delay_seconds, 10)
         self.assertEqual(settings.max_delay_seconds, 25)
+        self.assertEqual(settings.segment_connections, 8)
 
     def test_all_download_clis_use_shared_defaults(self) -> None:
         parsed_args = (
@@ -40,6 +41,7 @@ class ParallelDefaultsTest(unittest.TestCase):
             self.assertEqual(args.min_delay, 10)
             self.assertEqual(args.max_delay, 25)
             self.assertFalse(args.write_report)
+            self.assertEqual(args.connections, 8)
 
     def test_max_workers_alias(self) -> None:
         self.assertEqual(
