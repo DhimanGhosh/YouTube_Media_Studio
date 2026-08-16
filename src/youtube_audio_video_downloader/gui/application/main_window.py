@@ -70,6 +70,7 @@ from youtube_audio_video_downloader.gui.components.widgets import (
     BlankClickSelectionFilter,
     CollapsibleSection,
     GlassCard,
+    DownloadProgressPanel,
     JsonBatchEditor,
     LiquidBackground,
     MetricCard,
@@ -1151,6 +1152,8 @@ class MainWindow(QMainWindow):
         self.audio_mode.currentIndexChanged.connect(self._audio_mode_changed)
         self._audio_mode_changed()
         layout.addWidget(card)
+        self.audio_download_progress = DownloadProgressPanel()
+        layout.addWidget(self.audio_download_progress)
         layout.addWidget(self._feature_card("Included", [
             "Best-source audio extraction through yt-dlp and FFmpeg",
             "Parallel downloads with independent randomized delays",
@@ -1202,6 +1205,8 @@ class MainWindow(QMainWindow):
         form.addRow("Reporting", self.video_report)
         form.addRow("Existing files", self.video_overwrite)
         layout.addWidget(card)
+        self.video_download_progress = DownloadProgressPanel()
+        layout.addWidget(self.video_download_progress)
         layout.addWidget(self._feature_card("Global Settings", [
             "Workers, download delays, retry behavior, MP3 quality, and sample rate are configured once in Global Settings.",
         ]))
@@ -1252,6 +1257,8 @@ class MainWindow(QMainWindow):
         form.addRow("Reporting", self.album_report)
         form.addRow("Existing files", self.album_overwrite)
         layout.addWidget(card)
+        self.album_download_progress = DownloadProgressPanel()
+        layout.addWidget(self.album_download_progress)
         layout.addWidget(self._feature_card("Global Settings", [
             "Workers, download delays, retries, MP3 bitrate, and sample rate are configured once in Global Settings.",
         ]))
@@ -1296,6 +1303,8 @@ class MainWindow(QMainWindow):
         form.addRow("Reporting", self.jukebox_report)
         form.addRow("Existing files", self.jukebox_overwrite)
         layout.addWidget(card)
+        self.jukebox_download_progress = DownloadProgressPanel()
+        layout.addWidget(self.jukebox_download_progress)
         layout.addWidget(self._feature_card("Global Settings", [
             "Workers, download delays, retries, MP3 bitrate, and sample rate are configured once in Global Settings.",
         ]))
@@ -1576,6 +1585,8 @@ class MainWindow(QMainWindow):
         metadata_outer.addWidget(action_row)
         layout.addWidget(card)
         layout.addWidget(metadata_card)
+        self.edit_download_progress = DownloadProgressPanel()
+        layout.addWidget(self.edit_download_progress)
         layout.addWidget(self._feature_card("Safe editing", [
             "Metadata-only changes are written to a temporary copy and atomically replace the source",
             "Trimming uses lossless stream copy and then applies the edited metadata",
@@ -2274,6 +2285,13 @@ class MainWindow(QMainWindow):
             f"Minimum value: 1 · Maximum for this machine: {MAX_PARALLEL_WORKERS}"
         )
         self.settings_min_delay = self._spin(0, 600, self._default_value("min_delay", 10), " s")
+        self.settings_connections = self._spin(
+            1, 32, self._default_value("connections", 8)
+        )
+        self.settings_connections.setToolTip(
+            "Maximum connections inside one download. Fragmented DASH/HLS sources use "
+            "parallel transfers; progressive sources accurately fall back to one stream."
+        )
         self.settings_max_delay = self._spin(0, 600, self._default_value("max_delay", 25), " s")
         self.settings_retries = self._spin(1, 20, self._default_value("retries", 3))
         self.settings_retry_wait = self._spin(
@@ -2484,6 +2502,7 @@ class MainWindow(QMainWindow):
             expanded=True,
         )
         batch_form.addRow("Parallel workers", self.settings_workers)
+        batch_form.addRow("Connections per download", self.settings_connections)
         batch_form.addRow("Minimum delay", self.settings_min_delay)
         batch_form.addRow("Maximum delay", self.settings_max_delay)
         batch_form.addRow("Retries", self.settings_retries)
@@ -2664,6 +2683,7 @@ class MainWindow(QMainWindow):
 
         params = dict(params)
         params["workers"] = self._default_value("workers", machine_parallel_workers())
+        params["connections"] = self._default_value("connections", 8)
         params["min_delay"] = self._default_value("min_delay", 10)
         params["max_delay"] = self._default_value("max_delay", 25)
         params["retries"] = self._default_value("retries", 3)
@@ -2702,6 +2722,9 @@ class MainWindow(QMainWindow):
         thread.started.connect(worker.run)
         worker.log.connect(self._append_log)
         worker.progress.connect(self._update_operation_progress)
+        worker.download_progress.connect(
+            lambda event, name=operation: self._update_download_progress(name, event)
+        )
         worker.phase_changed.connect(self._operation_phase_changed)
         worker.file_in_use.connect(self._show_file_in_use_warning)
         worker.item_finished.connect(self._mark_batch_item_finished)
@@ -2771,6 +2794,7 @@ class MainWindow(QMainWindow):
             return
         params = dict(params)
         params["workers"] = self._default_value("workers", machine_parallel_workers())
+        params["connections"] = self._default_value("connections", 8)
         params["min_delay"] = self._default_value("min_delay", 10)
         params["max_delay"] = self._default_value("max_delay", 25)
         params["retries"] = self._default_value("retries", 3)
@@ -2800,6 +2824,9 @@ class MainWindow(QMainWindow):
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.log.connect(lambda line, name=operation: self._append_log(f"[{name}] {line}"))
+        worker.download_progress.connect(
+            lambda event, name=operation: self._update_download_progress(name, event)
+        )
         worker.file_in_use.connect(
             lambda path, action, current=worker: self._show_parallel_file_warning(
                 current, path, action
@@ -2970,6 +2997,18 @@ class MainWindow(QMainWindow):
         self.activity_label.setText(
             running_operation_text(self._active_operation_name, current_action)
         )
+
+    def _update_download_progress(self, operation: str, event: dict[str, Any]) -> None:
+        panel = {
+            "audio": getattr(self, "audio_download_progress", None),
+            "video": getattr(self, "video_download_progress", None),
+            "album": getattr(self, "album_download_progress", None),
+            "jukebox": getattr(self, "jukebox_download_progress", None),
+            "edit_media": getattr(self, "edit_download_progress", None),
+            "redownload": getattr(self, "edit_download_progress", None),
+        }.get(operation)
+        if panel is not None:
+            panel.update_download(event)
 
     def _show_file_in_use_warning(self, path_text: str, action: str) -> None:
         path = Path(path_text)
@@ -3569,6 +3608,7 @@ class MainWindow(QMainWindow):
     def _reset_default_values() -> dict[str, Any]:
         return {
             "workers": machine_parallel_workers(),
+            "connections": 8,
             "min_delay": 10,
             "max_delay": 25,
             "retries": 3,
@@ -3670,6 +3710,7 @@ class MainWindow(QMainWindow):
         self._metadata_tracker_file = str(default_directory / "album_enrichment_tracker.json")
 
         self.settings_workers.setValue(int(values["workers"]))
+        self.settings_connections.setValue(int(values["connections"]))
         self.settings_min_delay.setValue(int(values["min_delay"]))
         self.settings_max_delay.setValue(int(values["max_delay"]))
         self.settings_retries.setValue(int(values["retries"]))
@@ -3808,6 +3849,7 @@ class MainWindow(QMainWindow):
         provider_draft = self._ai_provider_drafts[provider_id]
         values = {
             "workers": self.settings_workers.value(),
+            "connections": self.settings_connections.value(),
             "min_delay": min_delay,
             "max_delay": max_delay,
             "retries": self.settings_retries.value(),

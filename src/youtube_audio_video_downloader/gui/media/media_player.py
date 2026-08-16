@@ -4529,6 +4529,15 @@ class MediaLibraryPage(QWidget):
                 )
             )
         )
+        menu.addSeparator()
+        delete_action = menu.addAction(
+            "Permanently delete file…" if len(items) == 1 else "Permanently delete selected files…"
+        )
+        delete_action.setObjectName("dangerAction")
+        delete_action.setToolTip("Delete the media from disk. This cannot be undone.")
+        delete_action.triggered.connect(
+            lambda _checked=False, selected=list(items): self._permanently_delete_media(selected)
+        )
         menu.exec(global_position)
 
     def _playback_display_edit_modes(self, path: str | Path) -> tuple[str, str]:
@@ -4607,6 +4616,10 @@ class MediaLibraryPage(QWidget):
         }
         return sorted(folders, key=lambda path: str(path).casefold())
 
+    def _all_album_tracks(self, album: str) -> list[LibraryItem]:
+        key = album.strip().casefold()
+        return [item for item in self.items if item.album.strip().casefold() == key]
+
     def _show_album_context_menu(self, position: QPoint) -> None:
         entry = self.albums.itemAt(position)
         if entry is None:
@@ -4614,8 +4627,11 @@ class MediaLibraryPage(QWidget):
         album = str(entry.data(Qt.ItemDataRole.UserRole) or "")
         self._show_album_folder_context_menu(
             album,
-            self._album_folders(album),
-            [item for item in self.filtered if item.album == album],
+            sorted(
+                {Path(item.path).expanduser().parent.resolve() for item in self._all_album_tracks(album)},
+                key=lambda path: str(path).casefold(),
+            ),
+            self._all_album_tracks(album),
             self.albums.viewport().mapToGlobal(position),
         )
 
@@ -4672,7 +4688,108 @@ class MediaLibraryPage(QWidget):
                 folders,
                 self.request_track_reorder,
             )
+        menu.addSeparator()
+        delete_action = menu.addAction("Permanently delete album songs…")
+        delete_action.setObjectName("dangerAction")
+        delete_action.setToolTip(
+            "Delete every indexed media file in this album from disk. This cannot be undone."
+        )
+        delete_action.triggered.connect(
+            lambda _checked=False, name=album: self._permanently_delete_album(name)
+        )
         menu.exec(global_position)
+
+    def _permanently_delete_album(self, album: str) -> None:
+        tracks = self._all_album_tracks(album)
+        if not tracks:
+            return
+        folders = sorted(
+            {Path(item.path).expanduser().parent.resolve() for item in tracks if item.path},
+            key=lambda path: str(path).casefold(),
+        )
+        folder_lines = "\n".join(f"• {folder}" for folder in folders[:8])
+        extra = f"\n• …and {len(folders) - 8} more" if len(folders) > 8 else ""
+        warning = (
+            f"\n\nWARNING: This album spans {len(folders)} folders. Only the {len(tracks)} "
+            "indexed album media files listed by the library will be deleted from:\n"
+            f"{folder_lines}{extra}"
+            if len(folders) > 1
+            else f"\n\nFolder:\n{folder_lines}"
+        )
+        self._permanently_delete_media(
+            tracks,
+            title=f'Permanently delete album "{album}"?',
+            detail=(
+                f"This permanently deletes {len(tracks)} song/video file(s). "
+                "Playlists and the current queue will be updated. This cannot be undone."
+                f"{warning}"
+            ),
+        )
+
+    def _permanently_delete_media(
+        self,
+        items: list[LibraryItem],
+        *,
+        title: str = "Permanently delete media?",
+        detail: str = "",
+    ) -> None:
+        paths = list(dict.fromkeys(str(Path(item.path).expanduser().resolve()) for item in items if item.path))
+        if not paths:
+            return
+        if not detail:
+            names = "\n".join(f"• {Path(path).name}" for path in paths[:8])
+            extra = f"\n• …and {len(paths) - 8} more" if len(paths) > 8 else ""
+            detail = (
+                f"This permanently deletes {len(paths)} file(s) from disk. "
+                "Playlists and the current queue will be updated. This cannot be undone.\n\n"
+                f"{names}{extra}"
+            )
+        answer = QMessageBox.question(
+            self,
+            title,
+            detail,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        targets = {path.casefold() for path in paths}
+        if 0 <= self.queue_index < len(self.queue) and self.queue[self.queue_index].path.casefold() in targets:
+            self.stop()
+        self.queue = [item for item in self.queue if item.path.casefold() not in targets]
+        self._queue_source = [item for item in self._queue_source if item.path.casefold() not in targets]
+        self.queue_index = min(self.queue_index, len(self.queue) - 1)
+        for name, playlist_paths in self.playlists.items():
+            self.playlists[name] = [path for path in playlist_paths if str(Path(path).expanduser().resolve()).casefold() not in targets]
+        self._save_playlists()
+        failures: list[str] = []
+        deleted = 0
+        for path_text in paths:
+            path = Path(path_text)
+            try:
+                if path.exists():
+                    path.unlink()
+                deleted += 1
+                self._video_display_profiles.pop(self._video_profile_key(path), None)
+            except OSError as exc:
+                failures.append(f"{path.name}: {exc}")
+        self.settings.setValue(
+            "library/video_display_profiles",
+            json.dumps(self._video_display_profiles, sort_keys=True),
+        )
+        self.settings.sync()
+        self._remote_state_dirty = True
+        self._update_queue_status()
+        self._render_playlist_tracks()
+        self.refresh_library()
+        if failures:
+            QMessageBox.warning(
+                self,
+                "Some files could not be deleted",
+                f"Deleted {deleted} file(s).\n\n" + "\n".join(failures[:12]),
+            )
+        else:
+            QMessageBox.information(self, "Media deleted", f"Permanently deleted {deleted} file(s).")
 
     @staticmethod
     def _add_album_folder_actions(

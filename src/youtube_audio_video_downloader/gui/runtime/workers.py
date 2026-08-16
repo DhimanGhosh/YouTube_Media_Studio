@@ -250,6 +250,7 @@ class OperationWorker(QObject):
     phase_changed = pyqtSignal(str, int)
     file_in_use = pyqtSignal(str, str)
     item_finished = pyqtSignal(str, bool)
+    download_progress = pyqtSignal(object)
 
     def __init__(self, operation: str, params: dict) -> None:
         super().__init__()
@@ -352,6 +353,16 @@ class OperationWorker(QObject):
             event.set()
 
     def _forward_log(self, line: str) -> None:
+        from ...services.downloads.download_progress import (
+            format_download_event,
+            parse_download_event,
+        )
+
+        download_event = parse_download_event(line)
+        if download_event is not None:
+            self.download_progress.emit(download_event)
+            self.log.emit(format_download_event(download_event))
+            return
         self.log.emit(line)
         phase_total, phase_label = _progress_phase_from_log(line)
         if phase_total:

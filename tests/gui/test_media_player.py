@@ -22,7 +22,9 @@ from PyQt6.QtCore import (  # noqa: E402
 from PyQt6.QtGui import QColor, QIcon, QPixmap, QWheelEvent  # noqa: E402
 from PyQt6.QtMultimedia import QAudioBuffer, QAudioFormat, QMediaPlayer  # noqa: E402
 from PyQt6.QtTest import QSignalSpy, QTest  # noqa: E402
-from PyQt6.QtWidgets import QApplication, QListWidget, QMenu, QStackedWidget  # noqa: E402
+from PyQt6.QtWidgets import (  # noqa: E402
+    QApplication, QListWidget, QMenu, QMessageBox, QStackedWidget,
+)
 
 from youtube_audio_video_downloader.gui.media.media_player import (  # noqa: E402
     ArtistRepairDialog,
@@ -105,6 +107,58 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.app.processEvents()
         self.temporary.cleanup()
         self.environment_patch.stop()
+
+    def test_permanent_delete_removes_file_queue_and_playlist_reference(self) -> None:
+        path = Path(self.temporary.name) / "delete-me.mp3"
+        path.write_bytes(b"media")
+        item = LibraryItem(
+            path=str(path), title="Delete me", album="Test Album",
+            artists="Artist", year=2020, duration_ms=1000, media_type="audio", modified_ns=1,
+        )
+        self.page.items = [item]
+        self.page.queue = [item]
+        self.page.queue_index = 0
+        self.page.playlists = {"List": [str(path)]}
+        with (
+            patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes),
+            patch.object(QMessageBox, "information"),
+            patch.object(self.page, "refresh_library"),
+            patch.object(self.page, "stop"),
+        ):
+            self.page._permanently_delete_media([item])
+        self.assertFalse(path.exists())
+        self.assertEqual(self.page.queue, [])
+        self.assertEqual(self.page.playlists["List"], [])
+
+    def test_album_delete_warns_when_tracks_span_multiple_folders(self) -> None:
+        paths = []
+        items = []
+        for index in range(2):
+            folder = Path(self.temporary.name) / f"disc-{index + 1}"
+            folder.mkdir()
+            path = folder / f"track-{index + 1}.mp3"
+            path.write_bytes(b"media")
+            paths.append(path)
+            items.append(LibraryItem(
+                path=str(path), title=path.stem, album="Spanning Album",
+                artists="Artist", year=2020, duration_ms=1000,
+                media_type="audio", modified_ns=1,
+            ))
+        self.page.items = items
+        messages: list[str] = []
+
+        def answer(_parent, _title, message, *_args):
+            messages.append(message)
+            return QMessageBox.StandardButton.Yes
+
+        with (
+            patch.object(QMessageBox, "question", side_effect=answer),
+            patch.object(QMessageBox, "information"),
+            patch.object(self.page, "refresh_library"),
+        ):
+            self.page._permanently_delete_album("Spanning Album")
+        self.assertTrue(all(not path.exists() for path in paths))
+        self.assertIn("spans 2 folders", messages[0])
 
     def test_every_column_is_sortable_and_user_resizable_after_initial_sizing(self) -> None:
         header = self.page.table.horizontalHeader()

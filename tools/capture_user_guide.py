@@ -72,7 +72,12 @@ def _visible_rect(target: QWidget, root: QWidget) -> QRect | None:
 def _card_regions(page: QWidget, root: QWidget) -> list[QRect]:
     cards: list[QRect] = []
     for frame in page.findChildren(QFrame):
-        if frame.objectName() not in {"glassCard", "heroCard", "libraryRecommendationCard"}:
+        if frame.objectName() not in {
+            "glassCard",
+            "heroCard",
+            "libraryRecommendationCard",
+            "downloadProgressPanel",
+        }:
             continue
         rect = _visible_rect(frame, root)
         if rect is not None:
@@ -140,6 +145,31 @@ def _capture_workspace(
 ) -> None:
     page = _show_page(window, app, index)
     _save_annotated(window, WORKSPACES / filename, _card_regions(page, window))
+
+
+def _capture_download_activity(window: MainWindow, app: QApplication) -> None:
+    page = _show_page(window, app, 3)
+    panel = window.video_download_progress
+    if isinstance(page, QScrollArea):
+        page.ensureWidgetVisible(panel, 20, 20)
+    panel.update_download({
+        "label": "Example video",
+        "status": "downloading",
+        "percent": 41.7,
+        "downloaded": 259_857_000,
+        "total": 623_467_000,
+        "speed": 43_951_000,
+        "eta": 11,
+        "connections_configured": 8,
+        "connections_used": 8,
+        "fragmented": True,
+    })
+    _settle(app)
+    _save_annotated(
+        window,
+        WORKSPACES / "download-activity.png",
+        _widget_regions([panel], window),
+    )
 
 
 def _capture_settings(window: MainWindow, app: QApplication) -> None:
@@ -336,6 +366,7 @@ def main() -> int:
             (11, "live-logs.png"),
         ):
             _capture_workspace(window, app, index, filename)
+        _capture_download_activity(window, app)
         _capture_utilities(window, app)
         _capture_settings(window, app)
         _capture_library(window, app)

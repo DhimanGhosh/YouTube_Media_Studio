@@ -139,7 +139,7 @@ a media-library deletion command.
 | Callout | Area | Use |
 | --- | --- | --- |
 | 1 | Settings actions | Reset all application settings or save the edited defaults. |
-| 2 | Batch processing and network | Set parallel workers, randomized minimum/maximum delay, retries, retry delay, and the longer rate-limit wait. |
+| 2 | Batch processing and network | Set parallel item workers, per-download connections, randomized delays, retries, retry delay, and the longer rate-limit wait. |
 | 3 | Audio and metadata defaults | Expand for MP3 bitrate, sample rate, and Wikipedia track-order behavior. |
 | 4 | Media Playback | Expand for audio/video seek controls and video display memory. |
 | 5 | AI providers and online evidence | Expand for provider, model, credentials, Ollama fallback, and SerpApi. |
@@ -148,6 +148,11 @@ a media-library deletion command.
 
 - **Parallel workers** controls how many independent items can run together, up to the
   safe machine-specific maximum shown by the control.
+- **Connections per download** controls how many fragments one media item may transfer
+  concurrently (1–32, default 8). DASH/HLS sources use genuine parallel fragment
+  connections; a progressive source that cannot be segmented accurately uses one
+  stream. This is separate from Parallel workers, so their product is the potential
+  upper bound on simultaneous network connections.
 - **Minimum delay / Maximum delay** define randomized pacing between download requests.
 - **Retries** is the bounded number of attempts for retryable work.
 - **Retry delay** is the normal wait between failed attempts.
@@ -304,7 +309,9 @@ From scratch:
 
 The output filename is generated from `Title - Album - Artists`. The saved MP3 receives
 title, album, normalized artists, year, artwork, and track numbering. Download pacing,
-retries, bitrate, sample rate, and worker count come from Global Settings.
+retries, bitrate, sample rate, worker count, and connections come from Global Settings.
+The activity card and Live Logs update during transfer; fragment lines include the
+segment position when the source exposes it.
 
 ### Tag existing MP3 files
 
@@ -335,6 +342,25 @@ normalized destination already exists.
    batch result is useful.
 8. Enable overwrite only when replacing an existing output is intentional.
 9. Select **Start video job** and confirm the final path in Live Logs.
+
+The connection strip represents actual yt-dlp transfer capability. Several blocks are
+active for segmented DASH/HLS media; one block is active for a progressive source that
+does not publish independently downloadable fragments. The app never invents per-part
+percentages.
+
+### Monitor downloads
+
+![Download activity panel](media/user-guide/workspaces/download-activity.png)
+
+| Callout | Area | Use |
+| --- | --- | --- |
+| 1 | Download activity | Read overall percentage, downloaded/total size, speed, ETA, and active/available connection blocks. |
+
+Audio Downloader, Video Downloader, Album Splitter, Jukebox Splitter, and the Edit File
+replacement action use the same activity panel. **Live Logs** simultaneously receives
+compact `[DOWNLOAD]` lines with the same values and a segment index/count when yt-dlp
+exposes fragmented progress. The panel reports “single source stream” when the selected
+source cannot use parallel fragments.
 
 ## Split an album or jukebox
 
@@ -727,6 +753,23 @@ When a path is already present, choose **Skip duplicates** to add only new selec
 - Right-click a playlist track to Edit File, add it elsewhere, or remove it.
 - Play, queue, and remove actions operate on the selected playlist rows.
 - Drag the divider beside the drawer to resize it; the width is remembered.
+
+### Permanently delete library media
+
+Right-click a song, video, table selection, playlist track, or currently playing item
+and choose **Permanently delete file(s)…**. The confirmation lists the selected files,
+states that deletion cannot be undone, and defaults to **No**. After confirmation the
+app stops an affected current item, removes deleted paths from the queue and every
+playlist, removes saved video-display profiles, deletes the files from disk, and
+refreshes the library.
+
+Right-click an album and choose **Permanently delete album songs…** to delete every
+indexed media item whose album tag matches that album—not merely the rows currently
+visible under a search/year filter. When those tracks span multiple physical folders,
+the confirmation becomes a prominent warning and lists the folders before allowing the
+operation. Only indexed album media files are deleted; the app does not recursively
+delete folders, cover art, or unrelated files. Any failed file remains on disk and is
+reported separately.
 
 ### Now Playing queue
 

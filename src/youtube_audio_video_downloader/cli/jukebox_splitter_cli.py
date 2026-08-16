@@ -67,6 +67,10 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--connections", type=int, default=_DEFAULTS.segment_connections,
+        help="Parallel fragment connections per download (1-32; source permitting).",
+    )
+    parser.add_argument(
         "--max-delay",
         type=int,
         default=_DEFAULTS.max_delay_seconds,
@@ -112,6 +116,8 @@ def _validate_args(args: argparse.Namespace) -> None:
 
     if args.workers < 1:
         raise ValueError("--workers/--max-workers must be at least 1")
+    if not 1 <= args.connections <= 32:
+        raise ValueError("--connections must be between 1 and 32")
     if args.min_delay < 0 or args.max_delay < 0:
         raise ValueError("Delay values cannot be negative")
     if args.min_delay > args.max_delay:
@@ -128,6 +134,7 @@ def run(args: argparse.Namespace) -> list:
     _validate_args(args)
     settings = DownloadSettings(
         max_workers=args.workers,
+        segment_connections=args.connections,
         min_delay_seconds=args.min_delay,
         max_delay_seconds=args.max_delay,
         max_retries=args.retries,

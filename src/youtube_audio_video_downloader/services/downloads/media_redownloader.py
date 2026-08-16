@@ -10,7 +10,6 @@ import time
 import uuid
 from copy import deepcopy
 from pathlib import Path
-from typing import Any
 from urllib.parse import urlparse
 
 from mutagen import File as MutagenFile
@@ -34,6 +33,7 @@ def redownload_media(
     overwrite_source: bool = False,
     output_path: str | Path | None = None,
     cancellation_token: CancellationToken | None = None,
+    segment_connections: int = 8,
 ) -> list[Path]:
     """Download fresh media and publish metadata-preserving replacement(s).
 
@@ -74,7 +74,7 @@ def redownload_media(
     results: list[Path] = []
     with tempfile.TemporaryDirectory(prefix="yt_redownload_") as directory:
         work_dir = Path(directory)
-        downloaded = _download_source(url, work_dir, token)
+        downloaded = _download_source(url, work_dir, token, segment_connections)
         staged: list[tuple[Path, Path, str]] = []
         try:
             for kind in requested_kinds:
@@ -160,18 +160,15 @@ def _available_path(candidate: Path) -> Path:
         counter += 1
 
 
-def _download_source(url: str, work_dir: Path, token: CancellationToken) -> Path:
+def _download_source(
+    url: str, work_dir: Path, token: CancellationToken, segment_connections: int
+) -> Path:
     try:
         import yt_dlp
     except ImportError as exc:
         raise RuntimeError("yt-dlp is required to redownload media") from exc
 
-    def progress_hook(status: dict[str, Any]) -> None:
-        token.raise_if_cancelled()
-        if status.get("status") == "downloading":
-            percent = str(status.get("_percent_str", "")).strip()
-            if percent:
-                print(f"[DOWNLOAD] {percent}")
+    from .download_progress import accelerated_download_options
 
     options = {
         "format": "bestvideo*+bestaudio/best",
@@ -179,8 +176,8 @@ def _download_source(url: str, work_dir: Path, token: CancellationToken) -> Path
         "merge_output_format": "mkv",
         "noplaylist": True,
         "overwrites": True,
-        "progress_hooks": [progress_hook],
-        "quiet": True,
+        **accelerated_download_options("Replacement media", segment_connections, token),
+        "quiet": False,
         "no_warnings": False,
     }
     with yt_dlp.YoutubeDL(options) as downloader:

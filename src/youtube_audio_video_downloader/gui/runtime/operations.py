@@ -380,6 +380,7 @@ def _base_settings(params: dict[str, Any]) -> DownloadSettings:
     min_delay = int(params.get("min_delay", 10))
     max_delay = int(params.get("max_delay", 25))
     retries = int(params.get("retries", 3))
+    connections = int(params.get("connections", 8))
     retry_wait = int(params.get("retry_wait", 60))
     rate_limit_wait = int(params.get("rate_limit_wait", 180))
     if workers < 1:
@@ -390,11 +391,14 @@ def _base_settings(params: dict[str, Any]) -> DownloadSettings:
         raise ValueError("Minimum delay cannot be greater than maximum delay")
     if retries < 1:
         raise ValueError("Retries must be at least 1")
+    if not 1 <= connections <= 32:
+        raise ValueError("Connections per download must be between 1 and 32")
     if retry_wait < 0 or rate_limit_wait < 1:
         raise ValueError("Retry waits must be non-negative and rate-limit wait must be positive")
 
     return DownloadSettings(
         max_workers=workers,
+        segment_connections=connections,
         min_delay_seconds=min_delay,
         max_delay_seconds=max_delay,
         max_retries=retries,
@@ -652,6 +656,7 @@ def _run_redownload(params: dict[str, Any], token: CancellationToken) -> Operati
         overwrite_source=bool(params.get("overwrite_source", False)),
         output_path=str(params.get("output_path", "") or "") or None,
         cancellation_token=token,
+        segment_connections=int(params.get("connections", 8)),
     )
     return OperationSummary(
         operation="redownload",

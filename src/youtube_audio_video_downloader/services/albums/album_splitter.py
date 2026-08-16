@@ -631,6 +631,7 @@ class YouTubeAlbumSplitter:
         """Download the unconverted source audio for a standalone track."""
 
         import yt_dlp
+        from ..downloads.download_progress import accelerated_download_options
 
         output_template = str(temp_dir / "source.%(ext)s")
         options: dict[str, Any] = {
@@ -643,6 +644,11 @@ class YouTubeAlbumSplitter:
             "no_warnings": False,
             "retries": self.settings.max_retries,
             "fragment_retries": self.settings.max_retries,
+            **accelerated_download_options(
+                track.title,
+                self.settings.segment_connections,
+                self.cancellation_token,
+            ),
         }
 
         with yt_dlp.YoutubeDL(options) as ydl:
@@ -676,6 +682,8 @@ class YouTubeAlbumSplitter:
     def _build_individual_track_yt_dlp_options(self, album_dir: Path, file_name: str) -> dict[str, Any]:
         """Build yt-dlp options for standalone album-track MP3 downloads."""
 
+        from ..downloads.download_progress import accelerated_download_options
+
         return {
             "format": "bestaudio/best",
             "outtmpl": str(album_dir / f"{file_name}.%(ext)s"),
@@ -686,6 +694,11 @@ class YouTubeAlbumSplitter:
             "no_warnings": False,
             "retries": self.settings.max_retries,
             "fragment_retries": self.settings.max_retries,
+            **accelerated_download_options(
+                file_name,
+                self.settings.segment_connections,
+                self.cancellation_token,
+            ),
             "postprocessors": [
                 {
                     "key": "FFmpegExtractAudio",
@@ -840,6 +853,7 @@ class YouTubeAlbumSplitter:
         """Download the best available source audio with yt-dlp."""
 
         import yt_dlp
+        from ..downloads.download_progress import accelerated_download_options
 
         output_template = str(temp_dir / "source.%(ext)s")
         options: dict[str, Any] = {
@@ -852,6 +866,11 @@ class YouTubeAlbumSplitter:
             "no_warnings": False,
             "retries": self.settings.max_retries,
             "fragment_retries": self.settings.max_retries,
+            **accelerated_download_options(
+                job.json_key,
+                self.settings.segment_connections,
+                self.cancellation_token,
+            ),
         }
 
         with yt_dlp.YoutubeDL(options) as ydl:
