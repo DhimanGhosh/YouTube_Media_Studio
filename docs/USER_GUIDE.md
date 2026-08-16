@@ -318,22 +318,26 @@ longer form.
    or open the containing folder.
    Drag the divider between **Artists** and **Tracks** to give either pane more room; the
    chosen artist-pane width is remembered.
-   During video playback, double-click the picture or select **Full screen** to move the
-   complete player—including seek, transport, repeat/shuffle, and volume controls—to a
-   full screen view. Double-click again, select **Exit full screen**, or press **Esc** to
-   return to the library. The embedded video surface is also taller than the music player.
+   During video playback, double-click the picture or select **Full screen** to open a
+   borderless, monitor-sized video surface. Its controls slide up from the bottom when the
+   mouse moves and hide again while you watch. Double-click again, select **Exit full
+   screen**, or press **Esc** to return to the library. The embedded video surface is also
+   taller than the music player.
    Use **Aspect** or press **A** to cycle display ratios; use **Crop** or press **C** to
    cycle centered crop ratios. These video-only controls work in embedded and full screen
    playback and briefly show the selected ratio at the top-right of the black play area.
-   The picture is always clipped to that play area and cannot cover the title, timeline,
-   transport, or volume controls. **Default** restores the video's original aspect or
-   uncropped frame.
+   The picture is always clipped to the available play area; crop-to-fill uses the complete
+   monitor while the overlay is hidden. **Default** restores the video's original aspect
+   or uncropped frame.
    Press **F** to toggle full screen, **Space** to play/pause, **M** to mute, **S** to
    stop, **N** for the next track, or **P** for the previous track. **Left/Right** seek by
-   the interval configured under **Global Settings > Video playback**; hold **Shift** to
+   the interval configured under **Global Settings > Media Playback**; hold **Shift** to
    seek twice that amount. **Home** or **0** jumps to `00:00`, while **1** through **9**
    jump to 10% through 90% of the video. Keyboard controls activate while the video or
    its player controls have focus, leaving library search text unaffected.
+   Transport controls are ordered **Shuffle, `<<`, Previous, Play/Pause, Next, `>>`,
+   Stop, Repeat**. Video then adds **Aspect, Crop, Full screen**; these three controls are
+   hidden during audio playback because they do not apply to audio.
 6. Select **Playlists** in the page header to create, rename, delete, play, queue, or
    edit saved collections. Playlists store exact links to local file paths and remain
    available after restart. Drag the divider beside the playlist or Now Playing drawer
@@ -421,7 +425,7 @@ the top-right of the video confirms each intentional crop, aspect, seek, or mute
 passive mouse-hover popups are disabled throughout Media Library.
 
 By default, every newly loaded video starts with **Aspect: Default** and **Crop: Default**.
-Enable **Global Settings > Video playback > Crop/aspect memory** to carry the current
+Enable **Global Settings > Media Playback > Crop/aspect memory** to carry the current
 choices to the next video and preserve them for the next app session. Disable it again to
 make subsequent videos start at the two defaults.
 
@@ -445,8 +449,9 @@ video playback—not a search or editable text field—has focus.
 | `Home` or `0` | Jump to `00:00`. |
 | `1` through `9` | Jump to 10% through 90% of the total duration. |
 
-Set the base arrow-key interval from 1 to 60 seconds under **Global Settings > Video
-playback > Arrow-key seek interval**. The default is 10 seconds.
+Set the base seek interval from 1 to 60 seconds under **Global Settings > Media
+Playback > Seek interval**. The default is 10 seconds. The same interval controls the
+`<<` and `>>` buttons for both audio and video.
 
 The songs-and-videos table shows every matching scanned item; it does not truncate a
 large library. The count beside the table is the number of rows currently available

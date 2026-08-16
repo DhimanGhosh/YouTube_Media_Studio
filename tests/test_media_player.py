@@ -958,13 +958,50 @@ class MediaPlayerPageTest(unittest.TestCase):
     def test_player_controls_have_visible_icons_and_mode_labels(self) -> None:
         self.assertTrue(self.page.play_button.text() == "")
         self.assertFalse(self.page.play_button.icon().isNull())
+        self.assertEqual(self.page.seek_backward_button.text(), "<<")
+        self.assertEqual(self.page.seek_forward_button.text(), ">>")
         self.assertEqual(self.page.library_refresh_button.text(), "Refresh")
         self.assertEqual(self.page.shuffle_button.text(), "Shuffle off")
         self.assertEqual(self.page.repeat_button.text(), "Repeat off")
+        layout = self.page.player_controls.layout()
+        ordered_controls = (
+            self.page.shuffle_button,
+            self.page.seek_backward_button,
+            self.page.previous_button,
+            self.page.play_button,
+            self.page.next_button,
+            self.page.seek_forward_button,
+            self.page.stop_button,
+            self.page.repeat_button,
+            self.page.aspect_button,
+            self.page.crop_button,
+            self.page.fullscreen_button,
+        )
+        self.assertEqual(
+            [layout.indexOf(control) for control in ordered_controls],
+            list(range(len(ordered_controls))),
+        )
 
         self.page._state_changed(QMediaPlayer.PlaybackState.PlayingState)
         self.assertFalse(self.page.play_button.icon().isNull())
         self.assertEqual(self.page.play_button.text(), "")
+
+    def test_audio_transport_seeks_and_hides_video_only_controls(self) -> None:
+        player = Mock()
+        player.position.return_value = 30_000
+        player.duration.return_value = 90_000
+        self.page.player = player
+        self.page.set_video_seek_seconds(7)
+
+        QTest.mouseClick(self.page.seek_backward_button, Qt.MouseButton.LeftButton)
+        player.setPosition.assert_called_once_with(23_000)
+        player.setPosition.reset_mock()
+        QTest.mouseClick(self.page.seek_forward_button, Qt.MouseButton.LeftButton)
+        player.setPosition.assert_called_once_with(37_000)
+
+        self.assertTrue(self.page.aspect_button.isHidden())
+        self.assertTrue(self.page.crop_button.isHidden())
+        self.assertTrue(self.page.fullscreen_button.isHidden())
 
     def test_repeat_modes_control_end_of_queue(self) -> None:
         self.page.queue = list(self.page.items)
@@ -1301,23 +1338,37 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.app.processEvents()
 
         self.assertTrue(self.page._player_fullscreen)
-        self.assertTrue(self.page.window().isFullScreen())
+        fullscreen = self.page._fullscreen_window
+        overlay = self.page._fullscreen_controls_overlay
+        self.assertIsNotNone(fullscreen)
+        self.assertIsNotNone(overlay)
+        self.assertTrue(fullscreen.isFullScreen())
+        self.assertTrue(
+            bool(fullscreen.windowFlags() & Qt.WindowType.FramelessWindowHint)
+        )
         self.assertEqual(
             self.page.video_viewport.maximumHeight(), FULLSCREEN_VIDEO_MAX_HEIGHT
         )
-        self.assertEqual(
-            self.page.fullscreen_button.text(), "Exit full screen"
-        )
+        self.assertEqual(self.page.fullscreen_button.text(), "Exit full screen")
+        self.assertIs(self.page.video_viewport.window(), fullscreen)
+        self.assertIs(overlay.window(), fullscreen)
         self.assertIs(self.page.position.window(), self.page.window())
         self.assertIs(self.page.volume.window(), self.page.window())
-        self.assertIs(self.page.aspect_button.window(), self.page.window())
-        self.assertIs(self.page.crop_button.window(), self.page.window())
-        self.assertTrue(self.page.library_splitter.isHidden())
-        self.assertFalse(
-            self.page.video_viewport.geometry().intersects(
-                self.page.player_controls.geometry()
-            )
+        self.assertFalse(self.page.library_splitter.isHidden())
+        self.assertEqual(self.page.fullscreen_backward_button.text(), "<<")
+        self.assertEqual(self.page.fullscreen_forward_button.text(), ">>")
+
+        QTest.qWait(220)
+        self.assertTrue(overlay.isVisible())
+        self.page._animate_fullscreen_controls(False)
+        QTest.qWait(220)
+        self.assertTrue(overlay.isHidden())
+        self.assertEqual(
+            self.page.video_viewport.geometry(), fullscreen.rect()
         )
+        QTest.mouseMove(self.page.video_viewport, QPoint(12, 12))
+        QTest.qWait(220)
+        self.assertTrue(overlay.isVisible())
 
         QTest.keyClick(self.page.video, Qt.Key.Key_C)
         self.app.processEvents()
@@ -1342,11 +1393,13 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.assertTrue(self.page._player_fullscreen)
 
         QTest.mouseClick(
-            self.page.fullscreen_button, Qt.MouseButton.LeftButton
+            self.page.fullscreen_exit_button, Qt.MouseButton.LeftButton
         )
         self.app.processEvents()
 
         self.assertFalse(self.page._player_fullscreen)
+        self.assertFalse(self.page.window().isFullScreen())
+        self.assertIs(self.page.video_viewport.window(), self.page.window())
         self.assertIs(self.page.player_card.parent(), self.page._player_host)
         self.assertFalse(self.page.library_splitter.isHidden())
         self.assertEqual(

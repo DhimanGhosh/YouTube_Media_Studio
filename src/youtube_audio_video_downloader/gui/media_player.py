@@ -282,8 +282,10 @@ class VideoViewport(QWidget):
         else:
             crop_width_fraction = 1.0
             crop_height_fraction = source_ratio / crop_ratio
-        display_ratio = self._aspect_ratio or crop_ratio
         viewport_ratio = viewport_width / viewport_height
+        display_ratio = self._aspect_ratio or (
+            viewport_ratio if self._crop_ratio is not None else crop_ratio
+        )
         if viewport_ratio >= display_ratio:
             visible_height = viewport_height
             visible_width = round(visible_height * display_ratio)
@@ -902,9 +904,14 @@ class MediaLibraryPage(QWidget):
         self._suggestions_by_text: dict[str, LibraryItem] = {}
         self._seeking = False
         self._player_fullscreen = False
-        self._fullscreen_hidden_widgets: list[tuple[QWidget, bool]] = []
         self._fullscreen_window: QWidget | None = None
-        self._fullscreen_window_state = Qt.WindowState.WindowNoState
+        self._fullscreen_controls_overlay: QFrame | None = None
+        self._fullscreen_controls_animation: QPropertyAnimation | None = None
+        self._fullscreen_controls_visible = False
+        self._fullscreen_hide_timer = QTimer(self)
+        self._fullscreen_hide_timer.setSingleShot(True)
+        self._fullscreen_hide_timer.setInterval(2600)
+        self._fullscreen_hide_timer.timeout.connect(self._hide_fullscreen_controls)
         self._remember_video_display_modes = self.settings.value(
             "defaults/remember_video_display_modes", False, type=bool
         )
@@ -2660,6 +2667,9 @@ class MediaLibraryPage(QWidget):
         self.video_viewport.setMinimumHeight(EMBEDDED_VIDEO_MIN_HEIGHT)
         self.video_viewport.setMaximumHeight(EMBEDDED_VIDEO_MAX_HEIGHT)
         self.video = self.video_viewport.surface
+        self.video_viewport.setMouseTracking(True)
+        self.video.setMouseTracking(True)
+        self.video.viewport().setMouseTracking(True)
         self.video.installEventFilter(self)
         self.video.viewport().installEventFilter(self)
         self.video_viewport.installEventFilter(self)
@@ -2705,28 +2715,42 @@ class MediaLibraryPage(QWidget):
         self.shuffle_button.setCheckable(True)
         self.shuffle_button.clicked.connect(self.set_shuffle_enabled)
         controls_layout.addWidget(self.shuffle_button)
-        for offset, (icon_name, handler, tooltip) in enumerate(
+        for icon_name, handler, tooltip, primary, attribute in (
             (
-                ("previous", self.previous, "Previous"),
-                ("play", self.toggle_play, "Play / Pause"),
-                ("stop", self.stop, "Stop"),
-                ("next", self.next, "Next"),
-            )
+                "backward",
+                lambda: self._seek_relative(-self._video_seek_seconds),
+                "Seek backward",
+                False,
+                "seek_backward_button",
+            ),
+            ("previous", self.previous, "Previous", False, "previous_button"),
+            ("play", self.toggle_play, "Play / Pause", True, "play_button"),
+            ("next", self.next, "Next", False, "next_button"),
+            (
+                "forward",
+                lambda: self._seek_relative(self._video_seek_seconds),
+                "Seek forward",
+                False,
+                "seek_forward_button",
+            ),
+            ("stop", self.stop, "Stop", False, "stop_button"),
         ):
             button = QPushButton()
             button.setObjectName(
-                "playerPrimaryButton" if offset == 1 else "playerControlButton"
+                "playerPrimaryButton" if primary else "playerControlButton"
             )
-            button.setFixedSize(56 if offset == 1 else 46, 46)
-            icon_size = 27 if offset == 1 else 23
-            button.setIcon(_transport_icon(icon_name))
-            button.setIconSize(QSize(icon_size, icon_size))
+            button.setFixedSize(56 if primary else 46, 46)
+            icon_size = 27 if primary else 23
+            if icon_name in {"backward", "forward"}:
+                button.setText("<<" if icon_name == "backward" else ">>")
+            else:
+                button.setIcon(_transport_icon(icon_name))
+                button.setIconSize(QSize(icon_size, icon_size))
             button.setToolTip(tooltip)
             button.setAccessibleName(tooltip)
             button.clicked.connect(handler)
             controls_layout.addWidget(button)
-            if offset == 1:
-                self.play_button = button
+            setattr(self, attribute, button)
         self.repeat_button = QPushButton()
         self.repeat_button.setObjectName("playerModeButton")
         self.repeat_button.clicked.connect(self.cycle_repeat_mode)
@@ -2734,16 +2758,19 @@ class MediaLibraryPage(QWidget):
         self.aspect_button = QPushButton()
         self.aspect_button.setObjectName("playerModeButton")
         self.aspect_button.setEnabled(False)
+        self.aspect_button.setVisible(False)
         self.aspect_button.clicked.connect(self.cycle_video_aspect)
         controls_layout.addWidget(self.aspect_button)
         self.crop_button = QPushButton()
         self.crop_button.setObjectName("playerModeButton")
         self.crop_button.setEnabled(False)
+        self.crop_button.setVisible(False)
         self.crop_button.clicked.connect(self.cycle_video_crop)
         controls_layout.addWidget(self.crop_button)
         self.fullscreen_button = QPushButton("Full screen")
         self.fullscreen_button.setObjectName("playerModeButton")
         self.fullscreen_button.setEnabled(False)
+        self.fullscreen_button.setVisible(False)
         self.fullscreen_button.setToolTip(
             "Show the video and playback controls full screen"
         )
@@ -2816,6 +2843,18 @@ class MediaLibraryPage(QWidget):
             and (watched is self or self.isAncestorOf(watched))
         ):
             return True
+        fullscreen = self._fullscreen_window
+        if fullscreen is not None and (
+            watched is fullscreen
+            or (isinstance(watched, QWidget) and fullscreen.isAncestorOf(watched))
+        ):
+            if event.type() == QEvent.Type.Resize and watched is fullscreen:
+                self._layout_fullscreen_surface()
+            elif event.type() in {QEvent.Type.MouseMove, QEvent.Type.Enter}:
+                self._show_fullscreen_controls()
+            elif event.type() == QEvent.Type.Close:
+                self.exit_video_fullscreen()
+                return True
         if watched in {
             self.video,
             self.video.viewport(),
@@ -2827,8 +2866,200 @@ class MediaLibraryPage(QWidget):
             return True
         return super().eventFilter(watched, event)
 
+    def _ensure_fullscreen_window(self) -> QWidget:
+        if self._fullscreen_window is not None:
+            return self._fullscreen_window
+        window = QWidget(
+            None,
+            Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint,
+        )
+        window.setObjectName("fullscreenVideoWindow")
+        window.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        window.setStyleSheet("#fullscreenVideoWindow { background: black; border: 0; }")
+        window.setMouseTracking(True)
+        window.installEventFilter(self)
+        overlay = QFrame(window)
+        overlay.setObjectName("fullscreenVideoControls")
+        overlay.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        overlay.setStyleSheet(
+            "#fullscreenVideoControls { background: rgba(7, 12, 27, 220); "
+            "border: 0; border-radius: 0; }"
+        )
+        controls = QVBoxLayout(overlay)
+        controls.setContentsMargins(18, 8, 18, 10)
+        controls.setSpacing(5)
+        heading = QHBoxLayout()
+        self.fullscreen_now_playing = QLabel("Nothing playing")
+        self.fullscreen_now_playing.setObjectName("sectionTitle")
+        heading.addWidget(self.fullscreen_now_playing, 1)
+        self.fullscreen_elapsed = QLabel("0:00 / 0:00")
+        heading.addWidget(self.fullscreen_elapsed)
+        controls.addLayout(heading)
+        self.fullscreen_position = AnimatedSeekSlider()
+        self.fullscreen_position.seekRequested.connect(self.player_seek_requested)
+        controls.addWidget(self.fullscreen_position)
+
+        row = QHBoxLayout()
+        row.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.fullscreen_shuffle_button = QPushButton()
+        self.fullscreen_shuffle_button.setObjectName("playerModeButton")
+        self.fullscreen_shuffle_button.setCheckable(True)
+        self.fullscreen_shuffle_button.clicked.connect(self.set_shuffle_enabled)
+        row.addWidget(self.fullscreen_shuffle_button)
+        for icon_name, handler, primary, tooltip in (
+            (
+                "backward",
+                lambda: self._seek_relative(-self._video_seek_seconds),
+                False,
+                "Seek backward",
+            ),
+            ("previous", self.previous, False, "Previous"),
+            ("play", self.toggle_play, True, "Play / Pause"),
+            ("next", self.next, False, "Next"),
+            (
+                "forward",
+                lambda: self._seek_relative(self._video_seek_seconds),
+                False,
+                "Seek forward",
+            ),
+            ("stop", self.stop, False, "Stop"),
+        ):
+            button = QPushButton()
+            button.setObjectName(
+                "playerPrimaryButton" if primary else "playerControlButton"
+            )
+            button.setFixedSize(56 if primary else 46, 46)
+            if icon_name in {"backward", "forward"}:
+                button.setText("<<" if icon_name == "backward" else ">>")
+            else:
+                button.setIcon(_transport_icon(icon_name))
+                icon_size = 27 if primary else 23
+                button.setIconSize(QSize(icon_size, icon_size))
+            button.setToolTip(tooltip)
+            button.setAccessibleName(tooltip)
+            button.clicked.connect(handler)
+            row.addWidget(button)
+            setattr(self, f"fullscreen_{icon_name}_button", button)
+        self.fullscreen_repeat_button = QPushButton()
+        self.fullscreen_repeat_button.setObjectName("playerModeButton")
+        self.fullscreen_repeat_button.clicked.connect(self.cycle_repeat_mode)
+        row.addWidget(self.fullscreen_repeat_button)
+        self.fullscreen_aspect_button = QPushButton()
+        self.fullscreen_aspect_button.setObjectName("playerModeButton")
+        self.fullscreen_aspect_button.clicked.connect(self.cycle_video_aspect)
+        row.addWidget(self.fullscreen_aspect_button)
+        self.fullscreen_crop_button = QPushButton()
+        self.fullscreen_crop_button.setObjectName("playerModeButton")
+        self.fullscreen_crop_button.clicked.connect(self.cycle_video_crop)
+        row.addWidget(self.fullscreen_crop_button)
+        self.fullscreen_exit_button = QPushButton("Exit full screen")
+        self.fullscreen_exit_button.setObjectName("playerModeButton")
+        self.fullscreen_exit_button.clicked.connect(self.exit_video_fullscreen)
+        row.addWidget(self.fullscreen_exit_button)
+        row.addStretch(1)
+        row.addWidget(QLabel("Volume"))
+        self.fullscreen_volume = QSlider(Qt.Orientation.Horizontal)
+        self.fullscreen_volume.setRange(0, 100)
+        self.fullscreen_volume.setFixedWidth(190)
+        self.fullscreen_volume.setValue(self.volume.value())
+        self.fullscreen_volume.valueChanged.connect(self.volume.setValue)
+        self.volume.valueChanged.connect(self.fullscreen_volume.setValue)
+        row.addWidget(self.fullscreen_volume)
+        controls.addLayout(row)
+        for child in (overlay, *overlay.findChildren(QWidget)):
+            child.setMouseTracking(True)
+            child.installEventFilter(self)
+        self._fullscreen_window = window
+        self._fullscreen_controls_overlay = overlay
+        self._sync_fullscreen_controls()
+        return window
+
+    def _layout_fullscreen_surface(self) -> None:
+        window = self._fullscreen_window
+        overlay = self._fullscreen_controls_overlay
+        if window is None or overlay is None:
+            return
+        self.video_viewport.setGeometry(window.rect())
+        overlay_height = min(142, max(110, window.height() // 6))
+        y = window.height() - overlay_height if self._fullscreen_controls_visible else window.height()
+        overlay.setGeometry(0, y, window.width(), overlay_height)
+        overlay.raise_()
+
+    def _animate_fullscreen_controls(self, visible: bool) -> None:
+        window = self._fullscreen_window
+        overlay = self._fullscreen_controls_overlay
+        if not self._player_fullscreen or window is None or overlay is None:
+            return
+        self._fullscreen_controls_visible = visible
+        overlay_height = min(142, max(110, window.height() // 6))
+        overlay.show()
+        overlay.raise_()
+        if self._fullscreen_controls_animation is not None:
+            self._fullscreen_controls_animation.stop()
+            self._fullscreen_controls_animation.deleteLater()
+        animation = QPropertyAnimation(overlay, b"geometry", self)
+        animation.setDuration(180)
+        animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        animation.setStartValue(overlay.geometry())
+        animation.setEndValue(
+            QRect(
+                0,
+                window.height() - overlay_height if visible else window.height(),
+                window.width(),
+                overlay_height,
+            )
+        )
+        if not visible:
+            animation.finished.connect(self._fullscreen_controls_hidden)
+        self._fullscreen_controls_animation = animation
+        animation.start()
+
+    def _show_fullscreen_controls(self) -> None:
+        if not self._player_fullscreen or self._fullscreen_window is None:
+            return
+        self._fullscreen_window.unsetCursor()
+        if not self._fullscreen_controls_visible:
+            self._animate_fullscreen_controls(True)
+        self._fullscreen_hide_timer.start()
+
+    def _hide_fullscreen_controls(self) -> None:
+        overlay = self._fullscreen_controls_overlay
+        if overlay is not None and overlay.underMouse():
+            self._fullscreen_hide_timer.start()
+            return
+        self._animate_fullscreen_controls(False)
+
+    def _fullscreen_controls_hidden(self) -> None:
+        if self._fullscreen_controls_visible:
+            return
+        if self._fullscreen_controls_overlay is not None:
+            self._fullscreen_controls_overlay.hide()
+        if self._fullscreen_window is not None:
+            self._fullscreen_window.setCursor(Qt.CursorShape.BlankCursor)
+
+    def _sync_fullscreen_controls(self) -> None:
+        if self._fullscreen_window is None:
+            return
+        self.fullscreen_now_playing.setText(self.now_playing.text())
+        self.fullscreen_elapsed.setText(self.elapsed.text())
+        self.fullscreen_position.setRange(0, max(0, self.player.duration()))
+        if not self.fullscreen_position.is_seek_animating():
+            self.fullscreen_position.setValue(max(0, self.player.position()))
+        playing = self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
+        self.fullscreen_play_button.setIcon(
+            _transport_icon("pause" if playing else "play")
+        )
+        self.fullscreen_shuffle_button.setChecked(self._shuffle_enabled)
+        self.fullscreen_shuffle_button.setText(
+            "Shuffle on" if self._shuffle_enabled else "Shuffle off"
+        )
+        repeat_labels = {"off": "Repeat off", "all": "Repeat all", "one": "Repeat 1"}
+        self.fullscreen_repeat_button.setText(repeat_labels[self._repeat_mode])
+        self.fullscreen_aspect_button.setText(self.aspect_button.text())
+        self.fullscreen_crop_button.setText(self.crop_button.text())
+
     def toggle_video_fullscreen(self) -> None:
-        """Show the existing video player and controls in a full-screen window."""
+        """Move video to a borderless monitor-sized surface with overlay controls."""
 
         if self._player_fullscreen:
             self.exit_video_fullscreen()
@@ -2836,29 +3067,19 @@ class MediaLibraryPage(QWidget):
         if not self.video_viewport.isVisible():
             return
         self._player_fullscreen = True
-        self._fullscreen_window = self.window()
-        self._fullscreen_window_state = self._fullscreen_window.windowState()
-        self._fullscreen_hidden_widgets = []
-        branch: QWidget = self.player_card
-        parent = branch.parentWidget()
-        while parent is not None:
-            for sibling in parent.findChildren(
-                QWidget, options=Qt.FindChildOption.FindDirectChildrenOnly
-            ):
-                if sibling is branch:
-                    continue
-                was_hidden = sibling.isHidden()
-                self._fullscreen_hidden_widgets.append((sibling, was_hidden))
-                sibling.hide()
-            if parent is self._fullscreen_window:
-                break
-            branch = parent
-            parent = branch.parentWidget()
+        window = self._ensure_fullscreen_window()
+        self.video_viewport.setParent(window)
         self.video_viewport.setMinimumHeight(0)
         self.video_viewport.setMaximumHeight(FULLSCREEN_VIDEO_MAX_HEIGHT)
-        self.player_grid.setRowStretch(0, 1)
         self.fullscreen_button.setText("Exit full screen")
-        self._fullscreen_window.showFullScreen()
+        self.fullscreen_shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
+        for shortcut in self.video_shortcuts:
+            shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
+        window.showFullScreen()
+        self.video_viewport.show()
+        self._layout_fullscreen_surface()
+        self._sync_fullscreen_controls()
+        self._show_fullscreen_controls()
         self.video.setFocus()
 
     def exit_video_fullscreen(self) -> None:
@@ -2867,18 +3088,23 @@ class MediaLibraryPage(QWidget):
         if not self._player_fullscreen:
             return
         self._player_fullscreen = False
-        fullscreen_window = self._fullscreen_window
-        if fullscreen_window is not None:
-            fullscreen_window.setWindowState(self._fullscreen_window_state)
-            fullscreen_window.show()
-        for widget, was_hidden in self._fullscreen_hidden_widgets:
-            widget.setVisible(not was_hidden)
-        self._fullscreen_hidden_widgets = []
-        self._fullscreen_window = None
+        self._fullscreen_hide_timer.stop()
+        if self._fullscreen_window is not None:
+            self._fullscreen_window.hide()
+            self._fullscreen_window.unsetCursor()
+        self.player_grid.addWidget(self.video_viewport, 0, 0, 1, 13)
         self.video_viewport.setMinimumHeight(EMBEDDED_VIDEO_MIN_HEIGHT)
         self.video_viewport.setMaximumHeight(EMBEDDED_VIDEO_MAX_HEIGHT)
-        self.player_grid.setRowStretch(0, 0)
+        self.video_viewport.show()
+        self.fullscreen_shortcut.setContext(
+            Qt.ShortcutContext.WidgetWithChildrenShortcut
+        )
+        for shortcut in self.video_shortcuts:
+            shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
         self.fullscreen_button.setText("Full screen")
+        self.window().activateWindow()
+        self.video.setFocus()
+        self._sync_video_shortcuts()
 
     def cycle_video_aspect(self) -> None:
         """Cycle the display aspect ratio for the active video (keyboard: A)."""
@@ -2924,6 +3150,7 @@ class MediaLibraryPage(QWidget):
         self.crop_button.setToolTip(
             f"Current crop: {crop_label} · Press C to cycle"
         )
+        self._sync_fullscreen_controls()
 
     def set_video_seek_seconds(self, seconds: int) -> None:
         self._video_seek_seconds = max(1, min(60, int(seconds)))
@@ -2965,15 +3192,20 @@ class MediaLibraryPage(QWidget):
     def _seek_video(self, multiplier: int) -> None:
         if not self.aspect_button.isEnabled():
             return
-        offset = self._video_seek_seconds * int(multiplier) * 1000
-        target = max(0, self.player.position() + offset)
-        if self.player.duration() > 0:
-            target = min(target, self.player.duration())
-        self.player.setPosition(target)
+        self._seek_relative(self._video_seek_seconds * int(multiplier))
         sign = "+" if multiplier > 0 else "−"
         self.video_viewport.show_mode_message(
             f"{sign}{abs(multiplier) * self._video_seek_seconds} seconds"
         )
+
+    def _seek_relative(self, seconds: int) -> None:
+        """Seek either audio or video by a signed number of seconds."""
+
+        offset = int(seconds) * 1000
+        target = max(0, self.player.position() + offset)
+        if self.player.duration() > 0:
+            target = min(target, self.player.duration())
+        self.player.setPosition(target)
 
     def _seek_video_percent(self, percent: int) -> None:
         if not self.aspect_button.isEnabled():
@@ -3048,9 +3280,7 @@ class MediaLibraryPage(QWidget):
             lambda value: self.settings.setValue("library/volume", value)
         )
         self.player.positionChanged.connect(self._position_changed)
-        self.player.durationChanged.connect(
-            lambda value: self.position.setMaximum(max(0, value))
-        )
+        self.player.durationChanged.connect(self._duration_changed)
         self.player.playbackStateChanged.connect(self._state_changed)
         self.player.mediaStatusChanged.connect(self._media_status_changed)
         self.player.errorOccurred.connect(self._playback_error)
@@ -4395,6 +4625,9 @@ class MediaLibraryPage(QWidget):
         self.aspect_button.setEnabled(False)
         self.crop_button.setEnabled(False)
         self.fullscreen_button.setEnabled(False)
+        self.aspect_button.setVisible(False)
+        self.crop_button.setVisible(False)
+        self.fullscreen_button.setVisible(False)
         self._sync_video_shortcuts()
         self.position.setValue(0)
         self.elapsed.setText("0:00 / 0:00")
@@ -4469,6 +4702,9 @@ class MediaLibraryPage(QWidget):
         self.aspect_button.setEnabled(video_active)
         self.crop_button.setEnabled(video_active)
         self.fullscreen_button.setEnabled(video_active)
+        self.aspect_button.setVisible(video_active)
+        self.crop_button.setVisible(video_active)
+        self.fullscreen_button.setVisible(video_active)
         self._update_queue_status()
         self.player.play()
         if video_active:
@@ -4592,6 +4828,13 @@ class MediaLibraryPage(QWidget):
         self.elapsed.setText(
             f"{self._time(value)} / {self._time(self.player.duration())}"
         )
+        self._sync_fullscreen_controls()
+
+    def _duration_changed(self, value: int) -> None:
+        self.position.setMaximum(max(0, value))
+        if self._fullscreen_window is not None:
+            self.fullscreen_position.setMaximum(max(0, value))
+        self._sync_fullscreen_controls()
 
     def _state_changed(self, state: QMediaPlayer.PlaybackState) -> None:
         log_diagnostic("PLAYER", f"playbackStateChanged={state.name}")
@@ -4600,6 +4843,7 @@ class MediaLibraryPage(QWidget):
                 "pause" if state == QMediaPlayer.PlaybackState.PlayingState else "play"
             )
         )
+        self._sync_fullscreen_controls()
         self.visualizer_playback_changed.emit(
             state == QMediaPlayer.PlaybackState.PlayingState
         )
@@ -4620,6 +4864,7 @@ class MediaLibraryPage(QWidget):
         self.shuffle_button.setToolTip(self.shuffle_button.text())
         self.repeat_button.style().unpolish(self.repeat_button)
         self.repeat_button.style().polish(self.repeat_button)
+        self._sync_fullscreen_controls()
 
     def cycle_repeat_mode(self) -> None:
         modes = ("off", "all", "one")
@@ -4739,6 +4984,11 @@ class MediaLibraryPage(QWidget):
     def shutdown(self) -> None:
         log_diagnostic("PLAYER", "MediaLibraryPage shutdown requested")
         self.exit_video_fullscreen()
+        if self._fullscreen_window is not None:
+            self._fullscreen_window.removeEventFilter(self)
+            self._fullscreen_window.deleteLater()
+            self._fullscreen_window = None
+            self._fullscreen_controls_overlay = None
         self._shutting_down = True
         if hasattr(self, "remote_sync_timer"):
             self.remote_sync_timer.stop()

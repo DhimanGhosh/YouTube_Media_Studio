@@ -2201,7 +2201,8 @@ class MainWindow(QMainWindow):
             " s",
         )
         self.settings_video_seek_seconds.setToolTip(
-            "Seconds skipped by Left/Right during video playback; Shift skips twice this value."
+            "Seconds skipped by the << and >> media controls and by Left/Right "
+            "during video playback; Shift skips twice this value."
         )
         self.settings_remember_video_display_modes = self._check(
             "Remember crop and aspect ratio for the next video",
@@ -2406,12 +2407,12 @@ class MainWindow(QMainWindow):
         layout.addWidget(audio_section)
 
         video_section, _video_body, video_form = self._settings_group(
-            "Video playback",
-            "Video-only keyboard navigation and playback behavior.",
+            "Media Playback",
+            "Audio/video seek controls and video display behavior.",
             "video_playback",
             expanded=False,
         )
-        video_form.addRow("Arrow-key seek interval", self.settings_video_seek_seconds)
+        video_form.addRow("Seek interval", self.settings_video_seek_seconds)
         video_form.addRow(
             "Crop/aspect memory", self.settings_remember_video_display_modes
         )

@@ -263,6 +263,10 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         self.assertFalse(self.window.settings_sections["batch_network"].body.isHidden())
         self.assertTrue(self.window.settings_sections["audio_metadata"].body.isHidden())
         self.assertTrue(self.window.settings_sections["video_playback"].body.isHidden())
+        self.assertIn(
+            "Media Playback",
+            self.window.settings_sections["video_playback"].toggle.text(),
+        )
 
         self.window.settings_sections["audio_metadata"].set_expanded(True)
         self.assertTrue(
