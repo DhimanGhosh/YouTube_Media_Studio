@@ -885,7 +885,8 @@ class MediaLibraryPage(QWidget):
         self._connect_player()
         self._install_media_shortcuts()
         self._load_folders()
-        self._start_remote_access()
+        if self.phone_access_switch.isChecked():
+            self._start_remote_access()
         self.refresh_library()
         self.refresh_timer = QTimer(self)
         self.refresh_timer.setInterval(15000)
@@ -909,13 +910,34 @@ class MediaLibraryPage(QWidget):
         title.setObjectName("pageTitle")
         header.addWidget(title)
         header.addStretch(1)
-        self.phone_access_button = QPushButton("Phone access")
-        self.phone_access_button.setObjectName("secondaryButton")
-        self.phone_access_button.setToolTip(
-            "Open the Media Library from a phone on this Wi-Fi network"
+        remote_enabled = self.settings.value(
+            "library/remote_access_enabled",
+            True,
+            type=bool,
         )
-        self.phone_access_button.clicked.connect(self._show_remote_access)
-        header.addWidget(self.phone_access_button)
+        remote_forced_off = os.environ.get(
+            "YMS_DISABLE_REMOTE_ACCESS", ""
+        ).casefold() in {"1", "true", "yes"}
+        self.phone_access_switch = QCheckBox(
+            f"Phone access · {'On' if remote_enabled and not remote_forced_off else 'Off'}"
+        )
+        self.phone_access_switch.setObjectName("phoneAccessSwitch")
+        self.phone_access_switch.setAccessibleName("Phone access")
+        self.phone_access_switch.setToolTip(
+            "Allow phones on this Wi-Fi network to use the Media Library"
+        )
+        self.phone_access_switch.setChecked(remote_enabled and not remote_forced_off)
+        self.phone_access_switch.setEnabled(not remote_forced_off)
+        self.phone_access_switch.toggled.connect(self._set_remote_access_enabled)
+        header.addWidget(self.phone_access_switch)
+        self.phone_access_details_button = QPushButton("Details")
+        self.phone_access_details_button.setObjectName("secondaryButton")
+        self.phone_access_details_button.setToolTip(
+            "Show the phone address and access PIN"
+        )
+        self.phone_access_details_button.clicked.connect(self._show_remote_access)
+        self.phone_access_details_button.setVisible(False)
+        header.addWidget(self.phone_access_details_button)
         self.library_refresh_button = QPushButton("Refresh")
         self.library_refresh_button.setObjectName("secondaryButton")
         self.library_refresh_button.setToolTip("Rescan every configured library folder")
@@ -965,10 +987,12 @@ class MediaLibraryPage(QWidget):
     def _start_remote_access(self) -> None:
         """Start the authenticated phone client on all LAN interfaces."""
 
+        if self._remote_server is not None:
+            return
         if os.environ.get("YMS_DISABLE_REMOTE_ACCESS", "").casefold() in {
             "1", "true", "yes",
         }:
-            self.phone_access_button.setText("Phone access · Off")
+            self._set_phone_access_switch(False, "Off")
             return
         try:
             html = asset_path("remote_media.html").read_text(encoding="utf-8")
@@ -980,9 +1004,11 @@ class MediaLibraryPage(QWidget):
             )
             server.start()
             self._remote_server = server
-            self.phone_access_button.setText("Phone access · On")
+            self._remote_state_dirty = True
+            self._set_phone_access_switch(True, "On")
+            self.phone_access_details_button.setVisible(True)
             addresses = server.urls
-            self.phone_access_button.setToolTip(
+            self.phone_access_switch.setToolTip(
                 f"{addresses[0]} · PIN {server.pin}"
                 if addresses
                 else f"Listening on port {server.port} · PIN {server.pin}"
@@ -993,9 +1019,37 @@ class MediaLibraryPage(QWidget):
                 f"LAN client started port={server.port} addresses={addresses!r}",
             )
         except (OSError, TypeError, ValueError) as exc:
-            self.phone_access_button.setText("Phone access · Unavailable")
-            self.phone_access_button.setToolTip(str(exc))
+            self._set_phone_access_switch(False, "Unavailable")
+            self.phone_access_switch.setToolTip(str(exc))
+            self.phone_access_details_button.setVisible(False)
             log_diagnostic("REMOTE-LIBRARY", f"Could not start LAN client: {exc}")
+
+    def _set_phone_access_switch(self, checked: bool, status: str) -> None:
+        self.phone_access_switch.blockSignals(True)
+        self.phone_access_switch.setChecked(checked)
+        self.phone_access_switch.setText(f"Phone access · {status}")
+        self.phone_access_switch.blockSignals(False)
+
+    def _set_remote_access_enabled(self, enabled: bool) -> None:
+        """Persist and immediately apply the phone-access switch."""
+
+        self.settings.setValue("library/remote_access_enabled", enabled)
+        self.settings.sync()
+        if enabled:
+            self._start_remote_access()
+            return
+        server = self._remote_server
+        self._remote_server = None
+        if server is not None:
+            server.stop()
+            log_diagnostic("REMOTE-LIBRARY", "LAN client stopped by user")
+        self._remote_path_by_id.clear()
+        self._remote_state_dirty = True
+        self._set_phone_access_switch(False, "Off")
+        self.phone_access_switch.setToolTip(
+            "Allow phones on this Wi-Fi network to use the Media Library"
+        )
+        self.phone_access_details_button.setVisible(False)
 
     def _show_remote_access(self) -> None:
         server = self._remote_server
@@ -1003,7 +1057,7 @@ class MediaLibraryPage(QWidget):
             QMessageBox.warning(
                 self,
                 "Phone access unavailable",
-                self.phone_access_button.toolTip(),
+                self.phone_access_switch.toolTip(),
             )
             return
         addresses = server.urls
