@@ -128,10 +128,10 @@ def check() -> None:
             "dev",
             "pytest",
             "-q",
-            "--ignore=tests/test_media_player.py",
+            "--ignore=tests/gui/test_media_player.py",
         ]
     )
-    run(["uv", "run", "--group", "dev", "pytest", "-q", "tests/test_media_player.py"])
+    run(["uv", "run", "--group", "dev", "pytest", "-q", "tests/gui/test_media_player.py"])
 
 
 def _generated_paths(*, include_ide: bool = False) -> list[Path]:

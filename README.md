@@ -439,7 +439,15 @@ src/youtube_audio_video_downloader/
     media/                           Local library, editing, playlists, and remote access
     metadata/                        Evidence, verification, and metadata tracking
   utils/                             Parsing and normalization helpers
-tests/                               Automated test suite
+tests/                               Categorized automated test suite
+  ai/                                AI providers, agents, and recommendations
+  albums/                            Album enrichment and organization
+  core/                              Public API, storage, loading, and runtime
+  downloads/                         Search, download, extraction, and trimming
+  gui/                               Desktop UI, player, workers, and diagnostics
+  media/                             Library, playlists, remote access, and editing
+  metadata/                          Evidence, tagging, verification, and tracking
+  release/                           Packaging, installers, versions, and workflows
 tools/desktop_installer.py           Native graphical installer/uninstaller
 tools/release.py                     Validation, packaging, and release entry point
 ```

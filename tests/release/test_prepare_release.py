@@ -7,7 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 
-SCRIPT = Path(__file__).resolve().parents[1] / "tools" / "prepare_release.py"
+SCRIPT = Path(__file__).resolve().parents[2] / "tools" / "prepare_release.py"
 SPEC = importlib.util.spec_from_file_location("prepare_release_tool", SCRIPT)
 assert SPEC and SPEC.loader
 release = importlib.util.module_from_spec(SPEC)
