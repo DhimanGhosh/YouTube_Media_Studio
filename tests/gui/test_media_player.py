@@ -162,6 +162,25 @@ class MediaPlayerPageTest(unittest.TestCase):
             self.page.artist_track_splitter.sizes()[0],
         )
 
+    def test_browser_and_embedded_player_are_vertically_resizable(self) -> None:
+        splitter = self.page.browser_player_splitter
+        self.assertIs(splitter.widget(0), self.page.library_splitter)
+        self.assertIs(splitter.widget(1), self.page._player_host)
+        self.assertFalse(splitter.childrenCollapsible())
+
+        self.page.resize(1400, 1000)
+        self.page.show()
+        QTest.qWait(20)
+        splitter.setSizes([560, 360])
+        splitter.splitterMoved.emit(560, 1)
+
+        self.assertGreater(splitter.sizes()[1], 150)
+        self.assertEqual(
+            self.page.settings.value("library/player_panel_height", type=int),
+            splitter.sizes()[1],
+        )
+        self.assertGreater(EMBEDDED_VIDEO_MAX_HEIGHT, 520)
+
     def test_folder_and_search_controls_share_one_thirty_seventy_row(self) -> None:
         self.page.resize(1400, 900)
         self.page.show()
@@ -180,16 +199,38 @@ class MediaPlayerPageTest(unittest.TestCase):
 
     def test_artist_repair_review_allows_editing_the_proposed_name(self) -> None:
         dialog = ArtistRepairDialog(
-            [ArtistRenameSuggestion("K.K.", "KK", 12)], self.page
+            [ArtistRenameSuggestion("K.K.", "KK", 12)],
+            self.page,
+            artist_values=("K.K.", "Vishal, Shekhar", "Vishal & Shekhar"),
         )
         try:
-            dialog.table.item(0, 1).setText("Kumar Sanu")
+            dialog.show()
+            QTest.qWait(20)
+            replacement_editor = dialog._replacement_editors[0]
+            replacement_editor.setText("Kumar Sanu")
             self.assertEqual(dialog.replacements(), {"K.K.": "Kumar Sanu"})
             self.assertFalse(
                 bool(dialog.table.item(0, 0).flags() & Qt.ItemFlag.ItemIsEditable)
             )
             self.assertTrue(
-                bool(dialog.table.item(0, 1).flags() & Qt.ItemFlag.ItemIsEditable)
+                dialog.table.cellWidget(0, 1).rect().contains(
+                    replacement_editor.geometry()
+                )
+            )
+
+            dialog.add_replacement_button.click()
+            source_editor = dialog._source_editors[1]
+            source_editor.setText("Vishal, Shekhar")
+            dialog._replacement_editors[1].setText(
+                "Vishal Dadlani, Shekhar Ravjiani"
+            )
+            self.assertEqual(dialog.table.item(1, 2).text(), "2")
+            self.assertEqual(
+                dialog.replacements(),
+                {
+                    "K.K.": "Kumar Sanu",
+                    "Vishal, Shekhar": "Vishal Dadlani, Shekhar Ravjiani",
+                },
             )
         finally:
             dialog.deleteLater()
@@ -244,6 +285,40 @@ class MediaPlayerPageTest(unittest.TestCase):
             self.page.album_tracks.columnWidth(1),
             album_compact_width,
         )
+
+        video_index = self.page.media_type_filter.findData("video")
+        self.page.media_type_filter.blockSignals(True)
+        self.page.media_type_filter.setCurrentIndex(video_index)
+        self.page.media_type_filter.blockSignals(False)
+        long_video = LibraryItem(
+            "C:/Long clip.mp4",
+            "A previously very long video title " * 7,
+            "Test Album",
+            "Test Artist",
+            2024,
+            60_000,
+            "video",
+            1,
+        )
+        short_video = LibraryItem(
+            "C:/Long clip.mp4",
+            "Short title",
+            "Test Album",
+            "Test Artist",
+            2024,
+            60_000,
+            "video",
+            2,
+        )
+        self.page._populate_table(
+            self.page.table, [long_video], include_album_and_type=True
+        )
+        long_video_width = self.page.table.columnWidth(0)
+        self.page._populate_table(
+            self.page.table, [short_video], include_album_and_type=True
+        )
+        self.assertLess(self.page.table.columnWidth(0), long_video_width)
+        self.assertLess(self.page.table.columnWidth(0), 340)
 
     def test_library_table_displays_every_match_beyond_previous_250_row_cap(self) -> None:
         matches = [media(f"Song {index:04d}", 2000, 60_000) for index in range(876)]
@@ -518,6 +593,32 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.page.year_to.setValue(2010)
         self.page.year_from.setValue(2020)
         self.assertEqual(self.page.year_to.value(), 2020)
+
+    def test_clear_follows_year_fields_and_removes_their_filters(self) -> None:
+        layout = self.page.search_controls.layout()
+        self.assertGreater(
+            layout.indexOf(self.page.clear_search_button),
+            layout.indexOf(self.page.year_to),
+        )
+        self.assertLess(
+            layout.indexOf(self.page.clear_search_button),
+            layout.indexOf(self.page.online_search_button),
+        )
+        self.page.search.setText("filtered title")
+        self.page.media_type_filter.setCurrentIndex(
+            self.page.media_type_filter.findData("video")
+        )
+        self.page.year_from.setValue(2010)
+        self.page.year_to.setValue(2020)
+
+        self.page.clear_search_button.click()
+
+        self.assertEqual(self.page.search.text(), "")
+        self.assertEqual(self.page.year_from.value(), 0)
+        self.assertEqual(self.page.year_to.value(), 0)
+        self.assertEqual(self.page.media_type_filter.currentData(), "video")
+        self.assertEqual(self.page.year_from.lineEdit().text(), "")
+        self.assertEqual(self.page.year_to.lineEdit().text(), "")
 
     def test_album_opens_without_playing_and_exposes_track_actions(self) -> None:
         self.page._load_current = Mock()
@@ -958,8 +1059,18 @@ class MediaPlayerPageTest(unittest.TestCase):
     def test_player_controls_have_visible_icons_and_mode_labels(self) -> None:
         self.assertTrue(self.page.play_button.text() == "")
         self.assertFalse(self.page.play_button.icon().isNull())
-        self.assertEqual(self.page.seek_backward_button.text(), "<<")
-        self.assertEqual(self.page.seek_forward_button.text(), ">>")
+        self.assertEqual(self.page.seek_backward_button.text(), "")
+        self.assertEqual(self.page.seek_forward_button.text(), "")
+        self.assertFalse(self.page.seek_backward_button.icon().isNull())
+        self.assertFalse(self.page.seek_forward_button.icon().isNull())
+        self.assertNotEqual(
+            self.page.seek_backward_button.icon().cacheKey(),
+            self.page.previous_button.icon().cacheKey(),
+        )
+        self.assertNotEqual(
+            self.page.seek_forward_button.icon().cacheKey(),
+            self.page.next_button.icon().cacheKey(),
+        )
         self.assertEqual(self.page.library_refresh_button.text(), "Refresh")
         self.assertEqual(self.page.shuffle_button.text(), "Shuffle off")
         self.assertEqual(self.page.repeat_button.text(), "Repeat off")
@@ -1310,12 +1421,59 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.assertGreater(slider.value(), 450)
         self.assertLess(slider.value(), 550)
 
+    def test_clicking_volume_bar_animates_to_the_exact_clicked_level(self) -> None:
+        slider = self.page.volume
+        slider.setValue(0)
+        slider.resize(216, 26)
+        slider.show()
+
+        QTest.mouseClick(
+            slider,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+            QPoint(158, 13),
+        )
+
+        self.assertTrue(slider.is_seek_animating())
+        self.assertLess(slider.value(), 70)
+        QTest.qWait(350)
+        self.assertGreater(slider.value(), 68)
+        self.assertLess(slider.value(), 76)
+        self.assertEqual(self.page.volume_percent.text(), f"{slider.value()}%")
+
+        self.page._ensure_fullscreen_window()
+        self.assertTrue(hasattr(self.page.fullscreen_volume, "is_seek_animating"))
+        self.assertEqual(
+            self.page.fullscreen_volume_percent.text(),
+            f"{slider.value()}%",
+        )
+        self.page.fullscreen_volume.setValue(0)
+        QTest.mouseClick(
+            self.page.fullscreen_volume,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+            QPoint(140, 13),
+        )
+        self.assertTrue(self.page.fullscreen_volume.is_seek_animating())
+        QTest.qWait(350)
+        self.assertEqual(
+            self.page.fullscreen_volume_percent.text(),
+            f"{self.page.fullscreen_volume.value()}%",
+        )
+        self.assertEqual(
+            self.page.volume_percent.text(),
+            self.page.fullscreen_volume_percent.text(),
+        )
+
     def test_video_player_enters_full_screen_with_controls_and_restores(self) -> None:
         video_path = Path(self.temporary.name) / "movie.mp4"
         video_path.write_bytes(b"video")
         video = LibraryItem(
             str(video_path), "Movie", "Test Movie", "Test Artist",
             2024, 60_000, "video", 1,
+        )
+        self.page.setStyleSheet(
+            "QPushButton#playerControlButton { border-radius: 14px; }"
         )
         self.page.items = [video]
         self.page._replace_queue([video])
@@ -1355,8 +1513,14 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.assertIs(self.page.position.window(), self.page.window())
         self.assertIs(self.page.volume.window(), self.page.window())
         self.assertFalse(self.page.library_splitter.isHidden())
-        self.assertEqual(self.page.fullscreen_backward_button.text(), "<<")
-        self.assertEqual(self.page.fullscreen_forward_button.text(), ">>")
+        self.assertEqual(self.page.fullscreen_backward_button.text(), "")
+        self.assertEqual(self.page.fullscreen_forward_button.text(), "")
+        self.assertFalse(self.page.fullscreen_backward_button.icon().isNull())
+        self.assertFalse(self.page.fullscreen_forward_button.icon().isNull())
+        self.assertIn(
+            "QPushButton#playerControlButton { border-radius: 14px; }",
+            fullscreen.styleSheet(),
+        )
 
         QTest.qWait(220)
         self.assertTrue(overlay.isVisible())
@@ -1369,6 +1533,12 @@ class MediaPlayerPageTest(unittest.TestCase):
         QTest.mouseMove(self.page.video_viewport, QPoint(12, 12))
         QTest.qWait(220)
         self.assertTrue(overlay.isVisible())
+        self.assertIsNone(self.page.fullscreen_aspect_button.menu())
+        QTest.mouseClick(
+            self.page.fullscreen_aspect_button, Qt.MouseButton.LeftButton
+        )
+        self.app.processEvents()
+        self.assertEqual(self.page.fullscreen_aspect_button.text(), "Aspect: 16:9")
 
         QTest.keyClick(self.page.video, Qt.Key.Key_C)
         self.app.processEvents()
@@ -1435,7 +1605,15 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.assertEqual(self.page.crop_button.text(), "Crop: Default")
         self.assertLess(self.page.video_viewport.clip.height(), 450)
 
-        QTest.mouseClick(self.page.aspect_button, Qt.MouseButton.LeftButton)
+        self.assertEqual(
+            [action.text() for action in self.page.aspect_menu.actions()[:3]],
+            ["Default", "16:9", "4:3"],
+        )
+        self.assertIs(self.page.aspect_button.menu(), self.page.aspect_menu)
+        self.assertIs(self.page.crop_button.menu(), self.page.crop_menu)
+        self.assertTrue(self.page.aspect_menu.actions()[0].isChecked())
+        self.assertTrue(self.page.crop_menu.actions()[0].isChecked())
+        self.page.aspect_menu.actions()[1].trigger()
         self.app.processEvents()
         self.assertEqual(self.page.aspect_button.text(), "Aspect: 16:9")
         self.assertEqual(self.page.video_viewport.message.text(), "Aspect ratio: 16:9")
@@ -1447,14 +1625,18 @@ class MediaPlayerPageTest(unittest.TestCase):
             places=2,
         )
 
+        self.page.crop_menu.actions()[1].trigger()
+        self.app.processEvents()
+        self.assertEqual(self.page.crop_button.text(), "Crop: 16:10")
+
         QTest.keyClick(self.page.video, Qt.Key.Key_A)
         self.app.processEvents()
         self.assertEqual(self.page.aspect_button.text(), "Aspect: 4:3")
 
         QTest.keyClick(self.page.video, Qt.Key.Key_C)
         self.app.processEvents()
-        self.assertEqual(self.page.crop_button.text(), "Crop: 16:10")
-        self.assertEqual(self.page.video_viewport.message.text(), "Crop: 16:10")
+        self.assertEqual(self.page.crop_button.text(), "Crop: 16:9")
+        self.assertEqual(self.page.video_viewport.message.text(), "Crop: 16:9")
         self.assertGreater(
             self.page.video_viewport.video_item.size().width(),
             self.page.video_viewport.clip.width(),

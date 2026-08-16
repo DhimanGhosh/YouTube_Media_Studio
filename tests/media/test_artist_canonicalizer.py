@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from youtube_audio_video_downloader.services.media.artist_canonicalizer import (
     apply_artist_replacements,
+    count_artist_replacement_matches,
     repair_artist_metadata,
     suggest_artist_renames,
 )
@@ -38,6 +39,30 @@ def test_reviewed_replacements_remove_duplicate_credits() -> None:
         "K.K., KK, Arijit, Arijit Singh",
         {"K.K.": "KK", "Arijit": "Arijit Singh"},
     ) == "KK, Arijit Singh"
+
+
+def test_contextual_duo_suggestion_does_not_replace_ambiguous_solo_name() -> None:
+    suggestions = suggest_artist_renames(
+        ["Vishal, Shekhar", "Vishal", "Vishal Mishra", "Unknown"]
+    )
+
+    assert ("Vishal, Shekhar", "Vishal Dadlani, Shekhar Ravjiani") in {
+        (item.detected, item.replacement) for item in suggestions
+    }
+    assert not any(item.detected in {"Vishal", "Unknown"} for item in suggestions)
+
+
+def test_manual_whole_credit_rule_matches_separators_but_not_solo_artist() -> None:
+    replacements = {"Vishal, Shekhar": "Vishal Dadlani, Shekhar Ravjiani"}
+
+    assert apply_artist_replacements("Vishal & Shekhar", replacements) == (
+        "Vishal Dadlani, Shekhar Ravjiani"
+    )
+    assert apply_artist_replacements("Vishal", replacements) == "Vishal"
+    assert count_artist_replacement_matches(
+        ["Vishal, Shekhar", "Vishal & Shekhar", "Vishal Mishra", "Vishal"],
+        "Vishal, Shekhar",
+    ) == 2
 
 
 @patch(

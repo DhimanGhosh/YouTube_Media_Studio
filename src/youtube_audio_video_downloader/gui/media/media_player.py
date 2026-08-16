@@ -104,6 +104,7 @@ from youtube_audio_video_downloader.services.media.media_playlists import (
 )
 from youtube_audio_video_downloader.services.media.artist_canonicalizer import (
     ArtistRenameSuggestion,
+    count_artist_replacement_matches,
     repair_artist_metadata,
     suggest_artist_renames,
 )
@@ -128,7 +129,7 @@ MEDIA_TYPE_OPTIONS = (
 )
 VALID_MEDIA_TYPES = frozenset(option[1] for option in MEDIA_TYPE_OPTIONS)
 EMBEDDED_VIDEO_MIN_HEIGHT = 320
-EMBEDDED_VIDEO_MAX_HEIGHT = 520
+EMBEDDED_VIDEO_MAX_HEIGHT = 16_777_215
 FULLSCREEN_VIDEO_MAX_HEIGHT = 16_777_215
 AUDIO_PLAYER_CARD_MIN_HEIGHT = 166
 VIDEO_PLAYER_CARD_MIN_HEIGHT = 482
@@ -605,14 +606,20 @@ class ArtistRepairDialog(QDialog):
         self,
         suggestions: list[ArtistRenameSuggestion],
         parent: QWidget | None = None,
+        *,
+        artist_values: tuple[str, ...] = (),
     ) -> None:
         super().__init__(parent)
+        self._artist_values = artist_values
+        self._source_editors: dict[int, QLineEdit] = {}
+        self._replacement_editors: dict[int, QLineEdit] = {}
         self.setWindowTitle("Review artist name fixes")
         self.resize(720, 460)
         layout = QVBoxLayout(self)
         explanation = QLabel(
             "Review every detected artist variant. Edit any proposed replacement, "
-            "then choose Apply to update all affected tracks."
+            "or add a replacement the automatic check missed. Multi-artist entries "
+            "apply only when that complete credit matches."
         )
         explanation.setWordWrap(True)
         layout.addWidget(explanation)
@@ -623,20 +630,23 @@ class ArtistRepairDialog(QDialog):
         self.table.setSelectionBehavior(
             QAbstractItemView.SelectionBehavior.SelectRows
         )
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         for row, suggestion in enumerate(suggestions):
-            detected = QTableWidgetItem(suggestion.detected)
-            detected.setFlags(detected.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            replacement = QTableWidgetItem(suggestion.replacement)
-            count = QTableWidgetItem(str(suggestion.tracks))
-            count.setFlags(count.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            self.table.setItem(row, 0, detected)
-            self.table.setItem(row, 1, replacement)
-            self.table.setItem(row, 2, count)
+            self._populate_row(row, suggestion)
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         layout.addWidget(self.table, 1)
+        add_row = QHBoxLayout()
+        self.add_replacement_button = QPushButton("Add replacement")
+        self.add_replacement_button.setToolTip(
+            "Add an existing artist name or complete multi-artist credit and its replacement"
+        )
+        self.add_replacement_button.clicked.connect(self.add_replacement)
+        add_row.addWidget(self.add_replacement_button)
+        add_row.addStretch(1)
+        layout.addLayout(add_row)
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok
             | QDialogButtonBox.StandardButton.Cancel
@@ -646,12 +656,74 @@ class ArtistRepairDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
+    def _line_edit_cell(self, text: str, placeholder: str) -> tuple[QWidget, QLineEdit]:
+        """Wrap an editor with padding so its frame cannot overlap adjacent cells."""
+
+        container = QWidget(self.table)
+        cell_layout = QHBoxLayout(container)
+        cell_layout.setContentsMargins(5, 3, 5, 3)
+        editor = QLineEdit(text, container)
+        editor.setPlaceholderText(placeholder)
+        cell_layout.addWidget(editor)
+        return container, editor
+
+    def _populate_row(
+        self, row: int, suggestion: ArtistRenameSuggestion | None = None
+    ) -> None:
+        detected = suggestion.detected if suggestion else ""
+        replacement = suggestion.replacement if suggestion else ""
+        tracks = suggestion.tracks if suggestion else 0
+        if suggestion:
+            detected_item = QTableWidgetItem(detected)
+            detected_item.setFlags(
+                detected_item.flags() & ~Qt.ItemFlag.ItemIsEditable
+            )
+            self.table.setItem(row, 0, detected_item)
+        else:
+            source_cell, source_editor = self._line_edit_cell(
+                "", "Existing artist name(s)"
+            )
+            self._source_editors[row] = source_editor
+            self.table.setCellWidget(row, 0, source_cell)
+            source_editor.textChanged.connect(
+                lambda text, current_row=row: self._update_match_count(
+                    current_row, text
+                )
+            )
+        replacement_cell, replacement_editor = self._line_edit_cell(
+            replacement, "Replacement artist name(s)"
+        )
+        self._replacement_editors[row] = replacement_editor
+        self.table.setCellWidget(row, 1, replacement_cell)
+        count = QTableWidgetItem(str(tracks))
+        count.setFlags(count.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        count.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.table.setItem(row, 2, count)
+        self.table.setRowHeight(row, max(self.table.rowHeight(row), 38))
+
+    def add_replacement(self) -> None:
+        row = self.table.rowCount()
+        self.table.insertRow(row)
+        self._populate_row(row)
+        self._source_editors[row].setFocus()
+
+    def _update_match_count(self, row: int, source: str) -> None:
+        count = count_artist_replacement_matches(self._artist_values, source)
+        self.table.item(row, 2).setText(str(count))
+
     def replacements(self) -> dict[str, str]:
-        return {
-            self.table.item(row, 0).text(): self.table.item(row, 1).text().strip()
-            for row in range(self.table.rowCount())
-            if self.table.item(row, 1).text().strip()
-        }
+        replacements: dict[str, str] = {}
+        for row in range(self.table.rowCount()):
+            source_item = self.table.item(row, 0)
+            source = (
+                source_item.text()
+                if source_item is not None
+                else self._source_editors[row].text().strip()
+            )
+            replacement = self._replacement_editors[row].text().strip()
+            if source.strip() and replacement:
+                replacements[source.strip()] = replacement
+        return replacements
 
 
 class SortableTableItem(QTableWidgetItem):
@@ -832,6 +904,20 @@ def _transport_icon(name: str) -> QIcon:
     elif name == "next":
         painter.drawLine(21, 7, 21, 21)
         painter.drawPolygon(QPolygonF([QPointF(8, 6), QPointF(19, 14), QPointF(8, 22)]))
+    elif name == "backward":
+        painter.drawPolygon(
+            QPolygonF([QPointF(15, 6), QPointF(4, 14), QPointF(15, 22)])
+        )
+        painter.drawPolygon(
+            QPolygonF([QPointF(24, 6), QPointF(13, 14), QPointF(24, 22)])
+        )
+    elif name == "forward":
+        painter.drawPolygon(
+            QPolygonF([QPointF(4, 6), QPointF(15, 14), QPointF(4, 22)])
+        )
+        painter.drawPolygon(
+            QPolygonF([QPointF(13, 6), QPointF(24, 14), QPointF(13, 22)])
+        )
     painter.end()
     return QIcon(pixmap)
 
@@ -1050,8 +1136,22 @@ class MediaLibraryPage(QWidget):
         self.library_splitter.setStretchFactor(0, 2)
         self.library_splitter.setStretchFactor(1, 3)
         self.library_splitter.setSizes([320, 430])
-        main_layout.addWidget(self.library_splitter, 1)
-        main_layout.addWidget(self._build_player())
+        self.library_splitter.setMinimumHeight(180)
+        self.browser_player_splitter = QSplitter(Qt.Orientation.Vertical)
+        self.browser_player_splitter.setChildrenCollapsible(False)
+        self.browser_player_splitter.addWidget(self.library_splitter)
+        self.browser_player_splitter.addWidget(self._build_player())
+        self.browser_player_splitter.setStretchFactor(0, 1)
+        self.browser_player_splitter.setStretchFactor(1, 0)
+        saved_player_height = max(
+            AUDIO_PLAYER_CARD_MIN_HEIGHT,
+            int(self.settings.value("library/player_panel_height", 220)),
+        )
+        self.browser_player_splitter.setSizes([720, saved_player_height])
+        self.browser_player_splitter.splitterMoved.connect(
+            self._save_player_panel_height
+        )
+        main_layout.addWidget(self.browser_player_splitter, 1)
         self.drawer_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.drawer_splitter.setChildrenCollapsible(False)
         self.playlist_drawer = self._build_playlist_drawer()
@@ -1069,6 +1169,11 @@ class MediaLibraryPage(QWidget):
         self._sync_queue_drawer()
         self._render_playlists()
         self._sync_media_type_layout()
+
+    def _save_player_panel_height(self, _position: int, _index: int) -> None:
+        sizes = self.browser_player_splitter.sizes()
+        if len(sizes) == 2 and sizes[1] > 0:
+            self.settings.setValue("library/player_panel_height", sizes[1])
 
     def _start_remote_access(self) -> None:
         """Start the authenticated phone client on all LAN interfaces."""
@@ -1432,15 +1537,6 @@ class MediaLibraryPage(QWidget):
         self.search_completer.activated[str].connect(self._suggestion_activated)
         self.search.setCompleter(self.search_completer)
         row.addWidget(self.search, 1)
-        self.clear_search_button = QPushButton("Clear")
-        self.clear_search_button.setObjectName("secondaryButton")
-        self.clear_search_button.setToolTip("Clear the library search")
-        self.clear_search_button.setSizePolicy(
-            QSizePolicy.Policy.Fixed,
-            QSizePolicy.Policy.Fixed,
-        )
-        self.clear_search_button.clicked.connect(self.search.clear)
-        row.addWidget(self.clear_search_button)
         self.media_type_filter = QComboBox()
         for label, media_type, _result_label in MEDIA_TYPE_OPTIONS:
             self.media_type_filter.addItem(label, media_type)
@@ -1470,6 +1566,15 @@ class MediaLibraryPage(QWidget):
             row.addWidget(spin)
         self.year_from.valueChanged.connect(self._year_from_changed)
         self.year_to.valueChanged.connect(self._year_to_changed)
+        self.clear_search_button = QPushButton("Clear")
+        self.clear_search_button.setObjectName("secondaryButton")
+        self.clear_search_button.setToolTip("Clear the search and both year filters")
+        self.clear_search_button.setSizePolicy(
+            QSizePolicy.Policy.Fixed,
+            QSizePolicy.Policy.Fixed,
+        )
+        self.clear_search_button.clicked.connect(self._clear_library_search_filters)
+        row.addWidget(self.clear_search_button)
         self.online_search_button = QPushButton("Search online")
         self.online_search_button.setObjectName("secondaryButton")
         self.online_search_button.setToolTip(
@@ -2743,11 +2848,8 @@ class MediaLibraryPage(QWidget):
             )
             button.setFixedSize(56 if primary else 46, 46)
             icon_size = 27 if primary else 23
-            if icon_name in {"backward", "forward"}:
-                button.setText("<<" if icon_name == "backward" else ">>")
-            else:
-                button.setIcon(_transport_icon(icon_name))
-                button.setIconSize(QSize(icon_size, icon_size))
+            button.setIcon(_transport_icon(icon_name))
+            button.setIconSize(QSize(icon_size, icon_size))
             button.setToolTip(tooltip)
             button.setAccessibleName(tooltip)
             button.clicked.connect(handler)
@@ -2761,13 +2863,31 @@ class MediaLibraryPage(QWidget):
         self.aspect_button.setObjectName("playerModeButton")
         self.aspect_button.setEnabled(False)
         self.aspect_button.setVisible(False)
-        self.aspect_button.clicked.connect(self.cycle_video_aspect)
+        self.aspect_menu = QMenu(self.aspect_button)
+        self.aspect_actions = []
+        for index, (label, _ratio) in enumerate(VIDEO_ASPECT_MODES):
+            action = self.aspect_menu.addAction(label)
+            action.setCheckable(True)
+            action.triggered.connect(
+                lambda _checked=False, selected=index: self.set_video_aspect(selected)
+            )
+            self.aspect_actions.append(action)
+        self.aspect_button.setMenu(self.aspect_menu)
         controls_layout.addWidget(self.aspect_button)
         self.crop_button = QPushButton()
         self.crop_button.setObjectName("playerModeButton")
         self.crop_button.setEnabled(False)
         self.crop_button.setVisible(False)
-        self.crop_button.clicked.connect(self.cycle_video_crop)
+        self.crop_menu = QMenu(self.crop_button)
+        self.crop_actions = []
+        for index, (label, _ratio) in enumerate(VIDEO_CROP_MODES):
+            action = self.crop_menu.addAction(label)
+            action.setCheckable(True)
+            action.triggered.connect(
+                lambda _checked=False, selected=index: self.set_video_crop(selected)
+            )
+            self.crop_actions.append(action)
+        self.crop_button.setMenu(self.crop_menu)
         controls_layout.addWidget(self.crop_button)
         self.fullscreen_button = QPushButton("Full screen")
         self.fullscreen_button.setObjectName("playerModeButton")
@@ -2785,12 +2905,21 @@ class MediaLibraryPage(QWidget):
         volume_label = QLabel("Volume")
         volume_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         grid.addWidget(volume_label, 3, 10)
-        self.volume = QSlider(Qt.Orientation.Horizontal)
+        self.volume = AnimatedSeekSlider()
         self.volume.setRange(0, 100)
         self.volume.setValue(int(self.settings.value("library/volume", 75)))
         self.volume.setMinimumWidth(150)
         self.volume.setMaximumWidth(240)
-        grid.addWidget(self.volume, 3, 11, 1, 2)
+        grid.addWidget(self.volume, 3, 11)
+        self.volume_percent = QLabel(f"{self.volume.value()}%")
+        self.volume_percent.setMinimumWidth(38)
+        self.volume_percent.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
+        self.volume.valueChanged.connect(
+            lambda value: self.volume_percent.setText(f"{value}%")
+        )
+        grid.addWidget(self.volume_percent, 3, 12)
         grid.setColumnStretch(4, 1)
         grid.setColumnStretch(9, 1)
         self.fullscreen_shortcut = QShortcut(QKeySequence("Esc"), card)
@@ -2877,16 +3006,12 @@ class MediaLibraryPage(QWidget):
         )
         window.setObjectName("fullscreenVideoWindow")
         window.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        window.setStyleSheet("#fullscreenVideoWindow { background: black; border: 0; }")
+        window.setStyleSheet(self._fullscreen_style_sheet())
         window.setMouseTracking(True)
         window.installEventFilter(self)
         overlay = QFrame(window)
         overlay.setObjectName("fullscreenVideoControls")
         overlay.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        overlay.setStyleSheet(
-            "#fullscreenVideoControls { background: rgba(7, 12, 27, 220); "
-            "border: 0; border-radius: 0; }"
-        )
         controls = QVBoxLayout(overlay)
         controls.setContentsMargins(18, 8, 18, 10)
         controls.setSpacing(5)
@@ -2902,6 +3027,7 @@ class MediaLibraryPage(QWidget):
         controls.addWidget(self.fullscreen_position)
 
         row = QHBoxLayout()
+        row.setSpacing(8)
         row.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.fullscreen_shuffle_button = QPushButton()
         self.fullscreen_shuffle_button.setObjectName("playerModeButton")
@@ -2931,12 +3057,9 @@ class MediaLibraryPage(QWidget):
                 "playerPrimaryButton" if primary else "playerControlButton"
             )
             button.setFixedSize(56 if primary else 46, 46)
-            if icon_name in {"backward", "forward"}:
-                button.setText("<<" if icon_name == "backward" else ">>")
-            else:
-                button.setIcon(_transport_icon(icon_name))
-                icon_size = 27 if primary else 23
-                button.setIconSize(QSize(icon_size, icon_size))
+            button.setIcon(_transport_icon(icon_name))
+            icon_size = 27 if primary else 23
+            button.setIconSize(QSize(icon_size, icon_size))
             button.setToolTip(tooltip)
             button.setAccessibleName(tooltip)
             button.clicked.connect(handler)
@@ -2960,13 +3083,19 @@ class MediaLibraryPage(QWidget):
         row.addWidget(self.fullscreen_exit_button)
         row.addStretch(1)
         row.addWidget(QLabel("Volume"))
-        self.fullscreen_volume = QSlider(Qt.Orientation.Horizontal)
+        self.fullscreen_volume = AnimatedSeekSlider()
         self.fullscreen_volume.setRange(0, 100)
         self.fullscreen_volume.setFixedWidth(190)
         self.fullscreen_volume.setValue(self.volume.value())
         self.fullscreen_volume.valueChanged.connect(self.volume.setValue)
         self.volume.valueChanged.connect(self.fullscreen_volume.setValue)
         row.addWidget(self.fullscreen_volume)
+        self.fullscreen_volume_percent = QLabel(f"{self.fullscreen_volume.value()}%")
+        self.fullscreen_volume_percent.setMinimumWidth(38)
+        self.fullscreen_volume.valueChanged.connect(
+            lambda value: self.fullscreen_volume_percent.setText(f"{value}%")
+        )
+        row.addWidget(self.fullscreen_volume_percent)
         controls.addLayout(row)
         for child in (overlay, *overlay.findChildren(QWidget)):
             child.setMouseTracking(True)
@@ -2975,6 +3104,19 @@ class MediaLibraryPage(QWidget):
         self._fullscreen_controls_overlay = overlay
         self._sync_fullscreen_controls()
         return window
+
+    def _fullscreen_style_sheet(self) -> str:
+        """Carry the desktop theme into the separate top-level video window."""
+
+        main_window_style = self.window().styleSheet()
+        application = QApplication.instance()
+        application_style = application.styleSheet() if application else ""
+        return (
+            f"{application_style}\n{main_window_style}\n"
+            "#fullscreenVideoWindow { background: black; border: 0; }\n"
+            "#fullscreenVideoControls { background: rgba(7, 12, 27, 220); "
+            "border: 0; border-radius: 0; }"
+        )
 
     def _layout_fullscreen_surface(self) -> None:
         window = self._fullscreen_window
@@ -3070,6 +3212,7 @@ class MediaLibraryPage(QWidget):
             return
         self._player_fullscreen = True
         window = self._ensure_fullscreen_window()
+        window.setStyleSheet(self._fullscreen_style_sheet())
         self.video_viewport.setParent(window)
         self.video_viewport.setMinimumHeight(0)
         self.video_viewport.setMaximumHeight(FULLSCREEN_VIDEO_MAX_HEIGHT)
@@ -3111,11 +3254,14 @@ class MediaLibraryPage(QWidget):
     def cycle_video_aspect(self) -> None:
         """Cycle the display aspect ratio for the active video (keyboard: A)."""
 
+        self.set_video_aspect((self._video_aspect_index + 1) % len(VIDEO_ASPECT_MODES))
+
+    def set_video_aspect(self, index: int) -> None:
+        """Select a display aspect from the embedded menu or fullscreen cycle."""
+
         if not self.aspect_button.isEnabled():
             return
-        self._video_aspect_index = (
-            self._video_aspect_index + 1
-        ) % len(VIDEO_ASPECT_MODES)
+        self._video_aspect_index = int(index) % len(VIDEO_ASPECT_MODES)
         label = VIDEO_ASPECT_MODES[self._video_aspect_index][0]
         if self._remember_video_display_modes:
             self.settings.setValue("library/video_aspect_mode", label)
@@ -3126,11 +3272,14 @@ class MediaLibraryPage(QWidget):
     def cycle_video_crop(self) -> None:
         """Cycle the centered video crop ratio (keyboard: C)."""
 
+        self.set_video_crop((self._video_crop_index + 1) % len(VIDEO_CROP_MODES))
+
+    def set_video_crop(self, index: int) -> None:
+        """Select a crop from the embedded menu or fullscreen cycle."""
+
         if not self.crop_button.isEnabled():
             return
-        self._video_crop_index = (
-            self._video_crop_index + 1
-        ) % len(VIDEO_CROP_MODES)
+        self._video_crop_index = int(index) % len(VIDEO_CROP_MODES)
         label = VIDEO_CROP_MODES[self._video_crop_index][0]
         if self._remember_video_display_modes:
             self.settings.setValue("library/video_crop_mode", label)
@@ -3145,12 +3294,16 @@ class MediaLibraryPage(QWidget):
         crop_label, crop_ratio = VIDEO_CROP_MODES[self._video_crop_index]
         self.video_viewport.set_display_modes(aspect_ratio, crop_ratio)
         self.aspect_button.setText(f"Aspect: {aspect_label}")
+        for index, action in enumerate(self.aspect_actions):
+            action.setChecked(index == self._video_aspect_index)
         self.aspect_button.setToolTip(
-            f"Current aspect ratio: {aspect_label} · Press A to cycle"
+            f"Current aspect ratio: {aspect_label} · Click to select · Press A to cycle"
         )
         self.crop_button.setText(f"Crop: {crop_label}")
+        for index, action in enumerate(self.crop_actions):
+            action.setChecked(index == self._video_crop_index)
         self.crop_button.setToolTip(
-            f"Current crop: {crop_label} · Press C to cycle"
+            f"Current crop: {crop_label} · Click to select · Press C to cycle"
         )
         self._sync_fullscreen_controls()
 
@@ -3393,15 +3546,13 @@ class MediaLibraryPage(QWidget):
     def review_artist_name_repairs(self) -> None:
         """Review editable artist repairs, apply them, then rescan the library."""
 
-        suggestions = suggest_artist_renames(item.artists for item in self.items)
-        if not suggestions:
-            QMessageBox.information(
-                self,
-                "Artist names",
-                "No duplicate, dotted-initial, or abbreviated artist names were found.",
-            )
-            return
-        dialog = ArtistRepairDialog(suggestions, self)
+        artist_values = tuple(item.artists for item in self.items)
+        suggestions = suggest_artist_renames(artist_values)
+        dialog = ArtistRepairDialog(
+            suggestions,
+            self,
+            artist_values=artist_values,
+        )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         replacements = dialog.replacements()
@@ -3654,6 +3805,13 @@ class MediaLibraryPage(QWidget):
             self.year_to.setValue(value)
         self._schedule_search()
 
+    def _clear_library_search_filters(self) -> None:
+        """Restore the text and year filters to their visible empty state."""
+
+        self.search.clear()
+        self.year_from.setValue(0)
+        self.year_to.setValue(0)
+
     def _year_to_changed(self, value: int) -> None:
         lower = self.year_from.value()
         if value and lower and value < lower:
@@ -3865,9 +4023,6 @@ class MediaLibraryPage(QWidget):
         table.setIconSize(VIDEO_THUMBNAIL_SIZE if video_rows else QSize(18, 18))
         if include_album_and_type and table is self.table:
             table.setColumnHidden(ARTWORK_COLUMN_INDEX, not video_rows)
-        if video_rows:
-            table.setColumnWidth(0, max(340, table.columnWidth(0)))
-            table.setColumnWidth(ARTWORK_COLUMN_INDEX, VIDEO_TABLE_ARTWORK_WIDTH)
         table.setUpdatesEnabled(False)
         table.setSortingEnabled(False)
         table.setRowCount(len(items))
@@ -3945,7 +4100,6 @@ class MediaLibraryPage(QWidget):
             # enough for the largest value in that specific result set.
             table.resizeColumnsToContents()
             if video_rows:
-                table.setColumnWidth(0, max(340, table.columnWidth(0)))
                 table.setColumnWidth(
                     ARTWORK_COLUMN_INDEX, VIDEO_TABLE_ARTWORK_WIDTH
                 )
