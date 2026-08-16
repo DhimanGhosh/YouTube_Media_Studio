@@ -29,6 +29,14 @@ class ArtistNameFormatterTest(unittest.TestCase):
     def test_preserves_periods_in_a_stage_name_that_is_not_initials(self) -> None:
         self.assertEqual(format_artist_names("will.i.am"), "will.i.am")
 
+    def test_expands_known_duo_only_when_the_complete_credit_matches(self) -> None:
+        self.assertEqual(
+            format_artist_names("Vishal & Shekhar"),
+            "Vishal Dadlani, Shekhar Ravjiani",
+        )
+        self.assertEqual(format_artist_names("Vishal"), "Vishal")
+        self.assertEqual(format_artist_names("Shekhar"), "Shekhar")
+
 
 if __name__ == "__main__":
     unittest.main()

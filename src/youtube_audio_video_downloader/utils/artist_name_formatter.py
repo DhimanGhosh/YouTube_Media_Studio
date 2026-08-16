@@ -23,6 +23,9 @@ _KNOWN_COMPACT_ALIASES = {
     "arrahman": "AR Rahman",
     "kk": "KK",
 }
+_KNOWN_CREDIT_ALIASES = {
+    ("vishal", "shekhar"): "Vishal Dadlani, Shekhar Ravjiani",
+}
 
 
 def format_artist_names(input_string: str) -> str:
@@ -52,6 +55,10 @@ def format_artist_names(input_string: str) -> str:
     if not raw_text:
         return ""
 
+    credit_alias = _KNOWN_CREDIT_ALIASES.get(_artist_credit_key(raw_text))
+    if credit_alias:
+        return credit_alias
+
     processed_text = re.sub(
         r"\s*(?:&|\band\b|Â·|·)\s*",
         ", ",
@@ -61,6 +68,19 @@ def format_artist_names(input_string: str) -> str:
     parts = [part.strip() for part in processed_text.split(",") if part.strip()]
     formatted_parts = [_format_single_artist(part) for part in parts]
     return ", ".join(dict.fromkeys(part for part in formatted_parts if part))
+
+
+def _artist_credit_key(value: str) -> tuple[str, ...]:
+    """Return a separator- and punctuation-insensitive whole-credit key."""
+
+    separated = re.sub(
+        r"\s*(?:&|\band\b|Ã‚Â·|Â·|;|/)\s*", ",", value, flags=re.IGNORECASE
+    )
+    return tuple(
+        compact
+        for part in separated.split(",")
+        if (compact := re.sub(r"[^a-z0-9]+", "", part.casefold()))
+    )
 
 
 def format_artists_names(input_string: str) -> str:
