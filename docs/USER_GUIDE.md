@@ -1,67 +1,88 @@
 # YouTube Media Studio user guide
 
-This guide explains how to use the installed desktop application. No Python setup or
-command line is required. For installation instructions, supported platforms, and
-downloads, return to the [main README](../README.md#download).
+This is the complete desktop-application guide for a first-time user. It covers every
+sidebar workspace, the controls inside each workspace, automatic internet and AI
+assistance, the local Media Library, phone access, playback, and the checks to perform
+before changing files. No Python or command-line knowledge is required.
+
+For installation packages and platform requirements, see the
+[main README](../README.md#download).
 
 ## Contents
 
+- [Read the screenshots](#read-the-screenshots)
 - [First-time setup](#first-time-setup)
 - [How the interface works](#how-the-interface-works)
-- [How AI helps](#how-ai-helps)
 - [Screen reference](#screen-reference)
+- [Configure Global Settings](#configure-global-settings)
+- [How AI and internet evidence work](#how-ai-and-internet-evidence-work)
+- [Use Dashboard](#use-dashboard)
 - [Find and download a song](#find-and-download-a-song)
+- [Use Audio Downloader](#use-audio-downloader)
+- [Use Video Downloader](#use-video-downloader)
 - [Split an album or jukebox](#split-an-album-or-jukebox)
+- [Reorder an album](#reorder-an-album)
 - [Edit a local media file](#edit-a-local-media-file)
+- [Edit an album folder](#edit-an-album-folder)
 - [Enrich and organize an existing music folder](#enrich-and-organize-an-existing-music-folder)
+- [Use Utilities](#use-utilities)
 - [Use the local media library](#use-the-local-media-library)
 - [Read Live Logs](#read-live-logs)
 - [File-safety rules](#file-safety-rules)
 - [Troubleshooting](#troubleshooting)
 
 > [!IMPORTANT]
-> Download only media you are authorized to use. Before running metadata, editing,
-> consolidation, or duplicate-removal tools over a valuable library, keep a backup
-> and test the workflow on a small folder first.
+> Download only media you are authorized to use. Keep a backup before running metadata,
+> editing, consolidation, duplicate-removal, or permanent crop/aspect operations over a
+> valuable library. Test each workflow on a small copy first.
+
+## Read the screenshots
+
+Every screenshot in this guide was captured from the real desktop application at a
+standard 1440 × 900 window size with an isolated empty profile. No personal library
+paths, API keys, or user settings are present.
+
+The cyan borders divide a screen into functional areas. Cyan numbers sit outside those
+borders so the application's own labels remain visible. The numbered table immediately
+after an image explains the matching area. A screenshot shows where a control is; the
+text remains the authoritative description of what it does.
 
 ## First-time setup
 
-1. Start **YouTube Media Studio** from the Windows Start menu, macOS Applications, or
-   the Linux application menu.
-2. Open **Global Settings** and confirm the application data directory, download
-   defaults, audio choices, network retries, and worker limits. Optionally add your
-   own SerpApi key to let Album Enricher use Google Search when its built-in sources
-   cannot identify a release.
-3. AI assistance is optional. Leave **Use AI for this task** off for deterministic
-   internet/catalog matching. To use AI, configure a provider and model in **Global
-   Settings** first.
-4. Open **Search Song** if you know what you want but do not have a source URL. Go
-   directly to a downloader or splitter when you already have one.
-5. Watch active work on **Dashboard** and open **Live Logs** for the complete result of
-   each item.
+1. Install and start **YouTube Media Studio** from the Windows Start menu, macOS
+   Applications, or the Linux application menu.
+2. Open **Global Settings**. Select the application data directory, output quality,
+   worker count, network retry behavior, and playback seek interval.
+3. Decide whether AI should be enabled by default. Ordinary deterministic downloading,
+   editing, timestamp parsing, and playback do not require AI.
+4. If AI is needed, choose a provider and model. Hosted providers require the user's own
+   key; local Ollama does not. Optionally add a SerpApi key for additional Google Search
+   and Google Images evidence.
+5. Select **Save and apply defaults**.
+6. Open **Search Song** when only a plain-language description is known. Open a
+   downloader or splitter directly when the source URL is already known.
+7. Watch **Dashboard** for overall progress and **Live Logs** for the result of each
+   individual item.
 
 The installer bundles the desktop runtime and required media tools. Normal desktop use
 does not require a separate Python, FFmpeg, FFprobe, Deno, or yt-dlp installation.
-If a desktop release is already installed, Setup offers Upgrade, Repair, and Uninstall.
-Upgrade and Repair close that exact installed app, replace its program files with fresh
-binaries, and retain settings, history, and application data. Uninstall offers a
-separate option to remove that data too.
+Upgrade and Repair replace program files while retaining settings, history, and
+application data. Uninstall separately asks whether that data should also be removed.
 
-On Windows, **Optional Components** also provides **Create a desktop shortcut**. The
-Start-menu shortcut is always installed; the desktop shortcut is optional. Upgrade and
-Repair preserve the existing desktop-shortcut choice unless you change the checkbox.
+On Windows, the Start-menu shortcut is always installed and **Create a desktop
+shortcut** is optional. Upgrade and Repair preserve that choice unless it is changed.
 
 ### macOS unsigned builds
 
-Public DMGs that are not Apple-notarized can still run, but macOS may block the first
-launch with an Apple verification warning. After dragging the app to Applications, run:
+If macOS blocks an unsigned public DMG on first launch, drag the app to Applications and
+run:
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/YouTubeMediaStudio.app
 open /Applications/YouTubeMediaStudio.app
 ```
 
-If the app is still blocked, apply a local ad-hoc signature and remove quarantine again:
+If needed, apply a local ad-hoc signature and remove quarantine again:
 
 ```sh
 codesign --force --deep --sign - /Applications/YouTubeMediaStudio.app
@@ -69,451 +90,767 @@ xattr -dr com.apple.quarantine /Applications/YouTubeMediaStudio.app
 open /Applications/YouTubeMediaStudio.app
 ```
 
-This is a per-Mac trust action for unsigned builds. A paid Apple Developer Program
-membership is needed only when the project should publish Developer ID signed and
-notarized releases that open normally for every macOS user.
-
 ## How the interface works
 
-The left sidebar switches between workflows. Each workflow collects its input in one
-or more cards and starts only when its main action button is selected. Tasks run in the
-background, so changing pages does not cancel an operation.
+The sidebar selects one of 14 workspaces. A selected workspace remains available while
+other jobs run in the background. The application disables only the run button for a
+workspace that already has a job, preventing that same task from being started twice.
 
-Different workspaces can run at the same time. For example, an Album Splitter job can
-continue while you start Video Downloader, Audio Downloader, or Album Enricher. The
-action button is disabled only for a workspace that already has a running job, which
-prevents accidentally starting that same workspace twice. The bottom **Stop** button
-cancels every currently running workspace job; wait for their cancellation messages in
-**Live Logs** before closing the app or changing files they use.
-
-The installed release is always shown as **Version x.y.z** beneath the sidebar. Include
-this value when reporting a problem so logs and behavior can be matched to the correct
-release.
-
-- **Dashboard** shows current activity, totals, and recent task results.
-- **Live Logs** retains the detailed per-file explanation.
-- **Global Settings** controls defaults shared by the other pages.
-- A **Browse** button selects a local file or folder without requiring a typed path.
-- **Use AI for this task** affects the current supported workflow; it is not required
-  for ordinary downloads, edits, playback, or deterministic metadata matching.
-
-## How AI helps
-
-AI is optional and is used only by workflows that show **Use AI for this task**. It can
-review a requested operation before work begins, compare local tags with internet and
-catalog evidence, identify conflicts, explain uncertain results, and perform an extra
-identity check before Album Consolidator moves a file. It does not replace the evidence
-rules: ambiguous files remain unchanged for manual review.
-
-The provider order is:
-
-1. **Selected primary:** choose Ollama, NVIDIA NIM, OpenAI, Anthropic, Google Gemini,
-   Groq, Hugging Face Inference, OpenRouter, OpenCode Zen, or a custom
-   OpenAI-compatible endpoint under **Global Settings → AI providers and online
-   evidence**. Hosted keys are password-masked and never printed in operation logs.
-   Each provider keeps its own key, model, and base-URL draft when you switch entries.
-2. **Ollama local fallback:** when a hosted provider cannot complete a request, Agno
-   retries with the configured local Ollama model. Ollama itself needs no API key and
-   inference stays on this computer. Catalog or web lookups used by a workflow can
-   still access the internet. The app requests a 16K context window instead of inheriting
-   very large model defaults, allowing common 9B models to remain GPU-resident on a
-   12 GB card when Ollama and the display workload leave sufficient VRAM.
-3. **Static fallback:** if neither model is available, the app continues with
-   deterministic rules and internet/catalog evidence where that workflow supports it.
-   Leave **Use AI for this task** off to select deterministic behavior directly.
-
-Use **Custom OpenAI-compatible** for another hosted or self-hosted service that exposes
-the OpenAI chat-completions protocol. Enter its `/v1` endpoint and model; the key may be
-left empty for a trusted local endpoint. Select **Save and apply defaults** after editing
-or clearing credentials so the saved value is authoritative after restart.
-
-The **SerpApi key** is independent of both AI options. It authorizes Google Search and
-Google Images requests for missing album, movie, year, and artwork evidence; it does not
-run a language model. Provider and SerpApi usage may count against the respective user's
-plan or quota.
-
-Use Live Logs to confirm which path ran: `[AI-PROVIDER]`,
-`[AI-PROVIDER-FALLBACK]`, and `[AI-NOT-USED]` identify the effective mode, while
-`[AI-REVIEW]`, `[METADATA-REVIEW]`, or `[AGENT-REVIEW]` means the safety gate left the
-item unchanged.
+- **Browse** selects a local file or folder without typing its path.
+- **Use AI for this task** is saved separately for each supported workspace.
+- **Off = internet search + deterministic verification only** means internet/catalog
+  helpers can still be used; only language-model calls are disabled.
+- **Open output** opens the latest completed output folder.
+- The bottom **Stop** button requests cancellation of every active workspace job. Wait
+  for the cancellation result in Live Logs before changing or deleting involved files.
+- **Version x.y.z** under the sidebar is the installed application version. Include it
+  in a bug report.
+- Form state, output folders, statuses, and history are restored after restart when
+  workspace persistence is enabled in Global Settings.
 
 ## Screen reference
 
-| Sidebar page | What it does | How to use it |
+| Sidebar page | Primary purpose | Detailed section |
 | --- | --- | --- |
-| **Dashboard** | Shows current activity, session totals, and recent operations. | Start work on another page, then return here to see progress and results. **Clear** removes displayed session history, not media files. |
-| **Search Song** | Finds a song, album, movie track, video, or jukebox from plain language. | Enter a description, review and preview the matches, choose a row and destination workflow, then select **Use selected result**. |
-| **Audio Downloader** | Downloads permitted full audio or a timestamp range with a normalized filename, tags, and cover artwork. | Add or import track details, optionally set start/end inside each song row, verify metadata and output, then run the download. |
-| **Video Downloader** | Inspects available formats and downloads full or timestamp-bounded video or audio. | Paste **Ytb Link** first; the app scans qualities and fills the optional file name from YouTube when it is blank. Set an optional start/end, choose output, then start the download. |
-| **Album Splitter** | Turns one full-album source into separate tagged songs. | Add the source and timestamped track list, verify the rows and shared album metadata, then split. |
-| **Jukebox Splitter** | Splits a compilation containing tracks from different albums or artists. | Add the source, review each timestamped track and its individual metadata, then split and organize. |
-| **Track Reorder** | Applies a verified album order to existing local tracks. | Select an album folder, preview the proposed sequence, and apply it only after checking the matches. |
-| **Edit File** | Trims a local file, permanently applies video crop/aspect, or repairs its filename, tags, track number, and artwork. | Select a file, load its current values, choose one action, review it, then save. |
-| **Edit Album** | Applies one album name, year, optional shared track-artist override, and optional cover to every supported media file in a folder. | Browse an album folder and inspect its current values. Leave **Artist(s) override** blank to preserve each file's own track artist, or enter comma-separated artists only when every track should receive that shared value. Optionally select a JPEG/PNG or HTTPS image (or remove all artwork), then confirm. Titles, track numbers, and the dedicated album-artist tag are preserved; filenames are safely rebuilt as `Title - Album (Year) - Artists` using each resulting track artist. |
-| **Album Consolidator** | Enriches local metadata and routes verified files into album folders. | Select the source, run the enricher, inspect review items, select a destination, then move verified tracks. |
-| **Utilities** | Formats artist names and converts timestamp text. | Choose the relevant tab, paste or load input, run the tool, then copy or save its result. |
-| **Live Logs** | Explains what an operation changed, skipped, or could not verify. | Filter or copy the relevant block when troubleshooting or reporting a bug. |
-| **Global Settings** | Controls output defaults, concurrency, retries, networking, audio, optional AI providers, and optional SerpApi search. | Paste your own provider credential into its password-masked field and select **Save and apply defaults**. A key is needed only for that provider. |
-| **Media Library** | Scans, browses, searches, plays, queues, and manages local media. | Add library locations, search by track/artist/album, then use the player or context actions. |
+| **Dashboard** | Monitor session activity and open common workspaces. | [Use Dashboard](#use-dashboard) |
+| **Search Song** | Turn a plain-language request into previewable YouTube matches. | [Find and download a song](#find-and-download-a-song) |
+| **Audio Downloader** | Download tagged MP3s or retag existing MP3 files. | [Use Audio Downloader](#use-audio-downloader) |
+| **Video Downloader** | Scan qualities and download full or timestamp-bounded video/audio. | [Use Video Downloader](#use-video-downloader) |
+| **Album Splitter** | Auto-fill or manually define one album and split it into tagged tracks. | [Album Splitter](#album-splitter) |
+| **Jukebox Splitter** | Split a mixed compilation with per-track metadata. | [Jukebox Splitter](#jukebox-splitter) |
+| **Track Reorder** | Drag album tracks into order and rewrite only track-number tags. | [Reorder an album](#reorder-an-album) |
+| **Edit File** | Retag, trim, redownload, or permanently change video framing. | [Edit a local media file](#edit-a-local-media-file) |
+| **Edit Album** | Apply shared album metadata/artwork behavior to a folder. | [Edit an album folder](#edit-an-album-folder) |
+| **Album Consolidator** | Enrich metadata, then route verified tracks to album folders. | [Enrich and organize](#enrich-and-organize-an-existing-music-folder) |
+| **Utilities** | Format artist credits and parse timestamp text into JSON. | [Use Utilities](#use-utilities) |
+| **Live Logs** | Inspect, copy, clear, or save detailed operation output. | [Read Live Logs](#read-live-logs) |
+| **Global Settings** | Configure shared processing, playback, AI, privacy, and storage defaults. | [Configure Global Settings](#configure-global-settings) |
+| **Media Library** | Scan, filter, play, curate, queue, playlist, and serve local media. | [Use the local media library](#use-the-local-media-library) |
+
+## Configure Global Settings
+
+Global Settings controls values shared by the other workspaces. Expand only the group
+being changed, then select **Save and apply defaults**. **Reset app** clears tool forms,
+saved provider credentials/models, saved state, and restored defaults; it does not act as
+a media-library deletion command.
+
+![Global processing settings](media/user-guide/workspaces/global-settings-processing.png)
+
+| Callout | Area | Use |
+| --- | --- | --- |
+| 1 | Settings actions | Reset all application settings or save the edited defaults. |
+| 2 | Batch processing and network | Set parallel workers, randomized minimum/maximum delay, retries, retry delay, and the longer rate-limit wait. |
+| 3 | Audio and metadata defaults | Expand for MP3 bitrate, sample rate, and Wikipedia track-order behavior. |
+| 4 | Media Playback | Expand for audio/video seek controls and video display memory. |
+| 5 | AI providers and online evidence | Expand for provider, model, credentials, Ollama fallback, and SerpApi. |
+
+### Batch processing and network
+
+- **Parallel workers** controls how many independent items can run together, up to the
+  safe machine-specific maximum shown by the control.
+- **Minimum delay / Maximum delay** define randomized pacing between download requests.
+- **Retries** is the bounded number of attempts for retryable work.
+- **Retry delay** is the normal wait between failed attempts.
+- **Rate-limit wait** is the longer pause used when a service asks the app to slow down.
+
+![Audio and playback settings](media/user-guide/workspaces/global-settings-audio-playback.png)
+
+| Callout | Area | Use |
+| --- | --- | --- |
+| 1 | Settings actions | Save the values after editing. |
+| 2 | Batch processing | Collapsed here; expand to change network/concurrency defaults. |
+| 3 | Audio and metadata defaults | Select MP3 bitrate, sample rate, and verified Wikipedia ordering. |
+| 4 | Media Playback | Set the `<<`/`>>` and keyboard seek interval and choose whether crop/aspect carries to the next video. |
+| 5 | AI and online evidence | Collapsed provider group. |
+| 6 | Application behavior and privacy | Collapsed state, diagnostics, and suggestion group. |
+
+### Audio, metadata, and playback
+
+- **Default MP3 bitrate** offers 320, 256, 192, or 128 kbps.
+- **Default sample rate** offers 44.1 or 48 kHz.
+- **Album track ordering** uses verified Wikipedia ordering and compresses a downloaded
+  subset to `1..N` when enabled.
+- **Seek interval** is used by the `<<` and `>>` player buttons and the Left/Right keys.
+  Shift+Left/Right seeks twice this number.
+- **Crop/aspect memory** off means each newly loaded video starts at Default. On carries
+  the last display choices to the next video and the next application session.
+
+![AI provider settings](media/user-guide/workspaces/global-settings-ai.png)
+
+| Callout | Area | Use |
+| --- | --- | --- |
+| 1 | Settings actions | Apply the selected provider and credentials. |
+| 2–4 | Other collapsed groups | Processing, audio, and playback defaults remain independent. |
+| 5 | AI providers and online evidence | Choose the default AI policy, primary provider, provider-specific key/model/base URL, local Ollama fallback, and optional SerpApi key. |
+
+Supported primary providers are Ollama, NVIDIA NIM, OpenAI, Anthropic, Google Gemini,
+Groq, Hugging Face Inference, OpenRouter, OpenCode Zen, and a custom
+OpenAI-compatible endpoint. Each provider retains its own draft key, model, and base
+URL when the provider selector changes. Keys are password-masked and never printed in
+operation logs.
+
+- **Provider base URL** is normally filled automatically. Enter it for a custom
+  OpenAI-compatible endpoint.
+- **Ollama local / fallback** is the local model used directly when Ollama is primary or
+  after a hosted provider fails.
+- **SerpApi key** does not run a language model. It supplies optional Google Search and
+  Google Images evidence when built-in catalog sources are insufficient.
+
+![Behavior and storage settings](media/user-guide/workspaces/global-settings-behavior-storage.png)
+
+| Callout | Area | Use |
+| --- | --- | --- |
+| 1 | Settings actions | Save or reset. |
+| 2–5 | Other setting groups | Expand any independent group without losing values in another. |
+| 6 | Application behavior and privacy | Restore workspace state, opt into local crash reports, and set the Media Library suggestion count. |
+| 7 | Storage and appearance | Move the application-data folder, open it, and tune the live glass “Crystalness” level. |
+
+Changing the application-data folder safely copies existing application data and takes
+effect on the next start. Crash reporting is local and opt-in. **Open data folder** opens
+the exact active location.
+
+## How AI and internet evidence work
+
+AI is optional and never replaces the application's evidence and safety rules.
+
+1. A workspace with **Use AI for this task** enabled may ask the selected provider to
+   understand, preflight, extract, rank, or verify information.
+2. A hosted-provider failure falls back to the configured Ollama model when available.
+3. If neither model is usable, the workflow continues with deterministic rules and
+   supported internet/catalog evidence where possible.
+4. Ambiguous or conflicting identity evidence leaves a file unchanged for review.
+
+The per-workspace switch controls model calls, not all network use. For example, Album
+Splitter can still search Wikipedia, catalogs, cover sources, and YouTube when AI is
+off. The footer and Live Logs identify the effective path:
+
+- `[AI-PROVIDER]` — selected model provider used;
+- `[AI-PROVIDER-FALLBACK]` — hosted provider failed and Ollama was tried;
+- `[AI-NOT-USED]` — no model call was necessary;
+- `[AI-STATIC-FALLBACK]` — deterministic processing continued without a model;
+- `[AI-REVIEW]`, `[METADATA-REVIEW]`, or `[AGENT-REVIEW]` — safety rules left the
+  item unchanged.
+
+Provider and SerpApi requests may count against the user's own plan or quota.
+
+## Use Dashboard
+
+![Dashboard](media/user-guide/workspaces/dashboard.png)
+
+| Callout | Area | Use |
+| --- | --- | --- |
+| 1 | Readiness card | Shows whether the application is ready and summarizes AI-assisted background workflows. |
+| 2 | Jobs started | Count of tasks started in this session. |
+| 3 | Completed | Count of completed tasks. |
+| 4 | Failed | Count of failed tasks. |
+| 5 | Default workers | Current shared parallel-worker value. |
+| 6 | Quick launch | Opens Media Library, Search Song, downloaders, splitters, Track Reorder, Edit File, Album Consolidator, or Utilities. |
+| 7 | Session history | Shows time, workflow, status, item count, and detail. **Clear** removes displayed session history and counters, not media. |
+
+Dashboard is a monitor and launcher. It does not contain media-job inputs. A background
+job remains active if another page is opened.
 
 ## Find and download a song
 
-1. Open **Search Song** and describe the song with identifying information such as
-   title, singers, film or album, and language.
-2. Select **Understand and search**.
-3. Preview the results and select the correct source.
-4. Set **Send selected result to** to **Audio Downloader (MP3 + metadata)** and select
-   **Use selected result**.
-5. In **Audio Downloader**, review the populated title, album, artists, year, artwork,
-   output folder, and that song row's optional start/end range. Each batch row has its own
-   range. Do not assume the first result is correct.
-6. Start the download and check **Live Logs** for the final saved path.
+![Search Song workspace](media/user-guide/workspaces/search-song.png)
 
-The same result-routing control can send a match to **Video Downloader**, **Album
-Splitter**, or **Jukebox Splitter**.
+| Callout | Area | Use |
+| --- | --- | --- |
+| 1 | AI policy | Enable model-assisted request understanding or use deterministic internet search only. |
+| 2 | Request | Describe a song, artist, album, film, video, or jukebox and choose 1–12 results. |
+| 3 | Understood request | Review the interpreted title, artist, collection, and intended media type. |
+| 4 | YouTube matches and routing | Preview a match, select one row, choose its destination workspace, then use the selected result. |
+
+From scratch:
+
+1. Enter identifying text such as song title, singers, film/album, language, or the fact
+   that the request is a full jukebox.
+2. Choose the maximum result count and select **Understand and search**.
+3. Confirm the **Understood request**. If the identity is wrong, make the request more
+   specific and search again.
+4. In **YouTube matches**, compare title, channel, duration, and view count. Use **Play
+   preview** when available.
+5. Select exactly one row.
+6. Choose **Audio Downloader (MP3 + metadata)**, **Video Downloader**, **Album
+   Splitter**, or **Jukebox Splitter** under **Send selected result to**.
+7. Select **Use selected result**, then verify every populated field on the destination
+   page before starting work.
+
+## Use Audio Downloader
+
+![Audio Downloader workspace](media/user-guide/workspaces/audio-downloader.png)
+
+| Callout | Area | Use |
+| --- | --- | --- |
+| 1 | AI policy | Enables optional preflight and post-download metadata verification. |
+| 2 | Audio job | Add/import songs, select download or retag mode, choose output, overwrite policy, and start. |
+| 3 | Song editor | Expand/collapse or remove one song and edit all fields belonging to that item. |
+
+### Download MP3 files
+
+1. Select **Add song** for each item, or **Import JSON** for an existing batch.
+2. Enter **Ytb Link**, **Title**, **Album**, comma-separated **Artists**, cover URL,
+   release year, and optional track number.
+3. Use **Start Timestamp** and **End Timestamp** to download a range. Accepted forms are
+   seconds, `MM:SS`, or `HH:MM:SS`; a blank end means the end of the source.
+4. Leave **Download · Enabled** on for items that should run. Disable it to keep a row in
+   the batch without processing it.
+5. Use **Preview** to inspect a cover URL, **Find cover** to search for a square image,
+   and **Find year** to search release evidence.
+6. Choose an optional output folder. Otherwise the saved default is used.
+7. Decide whether an existing destination MP3 may be overwritten, then select **Start
+   audio job**.
+
+The output filename is generated from `Title - Album - Artists`. The saved MP3 receives
+title, album, normalized artists, year, artwork, and track numbering. Download pacing,
+retries, bitrate, sample rate, and worker count come from Global Settings.
+
+### Tag existing MP3 files
+
+Change **Mode** to **Tag existing MP3 files**. The YouTube and download-range controls
+are replaced by **MP3 File Path**. The app updates tags and the normalized filename
+without downloading media. Review **Overwrite existing MP3 files** carefully when a
+normalized destination already exists.
+
+## Use Video Downloader
+
+![Video Downloader workspace](media/user-guide/workspaces/video-downloader.png)
+
+| Callout | Area | Use |
+| --- | --- | --- |
+| 1 | AI policy | Optional operation preflight and consistency checks. |
+| 2 | Video job | Add/import video rows, select audio behavior, output folders, merge container, report, and overwrite policy. |
+| 3 | Video editor | Paste the URL; title and available qualities are scanned automatically. Set optional range and enable/disable the row. |
+
+1. Select **Add video** or **Import JSON**.
+2. Paste **Ytb Link**. After a short pause the app scans the source, fills the file name
+   when blank, and enables the available **Quality** choices.
+3. Enter optional **Start Timestamp** and **End Timestamp** for a partial download.
+4. If an MP3 format is selected, choose **MP3 only when selected** or **Selected video
+   and MP3**.
+5. Choose separate optional video and audio output folders.
+6. Select the merge container: MP4, MKV, or WebM.
+7. Leave **Write result report** enabled when a machine-readable batch result is useful.
+8. Enable overwrite only when replacing an existing output is intentional.
+9. Select **Start video job** and confirm the final path in Live Logs.
 
 ## Split an album or jukebox
 
-1. Open **Album Splitter** for a single release or **Jukebox Splitter** for a mixed
-   compilation.
-2. Add the source and timestamps. **Utilities → Timestamp parser** can turn a copied
-   track list into structured rows.
-3. Verify every title and time boundary; a wrong timestamp affects adjacent tracks.
-4. Complete the album, artist, year, and artwork fields. For a jukebox, review the
-   per-track values as well.
-5. Choose the output and start the split.
-6. Listen to the produced boundaries and inspect the tags before deleting the original
-   long-form source.
+Use **Album Splitter** for one release whose tracks share album metadata. Use **Jukebox
+Splitter** for a mixed compilation in which each track may have a different album,
+artist, year, and cover.
+
+### Album Splitter
+
+![Album Splitter workspace](media/user-guide/workspaces/album-splitter.png)
+
+| Callout | Area | Use |
+| --- | --- | --- |
+| 1 | AI policy | AI on adds track-list extraction/validation; off keeps internet search and deterministic parsing. |
+| 2 | Album extraction job | Add/import albums, choose output and silence controls, report/temp/overwrite behavior, then start. |
+| 3 | Album editor | Enter the album identity; use full auto-fill or individual lookup buttons; add, import, extract, and review tracks. |
+
+#### Automatically fill an album
+
+This is the complete **Auto fill album** workflow:
+
+1. Enter the album name. Include a four-digit year in the name when two releases share
+   the same title; an explicitly entered year is treated as strong evidence.
+2. Select **Auto fill album**.
+3. The app searches online release evidence for the year, searches for square cover art,
+   and searches YouTube for a suitable full-album/jukebox source.
+4. When a full-album source is found, the app immediately extracts timestamped tracks
+   and singer credits from its description. With the workspace AI switch on, the
+   configured model assists extraction and the result is independently validated. With
+   AI off, internet metadata and deterministic parsing are used.
+5. If no suitable full-album video is found, the app searches for individual album-track
+   links and builds per-track rows instead of inventing a jukebox URL.
+6. The album row reports the stage—finding metadata, extracting tracks, completed, or a
+   specific failure. Live Logs lists each source and fallback.
+7. Review every populated value. Auto-fill is a starting point, not permission to skip
+   identity, boundary, artist, and artwork checks.
+
+Auto-fill can populate **Release Year**, **Album Art**, **Ytb Link**, and **Tracks**.
+It does not select the final output/overwrite policy or approve the job on the user's
+behalf.
+
+#### Correct one field manually
+
+- **Find on YouTube** searches for the first full-album result using album name/year and
+  then starts track extraction.
+- **Find year** searches Wikipedia release evidence.
+- **Find cover** searches for a square cover; selecting it again excludes the current
+  URL so another candidate can be found.
+- **Preview** downloads at most the preview limit and opens the current HTTP(S) cover in
+  a dialog without writing it to a media file.
+- **Import timestamps** opens a preview-required parser dialog and adds all accepted
+  rows.
+- **Extract tracks** reads timestamp and singer information from the current YouTube
+  description.
+- **Add track** creates a blank row for manual title, source link, start/end, and artist.
+- **Remove** deletes only that editor row, not a downloaded file.
+
+If the extracted first track does not start at `00:00:00`, the app shows a warning.
+Verify it manually because an incorrect first boundary shifts the entire album.
+
+#### Album job controls
+
+- **Download** disables an album or track without deleting its entered data.
+- **Track numbering** writes sequential track tags when enabled.
+- **Silence threshold**, **Minimum silence**, and **Minimum track** control fallback
+  silence detection when explicit timestamps are unavailable.
+- **Trim padding** retains a small amount around detected boundaries.
+- **Keep temporary source audio** is useful for diagnosis but consumes extra disk space.
+- **Write result report** records batch outcomes.
+- **Overwrite existing tracks** permits replacement; leave it off for the safest first
+  run.
+
+### Jukebox Splitter
+
+![Jukebox Splitter workspace](media/user-guide/workspaces/jukebox-splitter.png)
+
+| Callout | Area | Use |
+| --- | --- | --- |
+| 1 | AI policy | Controls AI-assisted mixed-track extraction and metadata validation. |
+| 2 | Jukebox extraction job | Add/import compilations, choose output/temp/report/overwrite behavior, and start. |
+| 3 | Jukebox editor | Name the compilation, find/paste its link, enable numbering, then add or extract tracks. |
+| 4 | Shared defaults reminder | Worker, retry, delay, bitrate, and sample-rate values come from Global Settings. |
+
+Jukebox track rows contain **Start**, **End**, **Album**, **Artists**, **Album Art**, and
+**Release Year** because the values may differ for every song. After extraction, each
+track can use **Find album**, **Find artists**, **Find year**, **Find cover**, and cover
+**Preview**. A catalog metadata lookup updates album, artists, year, and art as one
+consistent unit instead of mixing unrelated results.
+
+Mashup, remix, and lo-fi titles are not blindly auto-enriched as ordinary releases.
+Review all boundaries and identities before selecting **Start jukebox split**.
+
+### Timestamp import dialog
+
+![Timestamp import dialog](media/user-guide/dialogs/timestamp-import.png)
+
+| Callout | Area | Use |
+| --- | --- | --- |
+| 1 | Timestamp text | Paste one timestamped track per line. Add `by Artist` when known. |
+| 2 | JSON preview | Inspect the exact structured tracks after selecting **Preview JSON**. |
+| 3 | Dialog actions | **Add parsed tracks** stays disabled until a successful preview; Cancel leaves the album unchanged. |
+
+The title-case option controls whether the parser normalizes casing. **Unknown artist**
+is used only where a line supplies no artist. In Utilities, choose an `end` field for a
+jukebox or `stop` for an album according to the destination JSON format.
+
+## Reorder an album
+
+![Track Reorder workspace](media/user-guide/workspaces/track-reorder.png)
+
+| Callout | Area | Use |
+| --- | --- | --- |
+| 1 | AI policy | Optional preflight; reordering itself changes only deterministic track-number tags. |
+| 2 | Reorder form | Browse an album folder, drag rows, reload/clear, and apply the order. |
+| 3 | Safety summary | Confirms what remains unchanged. |
+
+1. Browse to one album folder. Supported media files load automatically.
+2. Drag tracks into the intended order. The displayed `01`, `02`, and so on update as
+   rows move.
+3. Use **Reload folder** to discard the unsaved arrangement and read the folder again.
+4. Use **Clear** to clear the selected folder and list without touching files.
+5. Select **Reorder track numbers**.
+
+Only the track-number tag changes to 1, 2, 3, and so on. An existing track total such as
+`/8` is preserved. Files are not renamed, moved, decoded, or re-encoded, and title,
+artist, album, year, and artwork remain unchanged.
 
 ## Edit a local media file
 
-1. Open **Edit File** and browse to the media file.
-2. Load its current duration and metadata.
-3. Choose **Trim the selected local file** to cut an existing download without using
-   YouTube or downloading it again. Set **Local trim start/end** in **Song metadata**,
-   then choose whether to replace the source atomically or save a trimmed copy.
-4. Choose **Replace media from YouTube** only when the source content itself should be
-   downloaded again; **Download start/end** in the upper **File operation** section
-   limit that new download independently. The two timestamp ranges never share values.
-5. For a video, choose **Apply video crop / aspect permanently** to select a centered
-   **Permanent crop ratio**, a **Permanent aspect ratio**, or both. Review the filename
-   and both ratios in the confirmation. FFmpeg re-encodes to a temporary file and replaces
-   the source only after the output succeeds. This cannot be undone without another copy.
-   On future playback, the edited pixels have that framing while the player shows
-   **Aspect: Default** and **Crop: Default**.
-6. Correct the title, album, artists, year, track position, or artwork as needed.
-7. Run the action and verify the result in **Live Logs**.
+![Edit File workspace](media/user-guide/workspaces/edit-file.png)
 
-The Media Library can send a selected local track directly to this page with its
-metadata already loaded. A video's context menu also provides **Apply crop / aspect
-permanently…** to open this action directly.
+| Callout | Area | Use |
+| --- | --- | --- |
+| 1 | AI policy | Optional preflight/verification for supported edit operations. |
+| 2 | File operation | Select the action, source file, source/download ranges, crop/aspect, and save behavior. |
+| 3 | Song metadata | Review loaded tags and artwork behavior, then run the action. |
+
+Browse to an existing audio or video file. Duration and current metadata load
+automatically.
+
+### Update metadata only
+
+Edit title, album, comma-separated artists, year/date, track number/total, and artwork.
+An empty metadata field removes that tag. A blank artwork input preserves the current
+cover; **Remove existing artwork** deletes it. Metadata changes are written to a
+temporary copy and atomically replace the source. Edited audio is renamed safely as
+`Title - Album - Artists`.
+
+### Trim the selected local file
+
+Set **Local trim start/end** inside **Song metadata**. This trims the already-downloaded
+file and does not use YouTube. Choose **Save an edited copy** and a destination, or
+**Replace the existing source file**. Trimming uses stream copy where supported, then
+applies the edited metadata.
+
+### Replace media from YouTube
+
+Enter the link and choose Automatic, Audio only, Video only, or Audio and video. The
+upper **Download start/end** range limits the replacement download and is independent of
+the lower local-trim range. Choose copy or replacement behavior and verify the proposed
+destination before selecting **Redownload and edit**.
+
+### Apply video crop / aspect permanently
+
+Choose **Permanent crop ratio**, **Permanent aspect ratio**, or both. The confirmation
+shows the filename and selected ratios. FFmpeg re-encodes to a temporary file and
+replaces the source only after success. The edited pixels then play with player controls
+at **Aspect: Default** and **Crop: Default**. This cannot be undone without another copy.
+
+The Media Library can open a selected track directly in Edit File. A video context menu
+also exposes the permanent crop/aspect action.
 
 ## Edit an album folder
 
-1. Open **Edit Album**, browse to one album folder, and select **Load album**.
-2. Review the detected file count, artwork coverage, and existing album, year, and
-   track-artist values.
-   Mixed values are shown as such instead of being silently chosen.
-3. Enter the album-wide values. Album is required; year must be four digits or blank.
-   **Artist(s) override is optional.** Leave it blank for a compilation, soundtrack, or
-   other album whose tracks have different artists; each file keeps its existing artist
-   tag and that individual value is used when rebuilding its filename. Enter artists only
-   when you intentionally want to replace the artist on every track with one shared value.
-   To change every cover, browse to a local JPEG/PNG or enter an HTTPS image URL. To
-   clear every cover, select **Remove artwork from every album file**. Leave both blank
-   to preserve each file's current artwork.
-4. Select **Apply to all files** and confirm the folder-level change.
-5. Review **Live Logs**. Every successful file receives the shared album and year plus
-   the selected artwork action. The track artist is changed only when an override was
-   entered; otherwise it is preserved per file. Its title and track number are preserved,
-   and its filename is rebuilt from the updated album identity and resulting artist. Any failed
-   file is listed.
+![Edit Album workspace](media/user-guide/workspaces/edit-album.png)
 
-From an album in **Media Library**, right-click and choose **Edit album metadata**.
-The same menu also retains **Consolidate / Album enricher** and **Track reorder**.
+| Callout | Area | Use |
+| --- | --- | --- |
+| 1 | Album edit form | Browse the folder, review status, enter shared values/artwork behavior, clear, or apply. |
+| 2 | Bulk-edit contract | Explains preserved tags, per-track artists, renaming, and atomic writes. |
+
+1. Browse one album folder and select **Load album** if it has not loaded automatically.
+2. Review the detected file count, artwork coverage, and current album/year/artist
+   values. Mixed values are shown as mixed instead of silently choosing one.
+3. Enter the required album name and an optional four-digit year.
+4. Leave **Artist(s) override** blank for soundtracks, compilations, or albums with
+   different track artists. Each file keeps its own artist. Enter artists only when the
+   same replacement should be written to every track.
+5. For artwork, choose a local JPEG/PNG or HTTPS URL, select **Remove artwork from every
+   album file**, or leave both blank to preserve each existing cover.
+6. Select **Apply to all album files** and confirm the folder-level change.
+
+Titles and track numbers remain unchanged. The dedicated album-artist tag is preserved.
+Each filename is safely rebuilt from the updated album identity and resulting per-track
+artist. Each file is written through a temporary copy; failures are listed individually.
 
 ## Enrich and organize an existing music folder
 
-The Album Consolidator has two separate stages. **Album enricher** repairs metadata but
-does not move files. **Move into album folders** routes approved files to the selected
-library.
+![Album Consolidator workspace](media/user-guide/workspaces/album-consolidator.png)
 
-By default, enrichment searches Wikipedia and Apple's music catalog. When a SerpApi
-key is saved in **Global Settings**, Google Search is used only as a fallback if Apple
-does not return a usable album. The key belongs to the user and SerpApi usage may count
-against that user's plan or quota. If Apple has no suitable cover, the same key also
-enables authenticated Google Images lookup; only safe square original images are used.
+| Callout | Area | Use |
+| --- | --- | --- |
+| 1 | AI policy | Enables optional metadata and pre-move identity verification. |
+| 2 | Album enricher | Repair metadata recursively without moving files. |
+| 3 | Move into album folders | Choose destination and enrichment scope, then route approved files. |
+| 4 | Consolidation rules | On-screen summary of matching, naming, duplicate, skip, and ordering rules. |
 
-The key is password-masked in the interface and saved in the application's local
-settings file so it can be restored after restart. It is not added to media-operation
-parameters or logs. Anyone who can read your operating-system account files may be able
-to read the settings file, so do not share it and revoke the key if it is exposed.
+Album Consolidator has two intentionally separate stages.
 
-1. Under **1. Album enricher**, select the source folder containing incoming tracks.
-2. Run **Album enricher** and inspect `[METADATA-REVIEW]` or `[ENRICH-SKIPPED]` lines.
-   Correct unresolved files with **Edit File**, improve their filenames, or rerun when
-   better catalog evidence is available.
-3. Under **2. Move into album folders**, select the destination library. The source is
-   still the folder selected in stage 1.
-4. Leave **Perform album enrichment before and after moving** enabled when the move
-   stage should verify/enrich metadata. Disable it after you have just completed stage
-   1 and want to route by the existing tags without repeating enrichment. Track
-   indexing still runs after the move.
-5. Leave **Include all destination files in enrichment** off to process the incoming
-   scope only. Enable it only when enrichment is enabled and the complete destination
-   tree should also be enriched.
-6. Select **Move into album folders**. Approved files are routed into an
-   `Album (Year)` folder. Unresolved files remain in the source for manual review.
+### Stage 1: Album enricher
 
-When AI and move-stage enrichment are both enabled, the move action performs an
-additional pre-move identity check.
-Only paths reported as fully complete are admitted to the mover. `[AI-VERIFIED]` means
-the model found supporting evidence; it does **not** by itself guarantee that all
-required tags and artwork are complete. `[AGENT-REVIEW]` is the final indication that
-the safety gate left a file in the source.
+1. Select the source folder containing incoming tracks.
+2. **Enable destination path for enrichment** only when the destination should also be
+   part of the enrichment scan.
+3. Enable **Recheck files already marked complete** to repair a previously accepted but
+   wrong value such as year. Otherwise the tracker avoids repeating completed work.
+4. Select **Run album enricher**.
+5. Inspect `[ENRICHED]`, `[METADATA-REVIEW]`, and `[ENRICH-SKIPPED]` lines. Correct an
+   unresolved file in Edit File or rerun when better evidence is available.
+
+Enrichment searches built-in sources such as Wikipedia and Apple's catalog. With a
+SerpApi key, Google Search and Images are fallbacks when built-in evidence is
+insufficient. AI can verify identity but cannot override missing or conflicting required
+metadata. Artist names are canonicalized during downloads and enrichment: dotted
+initials lose periods (`K.K.` → `KK`, `A. R. Rahman` → `AR Rahman`) and a shortened name
+expands only when the identity is known or unambiguous.
+
+### Stage 2: Move into album folders
+
+1. Select the destination library folder.
+2. Leave **Perform album enrichment before and after moving** enabled when this stage
+   should verify/enrich metadata. Disable it after a completed stage 1 to route existing
+   tags without repeating enrichment. Track indexing still runs.
+3. Enable **Include all destination files in enrichment** only when enrichment is on and
+   the complete destination tree should be included.
+4. Select **Move into album folders**.
+
+Approved files go to `Album (Year)` folders. Existing album folders are reused and
+existing files are not overwritten. Unresolved files remain in the source. A source
+file whose normalized title already exists in the matching destination is treated as a
+duplicate and may be deleted, so keep a backup until matching has been verified.
 
 ### Why a track may remain in the source
 
-- Album, title, artist, year, or required artwork is blank or unresolved.
-- Internet/catalog candidates conflict or do not match the recording duration.
-- The AI verifier requested review even though its text mentions supporting evidence.
-- The configured AI provider failed and a fallback model produced a different result.
-- SerpApi was not configured, rejected the key, exhausted its quota, or did not return
-  independently agreeing exact results.
-- The file has an invalid or artist-contaminated album value.
-- The operation could not read the media or its metadata.
+- album, title, artist, year, or required artwork is blank;
+- catalog/internet candidates conflict or duration evidence does not match;
+- a model or deterministic verifier requested review;
+- SerpApi was missing, rejected, quota-limited, or returned no independently agreeing
+  exact result;
+- the album value contains an artist credit or invalid placeholder;
+- the file or metadata could not be read.
 
-Use the final per-file message in **Live Logs** as the authoritative outcome. If the
-message and preceding AI explanation appear inconsistent, keep the file untouched and
-report the complete log block.
+The final per-file Live Logs message is authoritative.
 
-Artist credits written during downloads and Album enricher runs use the same canonical
-identity rules as the Media Library repair tool. Initials lose periods (`K.K.` becomes
-`KK`, and `A. R. Rahman` becomes `AR Rahman`), known shortened credits use their full
-name, and an abbreviated name is expanded when the library contains one unambiguous
-longer form.
+## Use Utilities
+
+Utilities contains two tabs and an independent AI policy switch. Formatting and parsing
+are deterministic; AI may be used only by supported preflight/review paths.
+
+### Artist formatter
+
+![Artist formatter](media/user-guide/workspaces/utilities-artist.png)
+
+Callout 1 contains the complete tab. Paste raw credits such as comma-, `and`-, or
+separator-delimited names, select **Format artist names**, then **Copy result**. Initials
+are normalized without periods and known naming rules are applied without treating every
+bare given name as a specific person.
+
+### Timestamp parser
+
+![Timestamp parser](media/user-guide/workspaces/utilities-timestamps.png)
+
+Callout 1 contains the complete tab:
+
+1. Optionally browse to a text file or paste timestamp lines directly.
+2. Choose `end (jukebox)` or `stop (album)` for the generated boundary field.
+3. Set the placeholder artist for lines without credits.
+4. Choose whether to preserve the supplied title casing.
+5. Optionally choose an output JSON path.
+6. Select **Parse timestamps** and review **Generated JSON** before importing it into a
+   splitter.
 
 ## Use the local media library
 
-1. Open **Media Library** and use **+** to add folders. Libraries occupy the left 30% of
-   the compact control row and scroll horizontally when their chips exceed that space;
-   search and filters use the remaining 70%. Each folder chip has an **×** removal action,
-   and **Refresh** in the page header rescans every configured folder. Select
-   **Fix artist names** to review dotted initials, duplicate spellings, and abbreviated
-   credits across the whole library. Every proposed replacement is editable; files change
-   only after **Apply fixes**, and the library refreshes when the update completes.
-2. Search by title, performer, or album; **Clear** resets the search text. Selecting an
-   artist filters both tracks and albums until **All tracks** or **All albums** is used.
-   Track-table columns recalculate their content width after every album, artist, search,
-   or filter change, so each column follows the largest value in the current result set.
-   Use **All media**, **Music**, or **Videos** beside search to keep audio and video
-   results, queues, and curator requests separate. Video mode hides the album browser so
-   the video list and cinema player receive the available space. Its list rows are taller
-   and show embedded/download artwork or a representative video frame. Select
-   **Thumbnails view** for a larger title-and-preview grid, or **List view** to return to
-   the detailed columns; selection and playback actions work in either view.
-3. Expand **Smart Library Curator** for a natural-language request such as `latest
-   Arijit Singh Hindi dance songs` or `old Bengali songs`, enable AI, and select **Find in my
-   library**. Agno plans the constraints, filters local artist/language/time metadata,
-   gathers bounded public evidence when a semantic quality such as dance energy needs
-   verification, and ranks only IDs in the scanned library.
-4. Choose the visible result count or include a count in the request, such as `return 5
-   results`. Select **Start mix** to play the exact verified matches first and then append
-   other evidence-verified local tracks in the requested language with relaxed mood and
-   tempo constraints. Use shuffle or repeat as required.
-5. Use file and album context actions to edit metadata, enrich an album, reorder tracks,
-   or open the containing folder.
-   Drag the divider between **Artists** and **Tracks** to give either pane more room; the
-   chosen artist-pane width is remembered.
-   During video playback, double-click the picture or select **Full screen** to open a
-   borderless, monitor-sized video surface. Its controls slide up from the bottom when the
-   mouse moves and hide again while you watch. Double-click again, select **Exit full
-   screen**, or press **Esc** to return to the library. The embedded video surface is also
-   taller than the music player.
-   Use **Aspect** or press **A** to cycle display ratios; use **Crop** or press **C** to
-   cycle centered crop ratios. These video-only controls work in embedded and full screen
-   playback and briefly show the selected ratio at the top-right of the black play area.
-   The picture is always clipped to the available play area; crop-to-fill uses the complete
-   monitor while the overlay is hidden. **Default** restores the video's original aspect
-   or uncropped frame.
-   Press **F** to toggle full screen, **Space** to play/pause, **M** to mute, **S** to
-   stop, **N** for the next track, or **P** for the previous track. **Left/Right** seek by
-   the interval configured under **Global Settings > Media Playback**; hold **Shift** to
-   seek twice that amount. **Home** or **0** jumps to `00:00`, while **1** through **9**
-   jump to 10% through 90% of the video. Keyboard controls activate while the video or
-   its player controls have focus, leaving library search text unaffected.
-   Transport controls are ordered **Shuffle, `<<`, Previous, Play/Pause, Next, `>>`,
-   Stop, Repeat**. Video then adds **Aspect, Crop, Full screen**; these three controls are
-   hidden during audio playback because they do not apply to audio.
-6. Select **Playlists** in the page header to create, rename, delete, play, queue, or
-   edit saved collections. Playlists store exact links to local file paths and remain
-   available after restart. Drag the divider beside the playlist or Now Playing drawer
-   to resize either side panel; those widths are remembered. Use **Add to playlist**
-   beside track and album actions, or
-   right-click a track, album, or artist. If a selected path is already present, choose
-   **Skip duplicates** to omit existing tracks and add the rest of an album/selection,
-   or **Add anyway** to retain another occurrence. Right-click playlist tracks for the
-   same Edit File and Add to playlist actions, or to remove them from that playlist.
-   Smart Library Curator automatically treats each saved playlist name and its indexed
-   songs as positive taste examples. The configured AI model—not a hardcoded synonym
-   table—decides whether a playlist theme is semantically relevant to the current request.
-   Songs in a relevant playlist can therefore appear as personal taste matches even when
-   the request uses different wording. It also uses this bounded context to favor related
-   local tracks and, when you explicitly select **Search YouTube too**, to prepare a
-   taste-aware online query. This is recalculated for every request and does not retrain or
-   alter the selected model's weights. Rename or edit a playlist to change the next request.
-7. Language, mood, style, activity, energy, and tempo are strict evidence gates: the
-   curator rejects a model claim when catalog or web evidence conflicts with or cannot
-   corroborate it. Semantic synonyms are accepted only when the verifier quotes an exact
-   supporting phrase from evidence for that recording. Only requested filters appear in
-   result reasons.
-8. The curator never redirects automatically. If the local result is empty, select the
-   explicit **Search YouTube too** action only when you want an online search. Playlist
-   file paths are never included in the AI or online-search context.
+Media Library scans user-selected folders, derives a local index, browses artists and
+albums, filters all media, plays audio/video, manages a persistent queue and playlists,
+offers AI-assisted local curation, and optionally serves a phone client over trusted
+same-Wi-Fi access.
 
-### Use the Media Library from a phone
+### Add, scan, search, and browse
 
-Phone access starts automatically with the desktop Media Library and remains available
-only while YouTube Media Studio is running:
+![Media Library overview](media/user-guide/media-library/overview.png)
 
-1. Connect the PC and phone to the same trusted Wi-Fi network. Select **Phone access · On**
-   in the Media Library header, then select **Details**. Open one of the displayed addresses
-   in any current iOS or Android browser and enter the six-digit PIN. Turn the
-   **Phone access** switch off to stop the LAN server and disconnect phone clients
-   immediately; the on/off choice persists across app restarts. Turning it on again starts
-   a new session with a fresh PIN. If Windows asks about firewall access, allow the app on
-   private networks only.
-2. Use **Songs**, **Albums**, and their broad text/year/type filters to browse the scanned
-   library. **Phone** streams the selected local file to the phone; **PC** starts it on the
-   desktop, and **Queue** appends it to the desktop queue.
-3. Use **Playlists** to create a list, add or remove tracks, and drag tracks (or use the
-   arrow controls) to reorder them. Every mutation is saved by the desktop immediately.
-   Desktop edits are reflected on connected phones automatically, and phone edits appear
-   on every other client during the next live-state refresh.
-4. Use **Curator** for a natural-language library request. The phone sends the request to
-   the running desktop, which uses its configured AI provider, local index, evidence rules,
-   and PC compute. Search and filter inputs themselves remain local to that phone.
-
-The service listens on port `8765` when available and chooses an available fallback port
-otherwise. Access is PIN/token protected, local paths are never exposed in the browser,
-repeated failed PIN attempts are rate-limited, and media requests are limited to files in
-the published library snapshot. This is plain HTTP intended for a trusted private LAN; do
-not expose the port through router forwarding, a public hotspot, or an untrusted network.
-
-### Video browsing and preview details
-
-The **Videos** filter provides two interchangeable track-level views:
-
-| View | What it shows | Best use |
+| Callout | Area | Use |
 | --- | --- | --- |
-| **List view** | The text-only Title column, a separate 16:9 Artwork preview, then Artist, Album, Year, Type, and Length. | Comparing metadata, sorting columns, and selecting precise rows. |
-| **Thumbnails view** | A larger 16:9 preview tile with the video title beneath it. | Visually finding a movie or music video before playback. |
+| 1 | Library folders | Add folders with `+`; chips scroll horizontally and each `×` removes that folder from the index. |
+| 2 | Search and filters | Search any indexed text, choose All media/Music/Videos, enter numeric From/To years, clear text/years, or search online. |
+| 3 | Smart Library Curator | Expand the natural-language local-library assistant. |
+| 4 | Artists and matching tracks | Multi-select artists, sort/select tracks, switch video view, add/play/queue selected items, play matches, or shuffle. |
+| 5 | Albums | Browse all or selected-artist albums, open one, add it to a playlist, and use album actions. |
+| 6 | Player | Artwork/video, title, queue status, timeline, transport controls, volume, and video-only display controls. |
 
-Selection is preserved when switching views. Double-click plays the chosen tile or row;
-the Play, Queue, playlist, multi-selection, and right-click Edit File actions work in both
-views. A preview first uses artwork embedded while downloading or editing the video. If
-no artwork is embedded, the app extracts a small representative frame in the background.
-The original video is never modified. Refreshing the library regenerates a preview after
-the file's modification time changes.
+1. Select `+` and add one or more library folders. Folder chips use 30% of the compact
+   top row and scroll horizontally; the search area uses the remaining 70%.
+2. Select **Refresh** after external file/tag changes. The scan updates titles and column
+   widths from the current metadata rather than preserving stale long values.
+3. Search across title, album, artist, year, and filename. **From year** and **To year**
+   accept digits only, and To must be greater than or equal to From.
+4. **Clear** resets search text and both year fields but preserves the explicitly chosen
+   All media/Music/Videos filter.
+5. Selecting one or several artists filters tracks and albums. Use **All tracks** or
+   **All albums** to clear that specific selection.
+6. Drag the divider between Artists and Tracks, between the browser and Albums, and
+   between the library browser and player. Sizes are remembered.
+7. Table columns recalculate to the largest visible value whenever the album, artist,
+   search, or filter result changes.
 
-### Crop and aspect ratio
+In Videos mode the album browser hides so the video list and cinema player receive the
+space. **Thumbnails view** displays larger 16:9 preview tiles; **List view** shows Title,
+Artwork, Artist, Album, Year, Type, and Length. Selection and actions persist when
+switching views. A preview uses embedded artwork first, otherwise a representative frame
+is extracted without modifying the video.
 
-**Aspect** controls the shape in which the selected picture is displayed. It cycles
-through Default, 16:9, 4:3, 1:1, 16:10, 2.21:1, 2.35:1, 2.39:1, and 5:4. A non-default
-choice can stretch or compress the picture when it differs from the source.
+### Smart Library Curator
 
-**Crop** removes centered outer edges without re-encoding the file. It cycles through
-Default, 16:10, 16:9, 4:3, 1.85:1, 2.21:1, 2.35:1, 2.39:1, 5:3, 5:4, and 1:1. For a
-video with black bars encoded inside the picture, choose the crop ratio matching the
-visible film, then choose the aspect ratio that best fits the monitor. The complete play
-area stays black where the chosen ratio leaves unused space, and an enlarged crop is
-strictly clipped inside it so playback never covers the controls. The brief message at
-the top-right of the video confirms each intentional crop, aspect, seek, or mute command;
-passive mouse-hover popups are disabled throughout Media Library.
+![Smart Library Curator](media/user-guide/media-library/smart-curator.png)
 
-By default, every newly loaded video starts with **Aspect: Default** and **Crop: Default**.
-Repeating or automatically restarting that same video keeps its current crop and aspect.
-Loading a different track—or explicitly stopping and playing the video again—starts from
-the defaults.
-Enable **Global Settings > Media Playback > Crop/aspect memory** to carry the current
-choices to the next video and preserve them for the next app session. Disable it again to
-make subsequent videos start at the two defaults.
+| Callout | Area | Use |
+| --- | --- | --- |
+| 1–2 | Folder and broad filters | Define the locally indexed/filterable scope. |
+| 3 | Curator request | Enable AI, describe a mix, set result count, find locally, start a mix, search YouTube explicitly, or clear. |
+| 4–7 | Browser, albums, and player | Curator results feed the same selection, playlist, queue, and playback controls. |
 
-### Video keyboard reference
+Enter a request such as `latest Arijit Singh Hindi dance songs`, `old Bengali songs`, or
+`return 5 calm tracks`. With AI on, the desktop model plans constraints and ranks only
+IDs already present in the scanned library. Language, mood, style, activity, energy, and
+tempo remain evidence gates; unsupported model claims are rejected.
 
-These keys work in embedded and full screen playback. They are active when Media Library
-video playback—not a search or editable text field—has focus.
+- **Find in my library** returns exact verified local matches.
+- A number in the request overrides the result-count control.
+- **Start mix** plays exact matches, then adds evidence-verified related local tracks.
+- Saved playlist names and songs act as bounded taste examples for every request; model
+  weights are not retrained.
+- **Search YouTube too** is explicit and never automatic. Local file paths are never
+  placed in AI or online-search context.
+- With AI off, the action becomes a plain internet search instead of local semantic
+  curation.
+
+### Repair artist names
+
+Select **Fix artist names** to scan all configured library tracks. Placeholder Unknown
+credits are ignored. The app proposes period-free initials, known aliases, and
+unambiguous longer identities, then waits for review.
+
+![Artist-name review](media/user-guide/dialogs/artist-name-review.png)
+
+| Callout | Area | Use |
+| --- | --- | --- |
+| 1 | Detected repairs | Review source spelling, editable replacement, and affected-track count. |
+| 2 | Add replacement | Add a complete credit the automatic pass missed. |
+| 3 | Apply or cancel | Apply all reviewed mappings or leave every file unchanged. |
+
+`Vishal, Shekhar` can safely map as a complete credit to `Vishal Dadlani, Shekhar
+Ravjiani`; bare `Vishal` is not automatically changed because it may refer to Vishal
+Mishra or another artist. User-added mappings show their match count before application.
+After **Apply fixes**, affected metadata is updated and the library refreshes.
+
+### Playlists
+
+![Playlist drawer](media/user-guide/media-library/playlists.png)
+
+| Callout | Area | Use |
+| --- | --- | --- |
+| 1 | Playlist drawer | Create, rename, delete, filter, select, and close playlists. |
+| 2–7 | Main library areas | Search/browse while the resizable drawer remains open. |
+
+Create a playlist, then use track/album/artist context menus or **Add to playlist**.
+When a path is already present, choose **Skip duplicates** to add only new selections or
+**Add anyway** to keep another occurrence.
+
+- Drag playlist tracks to reorder them. The exact order is persisted immediately.
+- The filter searches title, artist, album, year, filename, and other indexed text.
+- **Search all playlists** returns matching tracks across every created playlist.
+- Right-click a playlist track to Edit File, add it elsewhere, or remove it.
+- Play, queue, and remove actions operate on the selected playlist rows.
+- Drag the divider beside the drawer to resize it; the width is remembered.
+
+### Now Playing queue
+
+![Now Playing queue](media/user-guide/media-library/now-playing-queue.png)
+
+| Callout | Area | Use |
+| --- | --- | --- |
+| 1–6 | Main library | Browse and add more media without stopping playback. |
+| 7 | Current queue | Drag tracks into playback order, play a selection, remove it, or clear the queue. |
+
+The queue order is independent of playlist order. Previous/Next follow the queue. Drag
+its divider to resize the drawer; the width is remembered.
+
+### Player controls
+
+Transport controls are ordered **Shuffle, Backward, Previous, Play/Pause, Next,
+Forward, Stop, Repeat**. Backward and Forward use solid double-triangle icons and the
+Global Settings seek interval. Video adds **Aspect**, **Crop**, and **Full screen**;
+those controls are hidden for audio.
+
+- Clicking anywhere on the seek slider jumps/animates to that position.
+- Clicking anywhere on the volume slider sets that volume rather than moving by a small
+  step. The percentage appears after the slider.
+- In embedded video, Aspect and Crop open dropdown menus for a direct choice.
+- In full screen, each Aspect or Crop click cycles to the next option.
+- Repeating/restarting the same video preserves its current crop/aspect until another
+  track is loaded or playback is explicitly stopped and started.
+
+**Aspect** options: Default, 16:9, 4:3, 1:1, 16:10, 2.21:1, 2.35:1, 2.39:1, 5:4.
+
+**Crop** options: Default, 16:10, 16:9, 4:3, 1.85:1, 2.21:1, 2.35:1, 2.39:1,
+5:3, 5:4, 1:1.
+
+Double-click video or select **Full screen** for a borderless monitor-sized surface.
+Controls slide up when the mouse moves and hide while watching. Crop-to-fill uses the
+complete screen while the overlay is hidden. Double-click, select **Exit full screen**,
+or press Esc to return. Full-screen controls use the same theme and behavior as embedded
+controls.
 
 | Key | Action |
 | --- | --- |
 | `F` | Enter or leave full screen. |
 | `Esc` | Leave full screen. |
-| `Space` | Toggle play and pause. |
-| `M` | Toggle mute. |
-| `S` | Stop playback. |
-| `N` / `P` | Play the next / previous queued track. |
-| `A` | Cycle the aspect ratio and show the selected ratio briefly. |
-| `C` | Cycle the crop ratio and show the selected ratio briefly. |
-| `Right` / `Left` | Seek forward / backward by the configured base interval. |
-| `Shift+Right` / `Shift+Left` | Seek by twice the configured base interval. |
-| `Home` or `0` | Jump to `00:00`. |
-| `1` through `9` | Jump to 10% through 90% of the total duration. |
+| `Space` | Play or pause. |
+| `M` | Mute or unmute. |
+| `S` | Stop. |
+| `N` / `P` | Next / previous queue track. |
+| `A` / `C` | Cycle aspect / crop. |
+| `Right` / `Left` | Seek by the configured interval. |
+| `Shift+Right` / `Shift+Left` | Seek by twice the interval. |
+| `Home` or `0` | Jump to the beginning. |
+| `1` through `9` | Jump to 10% through 90%. |
 
-Set the base seek interval from 1 to 60 seconds under **Global Settings > Media
-Playback > Seek interval**. The default is 10 seconds. The same interval controls the
-`<<` and `>>` buttons for both audio and video.
+Keyboard playback controls activate only when playback—not a search/edit field—has
+focus.
 
-The songs-and-videos table shows every matching scanned item; it does not truncate a
-large library. The count beside the table is the number of rows currently available
-after applying search, artist, and year filters.
+### Use the Media Library from a phone
+
+1. Connect PC and phone to the same trusted Wi-Fi.
+2. Turn **Phone access** on. Select **Details**, open a displayed address in a current
+   iOS or Android browser, and enter the six-digit PIN.
+3. Browse Songs, Albums, and Playlists. Broad text/year/type filters run on that phone.
+4. **Phone** streams a selected local file to the phone. **PC** starts it on desktop.
+   **Queue** appends it to the desktop queue.
+5. Create playlists, add/remove tracks, and drag or use arrow controls to reorder. Every
+   mutation is saved by the desktop immediately and synchronized to other clients.
+6. Use Curator to send a natural-language request to the desktop. The PC uses its local
+   index, configured AI/evidence sources, and compute.
+7. Turn Phone access off to stop the LAN server and disconnect clients. Active phone
+   playback is terminated rather than continuing until the browser closes.
+
+The server prefers port 8765 and selects a fallback when needed. It is PIN/token
+protected, rate-limits failed PIN attempts, never exposes local paths, and serves only
+files in the published library snapshot. It is plain HTTP for a trusted private LAN;
+do not port-forward it or use it on an untrusted network.
 
 ## Read Live Logs
 
-| Log marker | Meaning |
-| --- | --- |
-| `[START]` / `[PROGRESS]` | A task began and is still working through its input. |
-| `[COMPLETE]` | The operation ended. Read the item/skip counts and preceding per-file messages. |
-| `[ENRICHED]` / `[MOVED]` | Metadata was written or a file was routed successfully. |
-| `[SKIPPED]` / `[ENRICH-SKIPPED]` | The application intentionally made no change; the line states why. |
-| `[AI-VERIFIED]` | The model found identity evidence; completeness and operation rules still apply. |
-| `[AI-REVIEW]` / `[METADATA-REVIEW]` | Evidence was ambiguous or incomplete and needs review. |
-| `[AGENT-REVIEW]` | An AI-enabled safety gate did not approve the file, so it remains in the source. |
-| `[AI-PROVIDER-FALLBACK]` | The selected provider was unavailable and a configured fallback was used. |
-| `[AI-AGENT]` / `[AI-AGENT-PROVIDER]` | An Agno planning, verification, or curator agent completed and identifies the effective model provider. |
-| `[SERPAPI-MATCH]` | Exact Google evidence supplied a missing album/movie identity. |
-| `[SERPAPI-NO-MATCH]` | Google results did not satisfy the exact title/artist and evidence-agreement rules. |
-| `[SERPAPI-UNAVAILABLE]` | The optional SerpApi request failed or was rejected; the API key is never printed. |
-| `[SERPAPI-ART]` / `[SERPAPI-NO-ART]` | Authenticated Google Images found a safe square cover, or returned no acceptable cover. |
-| `[ERROR]` / `[FAILED]` | The operation could not finish that item. Copy the surrounding lines when opening an issue. |
+![Live Logs workspace](media/user-guide/workspaces/live-logs.png)
 
-`[COMPLETE]` describes the end of a task, not a guarantee that every input file was
-changed. Always compare its processed and skipped counts.
+Callout 1 contains the no-wrap log viewer and **Copy all**, **Clear**, and **Save log**
+actions. Clear affects displayed log text only.
+
+| Marker | Meaning |
+| --- | --- |
+| `[START]` / `[PROGRESS]` | A task began or is still processing. |
+| `[COMPLETE]` | The task ended; compare processed and skipped counts. |
+| `[ENRICHED]` / `[MOVED]` | Metadata was written or a file was routed. |
+| `[SKIPPED]` / `[ENRICH-SKIPPED]` | No change was intentionally made; the line says why. |
+| `[AI-VERIFIED]` | Model evidence supported identity; completeness rules still apply. |
+| `[AI-REVIEW]` / `[METADATA-REVIEW]` | Evidence was ambiguous or incomplete. |
+| `[AGENT-REVIEW]` | An AI-enabled safety gate did not approve the file. |
+| `[AI-PROVIDER-FALLBACK]` | The selected provider failed and fallback was attempted. |
+| `[SERPAPI-MATCH]` / `[SERPAPI-NO-MATCH]` | Google evidence met or failed exact rules. |
+| `[SERPAPI-UNAVAILABLE]` | Optional SerpApi request failed; the key is not printed. |
+| `[ERROR]` / `[FAILED]` | The item could not finish; preserve surrounding lines. |
+
+`[COMPLETE]` is the end of a task, not a guarantee that every input changed.
 
 ## File-safety rules
 
-- Existing destination files are not overwritten.
-- Unresolved Album Consolidator inputs remain in their source folder.
-- If the same normalized title already exists in the matching destination album, the
-  incoming source is treated as a duplicate. Keep a backup until you are confident in
-  the matching behavior.
-- Album folder names and generated filenames are sanitized for the operating system.
-- Closing or switching a page does not necessarily cancel its background worker. Use
-  the application's cancellation control and confirm the log outcome.
+- Existing destination files are not overwritten unless the relevant overwrite option
+  is explicitly enabled.
+- Unresolved Album Consolidator inputs stay in their source folder.
+- A confirmed duplicate in an existing destination album may cause the incoming source
+  duplicate to be deleted; keep backups while validating matches.
+- Folder names and generated filenames are sanitized for the current operating system.
+- Metadata edits use temporary files and atomic replacement where the workflow promises
+  it.
+- Permanent crop/aspect re-encodes and replaces a video only after successful output.
+- Changing pages does not cancel work. Use **Stop** and confirm the log result.
+- Do not close the app or edit/delete active input files until cancellation or completion
+  is recorded.
 
 ## Troubleshooting
 
-1. Open **Live Logs** and find the block from `[START]` through `[COMPLETE]` or
-   `[FAILED]` for the affected operation.
-2. Check whether the outcome was a deliberate `[SKIPPED]`, a verification review, a
-   provider fallback, or an actual error.
-3. Confirm that source and destination paths exist and are writable.
-4. For metadata work, inspect the file in **Edit File** for missing title, album,
-   artists, year, track information, or artwork.
-5. If AI was enabled, retry with it disabled to compare deterministic behavior, or fix
-   the configured provider instead of assuming a fallback model is equivalent.
-6. When reporting a bug, include the application version, operating system, complete
-   log block, source file's current metadata, and the expected result. Do not publish
-   API keys, private paths you do not want exposed, or copyrighted media files.
+1. Open Live Logs and copy the block from `[START]` through `[COMPLETE]` or `[FAILED]`.
+2. Distinguish an intentional skip/review from an actual error.
+3. Confirm source and destination paths exist and are writable.
+4. Load a suspect file in Edit File and inspect title, album, artists, year, track data,
+   artwork, and duration.
+5. If AI was enabled, retry with it off to compare deterministic behavior. If a hosted
+   provider failed, verify its key/model or the configured Ollama fallback.
+6. For an online lookup failure, confirm connectivity and any SerpApi quota without
+   publishing the key.
+7. Include the displayed application version, operating system, complete log block,
+   current metadata, and expected result in a report. Do not publish credentials,
+   unwanted private paths, or copyrighted media.
 
-For command-line diagnostics, installer issues, and development setup, see the
+For command-line diagnostics and installer development, see the
 [README troubleshooting section](../README.md#troubleshooting).
+
+Documentation maintainers must update affected text and screenshots whenever a UI
+change makes an image or explanation inaccurate. See the
+[screenshot maintenance rule](SCREENSHOT_MAINTENANCE.md).
