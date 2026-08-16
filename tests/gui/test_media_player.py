@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 import time
@@ -1517,6 +1518,15 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.assertEqual(self.page.fullscreen_forward_button.text(), "")
         self.assertFalse(self.page.fullscreen_backward_button.icon().isNull())
         self.assertFalse(self.page.fullscreen_forward_button.icon().isNull())
+        transport = self.page.fullscreen_transport_controls
+        transport_left = transport.mapTo(fullscreen, QPoint(0, 0)).x()
+        transport_center = transport_left + transport.width() / 2
+        self.assertAlmostEqual(
+            transport_center, fullscreen.width() / 2, delta=2
+        )
+        volume = self.page.fullscreen_volume_controls
+        volume_right = volume.mapTo(fullscreen, QPoint(0, 0)).x() + volume.width()
+        self.assertLessEqual(abs(volume_right - (fullscreen.width() - 18)), 2)
         self.assertIn(
             "QPushButton#playerControlButton { border-radius: 14px; }",
             fullscreen.styleSheet(),
@@ -1718,6 +1728,54 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.page._replace_queue([second])
         self.assertEqual(self.page.aspect_button.text(), "Aspect: Default")
         self.assertEqual(self.page.crop_button.text(), "Crop: Default")
+
+    def test_video_display_profile_persists_without_changing_file(self) -> None:
+        video_path = Path(self.temporary.name) / "profiled-display.mp4"
+        original_bytes = b"original video bytes"
+        video_path.write_bytes(original_bytes)
+        video = LibraryItem(
+            str(video_path), "Profiled", "Film", "Artist", 2024, 60_000, "video", 1
+        )
+        self.page._replace_queue([video])
+
+        self.page.set_video_display_profile(video_path, "16:10", "Default")
+
+        self.assertEqual(self.page.aspect_button.text(), "Aspect: Default")
+        self.assertEqual(self.page.crop_button.text(), "Crop: 16:10")
+        self.assertEqual(
+            self.page.video_display_profile(video_path), ("16:10", "Default")
+        )
+        self.assertEqual(video_path.read_bytes(), original_bytes)
+        saved_profiles = json.loads(
+            str(self.page.settings.value("library/video_display_profiles"))
+        )
+        self.assertIn(str(video_path.resolve()).casefold(), saved_profiles)
+
+        self.page.set_video_display_profile(video_path, "Default", "Default")
+        self.assertEqual(
+            self.page.video_display_profile(video_path), ("Default", "Default")
+        )
+        self.assertEqual(video_path.read_bytes(), original_bytes)
+
+    def test_display_editor_uses_active_or_saved_playback_profile(self) -> None:
+        video_path = Path(self.temporary.name) / "monitor-view.mp4"
+        video_path.write_bytes(b"video")
+        video = LibraryItem(
+            str(video_path), "View", "Film", "Artist", 2024, 60_000, "video", 1
+        )
+        self.page._replace_queue([video])
+        self.page.set_video_crop(1)
+
+        crop, aspect = self.page._playback_display_edit_modes(video_path)
+
+        self.assertEqual(crop, "16:10")
+        self.assertEqual(aspect, "Default")
+        other_path = video_path.with_name("other.mp4")
+        self.page.set_video_display_profile(other_path, "2.35:1", "16:9")
+        self.assertEqual(
+            self.page._playback_display_edit_modes(other_path),
+            ("2.35:1", "16:9"),
+        )
 
     def test_video_keyboard_playback_and_timeline_shortcuts(self) -> None:
         video_path = Path(self.temporary.name) / "keyboard-movie.mp4"

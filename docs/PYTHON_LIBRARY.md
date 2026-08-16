@@ -296,6 +296,7 @@ summary = studio.audio(
     },
     mode="download",
     output_dir="downloads/songs",
+    write_report=False,
 )
 ```
 
@@ -307,6 +308,7 @@ Audio-specific parameters:
 | `input_path` | unset | JSON job file used when `input_data` is absent |
 | `mode` | `"download"` | `download` or `tag-existing` |
 | `output_dir` | `songs` for in-memory input | MP3 output directory |
+| `write_report` | `False` | Write the result report when explicitly enabled |
 
 ### Video download or inspection
 
@@ -324,7 +326,7 @@ summary = studio.video(
     resolution="best",
     mp3_mode="audio-only",
     merge_format="mp4",
-    write_report=True,
+    write_report=False,
 )
 ```
 
@@ -337,7 +339,7 @@ summary = studio.video(
 | `audio_output_dir` | `songs` for in-memory input | Extracted MP3 destination |
 | `merge_format` | `"mp4"` | Merge container such as `mp4`, `mkv`, or `webm` |
 | `info_mode` | `False` | Inspect/list formats without downloading |
-| `write_report` | `True` | Write the result report |
+| `write_report` | `False` | Write the result report when explicitly enabled |
 
 ### Album splitter
 
@@ -355,7 +357,7 @@ summary = studio.album(
     min_track_duration=45.0,
     trim_silence_padding=0.25,
     keep_temp=False,
-    write_report=True,
+    write_report=False,
 )
 ```
 
@@ -379,7 +381,7 @@ summary = studio.jukebox(
     output_dir="downloads/jukebox_tracks",
     keep_temp=False,
     overwrite=False,
-    write_report=True,
+    write_report=False,
 )
 ```
 

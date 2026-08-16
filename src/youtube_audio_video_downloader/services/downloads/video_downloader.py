@@ -121,7 +121,7 @@ class YouTubeVideoDownloader:
         audio_output_dir: Path | None = None,
         info_mode: bool = False,
         mp3_mode: str = "ask",
-        write_report: bool = True,
+        write_report: bool = False,
     ) -> list[DownloadResult]:
         """Read video jobs from JSON and process each selected media option.
 

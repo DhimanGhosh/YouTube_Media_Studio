@@ -42,7 +42,11 @@ class YouTubeAudioDownloader:
         self.cancellation_token.cancel()
 
     def download_from_json(
-        self, json_path: Path, output_dir: Path | None = None
+        self,
+        json_path: Path,
+        output_dir: Path | None = None,
+        *,
+        write_report: bool = False,
     ) -> list[DownloadResult]:
         """Read songs from JSON and download them into the requested folder."""
 
@@ -75,7 +79,8 @@ class YouTubeAudioDownloader:
         else:
             executor.shutdown(wait=True, cancel_futures=False)
 
-        self._write_results(output_dir / "download_results.json", results)
+        if write_report:
+            self._write_results(output_dir / "download_results.json", results)
         return results
 
 
@@ -91,7 +96,11 @@ class YouTubeAudioDownloader:
         return self._download_song(song, output_dir)
 
     def tag_existing_mp3_files_from_json(
-        self, json_path: Path, results_dir: Path | None = None
+        self,
+        json_path: Path,
+        results_dir: Path | None = None,
+        *,
+        write_report: bool = False,
     ) -> list[DownloadResult]:
         """Read an existing-MP3 metadata JSON and apply ID3 tags to each file.
 
@@ -126,8 +135,13 @@ class YouTubeAudioDownloader:
         else:
             executor.shutdown(wait=True, cancel_futures=False)
 
-        report_dir = ensure_directory(results_dir.resolve()) if results_dir else json_path.parent
-        self._write_results(report_dir / "tag_existing_results.json", results)
+        if write_report:
+            report_dir = (
+                ensure_directory(results_dir.resolve())
+                if results_dir
+                else json_path.parent
+            )
+            self._write_results(report_dir / "tag_existing_results.json", results)
         return results
 
     def _tag_existing_job(self, job: ExistingMp3TagJob) -> DownloadResult:

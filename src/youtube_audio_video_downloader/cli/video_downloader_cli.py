@@ -63,8 +63,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--write-report",
         action="store_true",
         help=(
-            "Write video_download_results.json even for --info dry-run mode. "
-            "By default, --info does not create this file."
+            "Write video_download_results.json. Disabled by default."
         ),
     )
     parser.add_argument(
@@ -166,7 +165,7 @@ def run(args: argparse.Namespace) -> list:
         audio_output_dir=args.audio_output_dir,
         info_mode=args.info,
         mp3_mode=args.mp3_mode,
-        write_report=args.write_report or not args.info,
+        write_report=args.write_report,
     )
 
 

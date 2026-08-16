@@ -455,13 +455,21 @@ def _run_audio(params: dict[str, Any], token: CancellationToken) -> OperationSum
     with _input_json(params, "input_path", "Audio") as json_path:
         if mode == "tag-existing":
             results_dir = Path.cwd() if params.get("input_data") is not None else None
-            results = service.tag_existing_mp3_files_from_json(json_path, results_dir=results_dir)
+            results = service.tag_existing_mp3_files_from_json(
+                json_path,
+                results_dir=results_dir,
+                write_report=bool(params.get("write_report", False)),
+            )
             enrichment_roots = [results_dir or json_path.parent]
         else:
             output_dir = _optional_path(params, "output_dir")
             if params.get("input_data") is not None:
                 output_dir = output_dir or Path.cwd() / "songs"
-            results = service.download_from_json(json_path, output_dir=output_dir)
+            results = service.download_from_json(
+                json_path,
+                output_dir=output_dir,
+                write_report=bool(params.get("write_report", False)),
+            )
             enrichment_roots = [output_dir or json_path.parent / "songs"]
         enrichment = _enrich_download_results(
             results, enrichment_roots, params, token
@@ -495,7 +503,7 @@ def _run_video(params: dict[str, Any], token: CancellationToken) -> OperationSum
             audio_output_dir=audio_output_dir,
             info_mode=bool(params.get("info_mode", False)),
             mp3_mode=str(params.get("mp3_mode", "audio-only")),
-            write_report=bool(params.get("write_report", True)),
+            write_report=bool(params.get("write_report", False)),
         )
         enrichment = _enrich_download_results(
             results,
@@ -541,7 +549,7 @@ def _run_album(params: dict[str, Any], token: CancellationToken) -> OperationSum
             min_track_duration=float(params.get("min_track_duration", 45.0)),
             trim_silence_padding=float(params.get("trim_silence_padding", 0.25)),
             keep_temp=bool(params.get("keep_temp", False)), overwrite=bool(params.get("overwrite", False)),
-            write_report=bool(params.get("write_report", True)),
+            write_report=bool(params.get("write_report", False)),
         )
         enrichment = _enrich_download_results(
             results, [enrichment_root], params, token
@@ -571,7 +579,7 @@ def _run_album_url(params, token, service, input_value):
         min_track_duration=float(params.get("min_track_duration", 45.0)),
         trim_silence_padding=float(params.get("trim_silence_padding", 0.25)),
         keep_temp=bool(params.get("keep_temp", False)), overwrite=bool(params.get("overwrite", False)),
-        write_report=bool(params.get("write_report", True)),
+        write_report=bool(params.get("write_report", False)),
     )
     enrichment = _enrich_download_results(
         results, [output_dir or Path.cwd() / "album_tracks"], params, token
@@ -595,7 +603,7 @@ def _run_jukebox(params: dict[str, Any], token: CancellationToken) -> OperationS
         results = service.split_from_json(
             json_path, output_dir=output_dir,
             keep_temp=bool(params.get("keep_temp", False)), overwrite=bool(params.get("overwrite", False)),
-            write_report=bool(params.get("write_report", True)),
+            write_report=bool(params.get("write_report", False)),
         )
         enrichment = _enrich_download_results(
             results, [enrichment_root], params, token
@@ -658,9 +666,14 @@ def _run_edit_media(params: dict[str, Any], token: CancellationToken) -> Operati
     metadata = params.get("metadata", {})
     if not isinstance(metadata, dict):
         raise ValueError("Edited metadata must be an object")
+    action = str(params.get("action", "metadata") or "metadata")
+    if action == "video_display":
+        raise ValueError(
+            "Video crop/aspect must be saved as a Media Library playback profile"
+        )
     output_paths = edit_media_file(
         str(params.get("input_path", "") or ""),
-        str(params.get("action", "metadata") or "metadata"),
+        action,
         metadata,
         start_timestamp=str(params.get("start_timestamp", "00:00") or "00:00"),
         end_timestamp=str(params.get("end_timestamp", "") or ""),
@@ -674,7 +687,6 @@ def _run_edit_media(params: dict[str, Any], token: CancellationToken) -> Operati
         aspect_ratio=str(params.get("aspect_ratio", "Default") or "Default"),
         cancellation_token=token,
     )
-    action = str(params.get("action", "metadata") or "metadata")
     return OperationSummary(
         operation="edit_media",
         total=len(output_paths),

@@ -7,6 +7,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from mutagen import MutagenError
+
 from youtube_audio_video_downloader.services.media.media_library import (
     LibraryItem, filter_library, scan_library, split_artists, video_thumbnail_bytes,
 )
@@ -69,6 +71,23 @@ class MediaLibraryTest(unittest.TestCase):
                 result = scan_library([root])
 
         self.assertEqual(result[0].album, "Album (2001)")
+
+    def test_scan_tolerates_media_being_atomically_replaced(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            movie = Path(temporary) / "movie.mp4"
+            movie.write_bytes(b"replacement in progress")
+            with patch(
+                "youtube_audio_video_downloader.services.media.media_library.read_media_metadata",
+                side_effect=MutagenError("not a MP4 file"),
+            ), patch(
+                "youtube_audio_video_downloader.services.media.media_library.MutagenFile",
+                side_effect=MutagenError("not a MP4 file"),
+            ):
+                result = scan_library([movie.parent])
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].title, "movie")
+        self.assertEqual(result[0].duration_ms, 0)
 
     def test_video_thumbnail_prefers_embedded_download_artwork(self) -> None:
         with patch(

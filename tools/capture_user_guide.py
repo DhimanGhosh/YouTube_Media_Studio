@@ -210,6 +210,38 @@ def _capture_library(window: MainWindow, app: QApplication) -> None:
 
     library.queue_toggle_button.click()
     _settle(app)
+
+    fullscreen = library._ensure_fullscreen_window()
+    library._player_fullscreen = True
+    library.video_viewport.setParent(fullscreen)
+    library.video_viewport.show()
+    fullscreen.resize(1440, 900)
+    fullscreen.show()
+    library._fullscreen_controls_visible = True
+    library._layout_fullscreen_surface()
+    library.fullscreen_now_playing.setText(
+        "Is Jahaan Mein — Mohit Chauhan  •  Tum Mile (2009)"
+    )
+    library.fullscreen_elapsed.setText("1:28 / 4:58")
+    library.fullscreen_position.setRange(0, 298_000)
+    library.fullscreen_position.setValue(88_000)
+    _settle(app)
+    fullscreen_regions = _widget_regions(
+        [
+            library.video_viewport,
+            library.fullscreen_position,
+            library.fullscreen_transport_controls,
+            library.fullscreen_volume_controls,
+        ],
+        fullscreen,
+    )
+    _save_annotated(
+        fullscreen,
+        LIBRARY / "fullscreen-player.png",
+        fullscreen_regions,
+    )
+    library.exit_video_fullscreen()
+    _settle(app)
     _save_annotated(window, LIBRARY / "now-playing-queue.png", _library_regions(window))
     library.queue_toggle_button.click()
     _settle(app)

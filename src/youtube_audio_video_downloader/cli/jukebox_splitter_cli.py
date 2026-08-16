@@ -93,10 +93,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Keep the downloaded source audio under the jukebox output folder for debugging.",
     )
     parser.add_argument(
-        "--no-report",
+        "--write-report",
         action="store_true",
-        help="Do not write jukebox_split_results.json.",
+        help="Write jukebox_split_results.json. Disabled by default.",
     )
+    parser.add_argument(
+        "--no-report",
+        dest="write_report",
+        action="store_false",
+        help=argparse.SUPPRESS,
+    )
+    parser.set_defaults(write_report=False)
     return parser
 
 
@@ -134,7 +141,7 @@ def run(args: argparse.Namespace) -> list:
         output_dir=args.output_dir,
         keep_temp=args.keep_temp,
         overwrite=args.overwrite,
-        write_report=not args.no_report,
+        write_report=args.write_report,
     )
 
 

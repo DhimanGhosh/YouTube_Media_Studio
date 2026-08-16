@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from inspect import signature
 from unittest.mock import patch
 
 from youtube_audio_video_downloader.cli.album_splitter_cli import build_parser as album_parser
@@ -11,6 +12,12 @@ from youtube_audio_video_downloader.config.settings import (
     DownloadSettings,
     machine_parallel_workers,
 )
+from youtube_audio_video_downloader.services.albums.album_splitter import YouTubeAlbumSplitter
+from youtube_audio_video_downloader.services.albums.jukebox_splitter import (
+    YouTubeJukeboxSplitter,
+)
+from youtube_audio_video_downloader.services.downloads.audio_downloader import YouTubeAudioDownloader
+from youtube_audio_video_downloader.services.downloads.video_downloader import YouTubeVideoDownloader
 
 
 class ParallelDefaultsTest(unittest.TestCase):
@@ -32,6 +39,7 @@ class ParallelDefaultsTest(unittest.TestCase):
             self.assertEqual(args.workers, machine_parallel_workers())
             self.assertEqual(args.min_delay, 10)
             self.assertEqual(args.max_delay, 25)
+            self.assertFalse(args.write_report)
 
     def test_max_workers_alias(self) -> None:
         self.assertEqual(
@@ -42,6 +50,18 @@ class ParallelDefaultsTest(unittest.TestCase):
             video_parser().parse_args(["videos.json", "--max-workers", "7"]).workers,
             7,
         )
+
+    def test_all_service_report_defaults_are_disabled(self) -> None:
+        methods = (
+            YouTubeAudioDownloader.download_from_json,
+            YouTubeAudioDownloader.tag_existing_mp3_files_from_json,
+            YouTubeVideoDownloader.download_from_json,
+            YouTubeAlbumSplitter.split_from_input,
+            YouTubeJukeboxSplitter.split_from_json,
+        )
+
+        for method in methods:
+            self.assertIs(signature(method).parameters["write_report"].default, False)
 
     def test_linux_worker_default_respects_process_affinity(self) -> None:
         with (

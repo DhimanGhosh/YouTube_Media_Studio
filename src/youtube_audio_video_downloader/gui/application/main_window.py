@@ -912,13 +912,20 @@ class MainWindow(QMainWindow):
         self._save_workspace_state()
         self._append_log(f"[LIBRARY] Opened Edit File for: {path}")
 
-    def _edit_library_video_display(self, selected_path: str) -> None:
-        """Open a library video directly in the permanent display editor."""
+    def _edit_library_video_display(
+        self,
+        selected_path: str,
+        crop_ratio: str = "Default",
+        aspect_ratio: str = "Default",
+    ) -> None:
+        """Open a library video directly in the playback-profile editor."""
 
         self._edit_library_file(selected_path)
         if self.edit_file_input.text():
             index = self.edit_file_action.findData("video_display")
             self.edit_file_action.setCurrentIndex(index)
+            self.edit_file_crop_ratio.setCurrentText(crop_ratio)
+            self.edit_file_aspect_ratio.setCurrentText(aspect_ratio)
 
     def _edit_library_album(self, selected_folder: str) -> None:
         """Open a browsed library album in the bulk album metadata editor."""
@@ -1134,10 +1141,12 @@ class MainWindow(QMainWindow):
             lambda: self.audio_input.set_audio_mode(str(self.audio_mode.currentData()))
         )
         self.audio_output = PathPicker(placeholder="Optional MP3 output folder", mode="folder")
+        self.audio_report = self._check("Write result report", False)
         self.audio_overwrite = self._check("Overwrite existing MP3 files")
         form.addRow("Songs", self.audio_input)
         form.addRow("Mode", self.audio_mode)
         form.addRow("Output folder", self.audio_output)
+        form.addRow("Reporting", self.audio_report)
         form.addRow("Existing files", self.audio_overwrite)
         self.audio_mode.currentIndexChanged.connect(self._audio_mode_changed)
         self._audio_mode_changed()
@@ -1157,6 +1166,7 @@ class MainWindow(QMainWindow):
             "input_data": self.audio_input.data(),
             "mode": self.audio_mode.currentData(),
             "output_dir": self.audio_output.text(),
+            "write_report": self.audio_report.isChecked(),
             "overwrite": self.audio_overwrite.isChecked(),
         }
 
@@ -1182,7 +1192,7 @@ class MainWindow(QMainWindow):
         self.video_audio_output = PathPicker(placeholder="Optional MP3 output folder", mode="folder")
         self.video_merge = QComboBox()
         self.video_merge.addItems(["mp4", "mkv", "webm"])
-        self.video_report = self._check("Write result report", True)
+        self.video_report = self._check("Write result report", False)
         self.video_overwrite = self._check("Overwrite existing output")
         form.addRow("Videos", self.video_input)
         form.addRow("When MP3 is selected", self.video_mp3_mode)
@@ -1230,7 +1240,7 @@ class MainWindow(QMainWindow):
         self.album_track_duration = self._double_spin(1.0, 3600.0, 45.0, 1.0, " s")
         self.album_padding = self._double_spin(0.0, 10.0, 0.25, 0.05, " s")
         self.album_keep_temp = self._check("Keep temporary source audio")
-        self.album_report = self._check("Write result report", True)
+        self.album_report = self._check("Write result report", False)
         self.album_overwrite = self._check("Overwrite existing tracks")
         form.addRow("Albums and tracks", self.album_input)
         form.addRow("Output folder", self.album_output)
@@ -1278,7 +1288,7 @@ class MainWindow(QMainWindow):
         self.jukebox_input.log_requested.connect(self._append_log)
         self.jukebox_output = PathPicker(placeholder="Optional output folder", mode="folder")
         self.jukebox_keep_temp = self._check("Keep temporary source audio")
-        self.jukebox_report = self._check("Write result report", True)
+        self.jukebox_report = self._check("Write result report", False)
         self.jukebox_overwrite = self._check("Overwrite existing songs")
         form.addRow("Jukeboxes and tracks", self.jukebox_input)
         form.addRow("Output folder", self.jukebox_output)
@@ -1441,7 +1451,7 @@ class MainWindow(QMainWindow):
         page, layout = self._page_container(
             "Edit File",
             "Load an existing song once, then update its metadata, trim it losslessly, "
-            "or replace its media from YouTube in one workflow.",
+            "replace its media from YouTube, or save video playback display settings.",
         )
         media_filter = (
             "Media files (*.mp3 *.m4a *.aac *.flac *.ogg *.opus *.wav *.aiff "
@@ -1457,7 +1467,7 @@ class MainWindow(QMainWindow):
         self.edit_file_action.addItem("Trim the selected local file", "trim")
         self.edit_file_action.addItem("Replace media from YouTube", "redownload")
         self.edit_file_action.addItem(
-            "Apply video crop / aspect permanently", "video_display"
+            "Save video playback crop / aspect", "video_display"
         )
         self.edit_file_input = PathPicker(
             placeholder="Select the existing media file", file_filter=media_filter
@@ -1501,8 +1511,8 @@ class MainWindow(QMainWindow):
         form.addRow("Download content", self.edit_file_content)
         form.addRow("Download start", self.edit_file_download_start)
         form.addRow("Download end", self.edit_file_download_end)
-        form.addRow("Permanent crop ratio", self.edit_file_crop_ratio)
-        form.addRow("Permanent aspect ratio", self.edit_file_aspect_ratio)
+        form.addRow("Playback crop ratio", self.edit_file_crop_ratio)
+        form.addRow("Playback aspect ratio", self.edit_file_aspect_ratio)
         form.addRow("Save behavior", self.edit_file_mode)
         form.addRow("Copy destination", self.edit_file_output)
         self.edit_file_action.currentIndexChanged.connect(self._edit_file_action_changed)
@@ -1570,7 +1580,7 @@ class MainWindow(QMainWindow):
             "Metadata-only changes are written to a temporary copy and atomically replace the source",
             "Trimming uses lossless stream copy and then applies the edited metadata",
             "Redownload retains source container data before applying the edited fields",
-            "Permanent crop/aspect re-encodes video after confirmation and atomically replaces it",
+            "Video playback crop/aspect profiles change app playback only and never rewrite the file",
             "Artwork accepts a local JPEG/PNG or HTTP(S) image URL; leave it empty to preserve the cover",
             "Edited audio is renamed as Title - Album - Artists using filesystem-safe characters",
         ]))
@@ -1653,10 +1663,10 @@ class MainWindow(QMainWindow):
             self.edit_file_run_button.setText("Redownload and edit")
         elif video_display:
             self.edit_file_action_help.setText(
-                "Permanently bakes the selected centered crop and output aspect into "
-                "this video. Future playback uses Aspect: Default and Crop: Default."
+                "Stores crop and aspect as a Media Library playback profile for this "
+                "video. The video file and its encoded dimensions are not changed."
             )
-            self.edit_file_run_button.setText("Apply crop / aspect permanently")
+            self.edit_file_run_button.setText("Save playback settings")
         else:
             self.edit_file_action_help.setText(
                 "Updates tags and artwork without changing the local file's audio. "
@@ -1665,7 +1675,7 @@ class MainWindow(QMainWindow):
             self.edit_file_run_button.setText("Update metadata")
         if metadata_only or video_display:
             reason = (
-                "Permanent video display edits always replace the selected file"
+                "Playback display profiles do not modify or copy the selected file"
                 if video_display
                 else "Metadata edits always replace the selected file"
             )
@@ -1742,24 +1752,23 @@ class MainWindow(QMainWindow):
             return
         crop = str(params["crop_ratio"])
         aspect = str(params["aspect_ratio"])
-        if crop == "Default" and aspect == "Default":
-            QMessageBox.information(
-                self,
-                "Choose a display edit",
-                "Choose a crop ratio, an aspect ratio, or both before continuing.",
-            )
-            return
         answer = QMessageBox.question(
             self,
-            "Apply video display edit permanently?",
+            "Save video playback settings?",
             f"File: {source.name}\nCrop: {crop}\nAspect: {aspect}\n\n"
-            "This re-encodes and replaces the selected video. The operation cannot be "
-            "undone unless you have another copy.",
+            "Only this application's playback profile is updated. The video file is "
+            "not re-encoded, cropped, renamed, or otherwise modified. Selecting Default "
+            "for both values removes the saved profile.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
         if answer == QMessageBox.StandardButton.Yes:
-            self._start_operation("edit_media", params)
+            self.media_library.set_video_display_profile(source, crop, aspect)
+            action = "Removed" if crop == aspect == "Default" else "Saved"
+            self._append_log(
+                f"[LIBRARY] {action} playback display profile: {source} "
+                f"(crop={crop}, aspect={aspect}; media file unchanged)"
+            )
 
     def _clear_edit_file(self) -> None:
         self._edit_file_load_timer.stop()
@@ -3746,12 +3755,13 @@ class MainWindow(QMainWindow):
             editor.load_data({})
         self.audio_mode.setCurrentIndex(0)
         self.audio_output.set_text("")
+        self.audio_report.setChecked(False)
         self.audio_overwrite.setChecked(False)
         self.video_mp3_mode.setCurrentIndex(0)
         self.video_output.set_text("")
         self.video_audio_output.set_text("")
         self.video_merge.setCurrentText("mp4")
-        self.video_report.setChecked(True)
+        self.video_report.setChecked(False)
         self.video_overwrite.setChecked(False)
         self.album_output.set_text("")
         self.album_threshold.setValue(-35.0)
@@ -3759,11 +3769,11 @@ class MainWindow(QMainWindow):
         self.album_track_duration.setValue(45.0)
         self.album_padding.setValue(0.25)
         self.album_keep_temp.setChecked(False)
-        self.album_report.setChecked(True)
+        self.album_report.setChecked(False)
         self.album_overwrite.setChecked(False)
         self.jukebox_output.set_text("")
         self.jukebox_keep_temp.setChecked(False)
-        self.jukebox_report.setChecked(True)
+        self.jukebox_report.setChecked(False)
         self.jukebox_overwrite.setChecked(False)
         self._album_statuses.clear()
 
