@@ -357,6 +357,32 @@ class MediaPlayerPageTest(unittest.TestCase):
             self.page.online_search_button.sizeHint().width(),
         )
 
+    def test_year_filters_use_hints_and_accept_only_numeric_input(self) -> None:
+        for spin, hint in (
+            (self.page.year_from, "From year"),
+            (self.page.year_to, "To year"),
+        ):
+            self.assertEqual(spin.value(), 0)
+            self.assertEqual(spin.lineEdit().text(), "")
+            self.assertEqual(spin.lineEdit().placeholderText(), hint)
+
+            spin.setFocus()
+            QTest.keyClicks(spin.lineEdit(), "2024letters!@#")
+
+            self.assertEqual(spin.value(), 2024)
+            self.assertEqual(spin.lineEdit().text(), "2024")
+
+    def test_to_year_cannot_be_lower_than_from_year(self) -> None:
+        self.page.year_from.setValue(2005)
+        self.assertEqual(self.page.year_to.value(), 0)
+
+        self.page.year_to.setValue(1999)
+        self.assertEqual(self.page.year_to.value(), 2005)
+
+        self.page.year_to.setValue(2010)
+        self.page.year_from.setValue(2020)
+        self.assertEqual(self.page.year_to.value(), 2020)
+
     def test_album_opens_without_playing_and_exposes_track_actions(self) -> None:
         self.page._load_current = Mock()
         self.page.open_album(self.page.albums.item(0))
@@ -570,6 +596,73 @@ class MediaPlayerPageTest(unittest.TestCase):
             self.page.playlist_tracks.selectionMode(),
             self.page.playlist_tracks.SelectionMode.ExtendedSelection,
         )
+
+    def test_playlist_filter_searches_metadata_and_reorders_visible_matches(self) -> None:
+        items = [
+            LibraryItem(
+                "C:/Bengali 2005.mp3", "First", "Blue Album", "Artist One",
+                2005, 60_000, "audio", 1,
+            ),
+            LibraryItem(
+                "C:/Hindi 2010.mp3", "Second", "Red Album", "Artist Two",
+                2010, 60_000, "audio", 1,
+            ),
+            LibraryItem(
+                "C:/Bengali 2015.mp3", "Third", "Green Album", "Artist One",
+                2015, 60_000, "audio", 1,
+            ),
+        ]
+        self.page.items = items
+        name = self.page.create_playlist("Mixed")
+        self.page.playlists[name] = [item.path for item in items]
+        self.page._render_playlist_tracks()
+
+        for query, expected_paths in (
+            ("Artist One", [items[0].path, items[2].path]),
+            ("Red Album", [items[1].path]),
+            ("2015", [items[2].path]),
+            ("Hindi 2010", [items[1].path]),
+        ):
+            self.page.playlist_filter.setText(query)
+            self.assertEqual(
+                [
+                    self.page.playlist_tracks.item(row).data(Qt.ItemDataRole.UserRole)
+                    for row in range(self.page.playlist_tracks.count())
+                ],
+                expected_paths,
+            )
+
+        self.page.playlist_filter.setText("Artist One")
+        moved = self.page.playlist_tracks.takeItem(1)
+        self.page.playlist_tracks.insertItem(0, moved)
+        self.page._playlist_tracks_reordered()
+
+        self.assertEqual(
+            self.page.playlists[name],
+            [items[2].path, items[1].path, items[0].path],
+        )
+        self.page.playlist_filter.clear()
+        self.assertEqual(self.page.playlist_tracks.count(), 3)
+
+    def test_playlist_filter_can_search_and_remove_across_all_playlists(self) -> None:
+        first, second = self.page.items
+        self.page.playlists = {
+            "Favourites": [first.path, second.path],
+            "Road trip": [first.path],
+        }
+        self.page._active_playlist = "Favourites"
+        self.page._render_playlists()
+
+        self.page.playlist_filter.setText(first.artists)
+        self.page.playlist_filter_all.setChecked(True)
+
+        self.assertEqual(self.page.playlist_tracks.count(), 3)
+        self.assertFalse(self.page.playlist_tracks.dragEnabled())
+        self.assertIn("All playlists", self.page.playlist_track_status.text())
+        self.page.playlist_tracks.item(2).setSelected(True)
+        self.page.remove_selected_playlist_tracks()
+        self.assertEqual(self.page.playlists["Favourites"], [first.path, second.path])
+        self.assertEqual(self.page.playlists["Road trip"], [])
 
     def test_player_controls_have_visible_icons_and_mode_labels(self) -> None:
         self.assertTrue(self.page.play_button.text() == "")
