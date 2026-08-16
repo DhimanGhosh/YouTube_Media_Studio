@@ -4,6 +4,11 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [2.11.4] - 2026-08-17
+
+### Changed
+
+- docs: publish complete annotated user guide (#37) (`e4cee11`)
 ## [2.11.3] - 2026-08-17
 
 ### Changed
