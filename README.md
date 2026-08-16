@@ -384,7 +384,8 @@ uv run youtube-media-studio doctor
 ```
 
 Tracked job templates live in `config/*.sample.json`. Copy only the templates you
-need to their non-sample names; those local files are ignored by Git.
+need, preferably to a personal working directory outside the checkout. Non-sample
+job files are optional inputs and are not included in the repository.
 
 <details>
 <summary><b>Quality checks and native builds</b></summary>

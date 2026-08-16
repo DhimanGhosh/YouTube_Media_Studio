@@ -19,9 +19,3 @@ download_results.json
 crash_reports/
 YouTubeMediaStudioData/
 YouTubeMediaStudio.storage.json
-config/albums.json
-config/jukeboxes.json
-config/songs.json
-config/songs_retag.json
-config/timestamps.txt
-config/videos.json
