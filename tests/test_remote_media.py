@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from youtube_audio_video_downloader.services.remote_media import (
+from youtube_audio_video_downloader.services.media.remote_media import (
     RemoteMediaServer,
     media_id,
 )

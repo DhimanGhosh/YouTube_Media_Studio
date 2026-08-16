@@ -7,11 +7,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from youtube_audio_video_downloader.services.album_metadata_enricher import (
+from youtube_audio_video_downloader.services.albums.album_metadata_enricher import (
     enrich_folder_metadata,
 )
-from youtube_audio_video_downloader.services.media_metadata import EditableMediaMetadata
-from youtube_audio_video_downloader.services.metadata_tracker import (
+from youtube_audio_video_downloader.services.media.media_metadata import EditableMediaMetadata
+from youtube_audio_video_downloader.services.metadata.metadata_tracker import (
     MetadataCompletionTracker,
     verification_policy_key,
 )
@@ -27,7 +27,7 @@ class MetadataCompletionTrackerTest(unittest.TestCase):
     def setUp(self) -> None:
         self.lookup_patchers = [
             patch(
-                "youtube_audio_video_downloader.services.album_metadata_enricher."
+                "youtube_audio_video_downloader.services.albums.album_metadata_enricher."
                 + target,
                 return_value=result,
             )
@@ -42,7 +42,7 @@ class MetadataCompletionTrackerTest(unittest.TestCase):
             self.addCleanup(patcher.stop)
 
     @patch(
-        "youtube_audio_video_downloader.services.metadata_tracker._essential_tags_complete",
+        "youtube_audio_video_downloader.services.metadata.metadata_tracker._essential_tags_complete",
         return_value=True,
     )
     def test_persists_and_recognizes_a_rename_or_move(self, _complete_mock) -> None:
@@ -71,7 +71,7 @@ class MetadataCompletionTrackerTest(unittest.TestCase):
             self.assertFalse(MetadataCompletionTracker(index).is_complete(song))
 
     @patch(
-        "youtube_audio_video_downloader.services.metadata_tracker._essential_tags_complete",
+        "youtube_audio_video_downloader.services.metadata.metadata_tracker._essential_tags_complete",
         return_value=True,
     )
     def test_legacy_completion_is_rechecked_by_agentic_policy(
@@ -89,10 +89,10 @@ class MetadataCompletionTrackerTest(unittest.TestCase):
             self.assertTrue(tracker.is_complete(song, "legacy"))
 
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher.read_media_metadata"
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher.read_media_metadata"
     )
     @patch(
-        "youtube_audio_video_downloader.services.metadata_tracker._essential_tags_complete",
+        "youtube_audio_video_downloader.services.metadata.metadata_tracker._essential_tags_complete",
         return_value=True,
     )
     def test_second_enrichment_validates_cached_tags_before_skipping(
@@ -124,7 +124,7 @@ class MetadataCompletionTrackerTest(unittest.TestCase):
             read_mock.assert_not_called()
 
     @patch(
-        "youtube_audio_video_downloader.services.metadata_tracker._essential_tags_complete",
+        "youtube_audio_video_downloader.services.metadata.metadata_tracker._essential_tags_complete",
         return_value=False,
     )
     def test_cached_file_with_missing_tags_is_not_skipped(self, _complete_mock) -> None:

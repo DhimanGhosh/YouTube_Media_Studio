@@ -9,9 +9,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from youtube_audio_video_downloader.gui.operations import OperationSummary
-from youtube_audio_video_downloader.gui.main_window import MainWindow
-from youtube_audio_video_downloader.gui.workers import (
+from youtube_audio_video_downloader.gui.runtime.operations import OperationSummary
+from youtube_audio_video_downloader.gui.application.main_window import MainWindow
+from youtube_audio_video_downloader.gui.runtime.workers import (
     OperationWorker,
     SignalTextStream,
     _capture_worker_output,
@@ -131,7 +131,7 @@ class GuiWorkerProgressTest(unittest.TestCase):
             120,
         )
 
-    @patch("youtube_audio_video_downloader.gui.workers.execute_operation")
+    @patch("youtube_audio_video_downloader.gui.runtime.workers.execute_operation")
     def test_safe_operation_uses_configured_global_attempts(self, execute_mock) -> None:
         execute_mock.side_effect = [
             OSError("temporary one"),
@@ -146,7 +146,7 @@ class GuiWorkerProgressTest(unittest.TestCase):
         self.assertEqual(result.operation, "search_song")
         self.assertEqual(execute_mock.call_count, 3)
 
-    @patch("youtube_audio_video_downloader.gui.workers.execute_operation")
+    @patch("youtube_audio_video_downloader.gui.runtime.workers.execute_operation")
     def test_mutating_batch_is_not_replayed_as_a_whole(self, execute_mock) -> None:
         execute_mock.side_effect = OSError("partial move failed")
         worker = OperationWorker("album_consolidator", {"retries": 5})

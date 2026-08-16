@@ -12,14 +12,14 @@ import pytest
 from mutagen.id3 import ID3, TIT2, TPE1
 
 from youtube_audio_video_downloader.core.cancellation import CancellationToken
-from youtube_audio_video_downloader.gui.operations import execute_operation
-from youtube_audio_video_downloader.services.album_editor import (
+from youtube_audio_video_downloader.gui.runtime.operations import execute_operation
+from youtube_audio_video_downloader.services.albums.album_editor import (
     AlbumEditResult,
     _rename_album_file,
     edit_album_folder,
     inspect_album_folder,
 )
-from youtube_audio_video_downloader.services.media_metadata import (
+from youtube_audio_video_downloader.services.media.media_metadata import (
     EditableMediaMetadata,
     read_media_metadata,
 )
@@ -43,7 +43,7 @@ def test_inspection_reports_shared_and_mixed_album_fields() -> None:
             )
 
         with patch(
-            "youtube_audio_video_downloader.services.album_editor.read_media_metadata",
+            "youtube_audio_video_downloader.services.albums.album_editor.read_media_metadata",
             side_effect=metadata,
         ):
             result = inspect_album_folder(root)
@@ -66,14 +66,14 @@ def test_edit_updates_only_requested_album_level_fields_for_every_file() -> None
             path.touch()
         with (
             patch(
-                "youtube_audio_video_downloader.services.album_editor.read_media_metadata",
+                "youtube_audio_video_downloader.services.albums.album_editor.read_media_metadata",
                 return_value=EditableMediaMetadata(title="Song"),
             ),
             patch(
-                "youtube_audio_video_downloader.services.album_editor.replace_media_metadata"
+                "youtube_audio_video_downloader.services.albums.album_editor.replace_media_metadata"
             ) as replace_mock,
             patch(
-                "youtube_audio_video_downloader.services.album_editor._rename_album_file",
+                "youtube_audio_video_downloader.services.albums.album_editor._rename_album_file",
                 side_effect=lambda path, _title, _values: path,
             ),
         ):
@@ -109,14 +109,14 @@ def test_blank_artist_override_preserves_each_tracks_existing_artist() -> None:
 
         with (
             patch(
-                "youtube_audio_video_downloader.services.album_editor.read_media_metadata",
+                "youtube_audio_video_downloader.services.albums.album_editor.read_media_metadata",
                 side_effect=metadata,
             ),
             patch(
-                "youtube_audio_video_downloader.services.album_editor.replace_media_metadata"
+                "youtube_audio_video_downloader.services.albums.album_editor.replace_media_metadata"
             ) as replace_mock,
             patch(
-                "youtube_audio_video_downloader.services.album_editor._rename_album_file",
+                "youtube_audio_video_downloader.services.albums.album_editor._rename_album_file",
                 side_effect=lambda path, _title, _values: path,
             ) as rename_mock,
         ):
@@ -146,14 +146,14 @@ def test_edit_applies_one_artwork_image_to_every_file() -> None:
             path.touch()
         with (
             patch(
-                "youtube_audio_video_downloader.services.album_editor.read_media_metadata",
+                "youtube_audio_video_downloader.services.albums.album_editor.read_media_metadata",
                 return_value=EditableMediaMetadata(title="Song"),
             ),
             patch(
-                "youtube_audio_video_downloader.services.album_editor.replace_media_metadata"
+                "youtube_audio_video_downloader.services.albums.album_editor.replace_media_metadata"
             ) as replace_mock,
             patch(
-                "youtube_audio_video_downloader.services.album_editor._rename_album_file",
+                "youtube_audio_video_downloader.services.albums.album_editor._rename_album_file",
                 side_effect=lambda path, _title, _values: path,
             ),
         ):
@@ -261,11 +261,11 @@ def test_edit_renames_each_file_from_title_and_new_album_year_and_artists() -> N
         source.touch()
         with (
             patch(
-                "youtube_audio_video_downloader.services.album_editor.read_media_metadata",
+                "youtube_audio_video_downloader.services.albums.album_editor.read_media_metadata",
                 return_value=EditableMediaMetadata(title="First Song"),
             ),
             patch(
-                "youtube_audio_video_downloader.services.album_editor.replace_media_metadata"
+                "youtube_audio_video_downloader.services.albums.album_editor.replace_media_metadata"
             ),
         ):
             result = edit_album_folder(
@@ -302,7 +302,7 @@ def test_edit_validates_album_and_year_before_writing() -> None:
         source = Path(directory) / "song.mp3"
         source.touch()
         with patch(
-            "youtube_audio_video_downloader.services.album_editor.replace_media_metadata"
+            "youtube_audio_video_downloader.services.albums.album_editor.replace_media_metadata"
         ) as replace_mock:
             with pytest.raises(ValueError, match="Album name"):
                 edit_album_folder(
@@ -315,7 +315,7 @@ def test_edit_validates_album_and_year_before_writing() -> None:
         replace_mock.assert_not_called()
 
 
-@patch("youtube_audio_video_downloader.gui.operations.edit_album_folder")
+@patch("youtube_audio_video_downloader.gui.runtime.operations.edit_album_folder")
 def test_gui_operation_reports_album_edit_results(edit_mock) -> None:
     edit_mock.return_value = AlbumEditResult(
         (Path("one.mp3"), Path("two.mp3")),

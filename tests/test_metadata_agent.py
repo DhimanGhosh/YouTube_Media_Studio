@@ -5,8 +5,8 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from youtube_audio_video_downloader.services.ai_provider import AIResponse
-from youtube_audio_video_downloader.services.metadata_agent import adjudicate_metadata
+from youtube_audio_video_downloader.services.ai.ai_provider import AIResponse
+from youtube_audio_video_downloader.services.ai.metadata_agent import adjudicate_metadata
 
 
 def response(data: dict[str, object]) -> AIResponse:
@@ -14,7 +14,7 @@ def response(data: dict[str, object]) -> AIResponse:
 
 
 class MetadataAgentTest(unittest.TestCase):
-    @patch("youtube_audio_video_downloader.services.metadata_agent.chat_json")
+    @patch("youtube_audio_video_downloader.services.ai.metadata_agent.chat_json")
     def test_accepts_high_confidence_decision_using_supplied_evidence(self, chat_mock) -> None:
         chat_mock.return_value = response({
             "action": "apply", "title": "Song", "album": "Film",
@@ -31,7 +31,7 @@ class MetadataAgentTest(unittest.TestCase):
         self.assertEqual(result.action, "apply")
         self.assertEqual(result.metadata["album"], "Film")
 
-    @patch("youtube_audio_video_downloader.services.metadata_agent.chat_json")
+    @patch("youtube_audio_video_downloader.services.ai.metadata_agent.chat_json")
     def test_rejects_an_invented_album_even_at_high_confidence(self, chat_mock) -> None:
         chat_mock.return_value = response({
             "action": "apply", "title": "Song", "album": "Invented Film",
@@ -45,7 +45,7 @@ class MetadataAgentTest(unittest.TestCase):
         self.assertEqual(result.action, "review")
         self.assertIn("invented", result.reason.lower())
 
-    @patch("youtube_audio_video_downloader.services.metadata_agent.chat_json")
+    @patch("youtube_audio_video_downloader.services.ai.metadata_agent.chat_json")
     def test_discards_invented_optional_language_without_losing_identity(
         self, chat_mock
     ) -> None:
@@ -67,7 +67,7 @@ class MetadataAgentTest(unittest.TestCase):
         self.assertEqual(result.metadata["language"], "")
         self.assertIn("ignored unsupported optional language", result.reason)
 
-    @patch("youtube_audio_video_downloader.services.metadata_agent.chat_json")
+    @patch("youtube_audio_video_downloader.services.ai.metadata_agent.chat_json")
     def test_album_conflict_requires_duration_confirmation(self, chat_mock) -> None:
         chat_mock.return_value = response({
             "action": "apply", "title": "Song", "album": "Catalog Film",
@@ -82,7 +82,7 @@ class MetadataAgentTest(unittest.TestCase):
         self.assertEqual(result.action, "review")
         self.assertLess(result.confidence, 0.85)
 
-    @patch("youtube_audio_video_downloader.services.metadata_agent.chat_json")
+    @patch("youtube_audio_video_downloader.services.ai.metadata_agent.chat_json")
     def test_accepts_serpapi_fields_without_allowing_invention(self, chat_mock) -> None:
         chat_mock.return_value = response({
             "action": "apply", "title": "Jonaki", "album": "Lorai",

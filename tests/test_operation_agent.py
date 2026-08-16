@@ -7,9 +7,9 @@ import unittest
 from unittest.mock import patch
 
 from youtube_audio_video_downloader.core.cancellation import CancellationToken
-from youtube_audio_video_downloader.gui.operations import execute_operation
-from youtube_audio_video_downloader.services.ai_provider import AIResponse
-from youtube_audio_video_downloader.services.operation_agent import (
+from youtube_audio_video_downloader.gui.runtime.operations import execute_operation
+from youtube_audio_video_downloader.services.ai.ai_provider import AIResponse
+from youtube_audio_video_downloader.services.ai.operation_agent import (
     OPERATION_PREFLIGHT_TIMEOUT_SECONDS,
     OperationPreflightDecision,
     preflight_operation,
@@ -31,7 +31,7 @@ class OperationAgentTest(unittest.TestCase):
         url = "https://youtu.be/aBc_123?t=42"
         timestamp = "00:03:17.250"
         with patch(
-            "youtube_audio_video_downloader.services.operation_agent.chat_json",
+            "youtube_audio_video_downloader.services.ai.operation_agent.chat_json",
             side_effect=answer,
         ):
             decision = preflight_operation(
@@ -64,7 +64,7 @@ class OperationAgentTest(unittest.TestCase):
 
     def test_outage_fails_open_without_changing_user_directed_operation(self) -> None:
         with patch(
-            "youtube_audio_video_downloader.services.operation_agent.chat_json",
+            "youtube_audio_video_downloader.services.ai.operation_agent.chat_json",
             side_effect=TimeoutError("offline"),
         ):
             decision = preflight_operation(
@@ -84,7 +84,7 @@ class OperationAgentTest(unittest.TestCase):
             "Ollama", "global:test",
         )
         with patch(
-            "youtube_audio_video_downloader.services.operation_agent.chat_json",
+            "youtube_audio_video_downloader.services.ai.operation_agent.chat_json",
             return_value=result,
         ):
             decision = preflight_operation("edit_media", {"agentic_model": "global:test"})
@@ -94,7 +94,7 @@ class OperationAgentTest(unittest.TestCase):
     def test_execute_operation_runs_preflight_for_deterministic_workflow(self) -> None:
         decision = OperationPreflightDecision("proceed", "audited", model="global:test")
         with patch(
-            "youtube_audio_video_downloader.gui.operations.preflight_operation",
+            "youtube_audio_video_downloader.gui.runtime.operations.preflight_operation",
             return_value=decision,
         ) as preflight:
             summary = execute_operation(

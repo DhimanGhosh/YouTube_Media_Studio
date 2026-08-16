@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from youtube_audio_video_downloader.services.jukebox_splitter import (
+from youtube_audio_video_downloader.services.albums.jukebox_splitter import (
     YouTubeJukeboxSplitter,
 )
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import MagicMock, patch
 
-from youtube_audio_video_downloader.services.youtube_search import (
+from youtube_audio_video_downloader.services.downloads.youtube_search import (
     _album_focus_score,
     _description_matches_album_tracks,
     _trusted_official_jukebox,
@@ -115,7 +115,7 @@ class YouTubeSearchTest(unittest.TestCase):
             )
         )
 
-    @patch("youtube_audio_video_downloader.services.youtube_search.find_wikipedia_tracks")
+    @patch("youtube_audio_video_downloader.services.downloads.youtube_search.find_wikipedia_tracks")
     @patch("yt_dlp.YoutubeDL")
     def test_search_accepts_verified_audio_jukebox_with_youtube_chapters(
         self, ydl_class, wikipedia_mock

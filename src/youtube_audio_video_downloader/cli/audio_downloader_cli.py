@@ -6,7 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from youtube_audio_video_downloader.services.audio_downloader import YouTubeAudioDownloader
+from youtube_audio_video_downloader.services.downloads.audio_downloader import YouTubeAudioDownloader
 from youtube_audio_video_downloader.core.exceptions import UserCancelledError
 from youtube_audio_video_downloader.config.settings import DownloadSettings
 

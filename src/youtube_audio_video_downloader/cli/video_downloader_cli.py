@@ -8,7 +8,7 @@ from pathlib import Path
 
 from youtube_audio_video_downloader.config.settings import DownloadSettings
 from youtube_audio_video_downloader.core.exceptions import UserCancelledError
-from youtube_audio_video_downloader.services.video_downloader import YouTubeVideoDownloader
+from youtube_audio_video_downloader.services.downloads.video_downloader import YouTubeVideoDownloader
 
 
 _DEFAULTS = DownloadSettings()

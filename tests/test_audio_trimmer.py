@@ -12,8 +12,8 @@ from pathlib import Path
 from mutagen.id3 import ID3, TXXX
 
 from youtube_audio_video_downloader.core.cancellation import CancellationToken
-from youtube_audio_video_downloader.gui.operations import execute_operation
-from youtube_audio_video_downloader.services.audio_trimmer import (
+from youtube_audio_video_downloader.gui.runtime.operations import execute_operation
+from youtube_audio_video_downloader.services.media.audio_trimmer import (
     format_timestamp,
     parse_timestamp,
 )

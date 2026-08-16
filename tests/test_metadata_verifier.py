@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from youtube_audio_video_downloader.services.metadata_agent import MetadataAgentDecision
-from youtube_audio_video_downloader.services.metadata_verifier import verify_metadata
+from youtube_audio_video_downloader.services.ai.metadata_agent import MetadataAgentDecision
+from youtube_audio_video_downloader.services.metadata.metadata_verifier import verify_metadata
 
 
 LOCAL = {
@@ -18,7 +18,7 @@ def _agent(metadata: dict[str, str], *, sources=("wikipedia", "catalog")):
     )
 
 
-@patch("youtube_audio_video_downloader.services.metadata_verifier.adjudicate_metadata")
+@patch("youtube_audio_video_downloader.services.metadata.metadata_verifier.adjudicate_metadata")
 def test_rejects_partial_artist_catalog_match_before_agent(mock_agent):
     wiki = {
         "title": "O My Love",
@@ -45,7 +45,7 @@ def test_rejects_partial_artist_catalog_match_before_agent(mock_agent):
     assert passed_catalog == {}
 
 
-@patch("youtube_audio_video_downloader.services.metadata_verifier.adjudicate_metadata")
+@patch("youtube_audio_video_downloader.services.metadata.metadata_verifier.adjudicate_metadata")
 def test_rejects_non_exact_title_source(mock_agent):
     catalog = {
         "title": "On My Love",
@@ -64,7 +64,7 @@ def test_rejects_non_exact_title_source(mock_agent):
     assert mock_agent.call_args.args[2] == {}
 
 
-@patch("youtube_audio_video_downloader.services.metadata_verifier.adjudicate_metadata")
+@patch("youtube_audio_video_downloader.services.metadata.metadata_verifier.adjudicate_metadata")
 def test_accepts_narrow_oh_to_o_catalog_title_alias(mock_agent):
     evidence = {
         "title": "O My Love",
@@ -80,7 +80,7 @@ def test_accepts_narrow_oh_to_o_catalog_title_alias(mock_agent):
     assert result.metadata["album"] == "Amanush"
 
 
-@patch("youtube_audio_video_downloader.services.metadata_verifier.adjudicate_metadata")
+@patch("youtube_audio_video_downloader.services.metadata.metadata_verifier.adjudicate_metadata")
 def test_never_combines_incompatible_album_year_identities(mock_agent):
     wiki = {
         "title": "O My Love",
@@ -111,7 +111,7 @@ def test_never_combines_incompatible_album_year_identities(mock_agent):
     assert result.album_art == ""
 
 
-@patch("youtube_audio_video_downloader.services.metadata_verifier.adjudicate_metadata")
+@patch("youtube_audio_video_downloader.services.metadata.metadata_verifier.adjudicate_metadata")
 def test_compatible_catalog_artwork_is_attached_to_selected_identity(mock_agent):
     wiki = {
         "title": "O My Love",
@@ -128,7 +128,7 @@ def test_compatible_catalog_artwork_is_attached_to_selected_identity(mock_agent)
     assert result.album_art == "https://example.test/amanush.jpg"
 
 
-@patch("youtube_audio_video_downloader.services.metadata_verifier.adjudicate_metadata")
+@patch("youtube_audio_video_downloader.services.metadata.metadata_verifier.adjudicate_metadata")
 def test_agent_unavailability_uses_one_exact_static_internet_identity(mock_agent):
     evidence = {
         "title": "O My Love",
@@ -149,7 +149,7 @@ def test_agent_unavailability_uses_one_exact_static_internet_identity(mock_agent
     assert "AI provider chain unavailable" in result.reason
 
 
-@patch("youtube_audio_video_downloader.services.metadata_verifier.adjudicate_metadata")
+@patch("youtube_audio_video_downloader.services.metadata.metadata_verifier.adjudicate_metadata")
 def test_configured_agent_is_called_even_when_all_sources_are_rejected(mock_agent):
     wrong = {
         "title": "Different Song",
@@ -168,7 +168,7 @@ def test_configured_agent_is_called_even_when_all_sources_are_rejected(mock_agen
     assert mock_agent.call_args.args[2] == {}
 
 
-@patch("youtube_audio_video_downloader.services.metadata_verifier.adjudicate_metadata")
+@patch("youtube_audio_video_downloader.services.metadata.metadata_verifier.adjudicate_metadata")
 def test_agent_cannot_invent_cross_source_metadata(mock_agent):
     wiki = {
         "title": "O My Love",
@@ -184,7 +184,7 @@ def test_agent_cannot_invent_cross_source_metadata(mock_agent):
     assert "incompatible evidence" in result.reason
 
 
-@patch("youtube_audio_video_downloader.services.metadata_verifier.adjudicate_metadata")
+@patch("youtube_audio_video_downloader.services.metadata.metadata_verifier.adjudicate_metadata")
 def test_agent_apply_must_preserve_full_known_artist_set(mock_agent):
     evidence = {
         "title": "O My Love",
@@ -202,7 +202,7 @@ def test_agent_apply_must_preserve_full_known_artist_set(mock_agent):
     assert "full known artist set" in result.reason
 
 
-@patch("youtube_audio_video_downloader.services.metadata_verifier.adjudicate_metadata")
+@patch("youtube_audio_video_downloader.services.metadata.metadata_verifier.adjudicate_metadata")
 def test_existing_album_rejects_matching_track_from_a_compilation(mock_agent):
     local = {
         "title": "Tu Hi Disda",

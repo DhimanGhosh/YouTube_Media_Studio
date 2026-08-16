@@ -108,7 +108,7 @@ def main() -> int:
     if not args or args[0] in {"gui", "--gui"}:
         if args:
             sys.argv = [sys.argv[0], *args[1:]]
-        from youtube_audio_video_downloader.gui.app import main as gui_main
+        from youtube_audio_video_downloader.gui.application.app import main as gui_main
 
         return gui_main()
 

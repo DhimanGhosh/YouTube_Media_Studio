@@ -5,15 +5,15 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-from youtube_audio_video_downloader.services.album_folders import (
+from youtube_audio_video_downloader.services.albums.album_folders import (
     normalize_album_folders,
     resolve_album_folder_successor,
 )
-from youtube_audio_video_downloader.services.album_names import (
+from youtube_audio_video_downloader.services.albums.album_names import (
     canonical_album_name,
     normalize_album_name,
 )
-from youtube_audio_video_downloader.services.media_metadata import EditableMediaMetadata
+from youtube_audio_video_downloader.services.media.media_metadata import EditableMediaMetadata
 
 
 class AlbumNameTest(unittest.TestCase):
@@ -68,7 +68,7 @@ class AlbumNameTest(unittest.TestCase):
             "Highway (Hindi) (2014)",
         )
 
-    @patch("youtube_audio_video_downloader.services.album_folders.read_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_folders.read_media_metadata")
     def test_renames_and_merges_matching_album_year_folders_without_deleting(
         self, read_mock
     ) -> None:

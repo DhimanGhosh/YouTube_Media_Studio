@@ -11,8 +11,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from youtube_audio_video_downloader.core.cancellation import CancellationToken
-from youtube_audio_video_downloader.gui.operations import execute_operation
-from youtube_audio_video_downloader.services.album_metadata_enricher import (
+from youtube_audio_video_downloader.gui.runtime.operations import execute_operation
+from youtube_audio_video_downloader.services.albums.album_metadata_enricher import (
     MetadataEnrichmentReport,
     _album_year_consensus,
     _album_track_match,
@@ -26,8 +26,8 @@ from youtube_audio_video_downloader.services.album_metadata_enricher import (
     _verified_conflicting_album_years,
     enrich_folder_metadata,
 )
-from youtube_audio_video_downloader.services.media_metadata import EditableMediaMetadata
-from youtube_audio_video_downloader.services.metadata_verifier import (
+from youtube_audio_video_downloader.services.media.media_metadata import EditableMediaMetadata
+from youtube_audio_video_downloader.services.metadata.metadata_verifier import (
     MetadataVerificationDecision,
 )
 
@@ -50,7 +50,7 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
         )
         self.lookup_patchers = [
             patch(
-                "youtube_audio_video_downloader.services.album_metadata_enricher."
+                "youtube_audio_video_downloader.services.albums.album_metadata_enricher."
                 + target,
                 return_value=[] if target == "find_wikipedia_tracks" else {},
             )
@@ -72,11 +72,11 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
         self.assertEqual(_title_track_album_hint("An Ordinary Song"), "")
 
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher.find_album_art",
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher.find_album_art",
         return_value="https://example.test/lorai.jpg",
     )
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher."
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher."
         "find_serpapi_song_metadata",
         return_value={
             "title": "Jonaki",
@@ -87,12 +87,12 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
         },
     )
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher."
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher."
         "serpapi_is_configured",
         return_value=True,
     )
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.replace_media_metadata")
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.read_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.replace_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.read_media_metadata")
     def test_serpapi_fills_missing_album_year_and_artwork(
         self, read_mock, replace_mock, _configured_mock, serp_mock, _art_mock
     ) -> None:
@@ -119,8 +119,8 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
                 artwork_path="https://example.test/lorai.jpg",
             )
 
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.replace_media_metadata")
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.read_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.replace_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.read_media_metadata")
     def test_mixed_language_album_tracks_receive_language_qualifiers(
         self, read_mock, replace_mock
     ) -> None:
@@ -152,12 +152,12 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
                 albums, {"Amanush (Hindi) (1975)", "Amanush (Bengali) (1975)"}
             )
 
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.replace_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.replace_media_metadata")
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher.find_album_release_year",
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher.find_album_release_year",
         return_value={"year": "2010", "page_title": "Le Chakka"},
     )
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.read_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.read_media_metadata")
     def test_verified_title_track_supplies_missing_album(
         self, read_mock, _year_mock, replace_mock
     ) -> None:
@@ -184,7 +184,7 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
             )
 
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher."
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher."
         "verify_metadata_evidence",
         return_value=MetadataVerificationDecision(
             "apply",
@@ -201,12 +201,12 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
         ),
     )
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher._media_duration",
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher._media_duration",
         return_value=278.0,
     )
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.replace_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.replace_media_metadata")
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher."
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher."
         "find_wikipedia_tracks",
         return_value=[
             {
@@ -216,7 +216,7 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
             }
         ],
     )
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.read_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.read_media_metadata")
     def test_unknown_artist_placeholder_is_searched_and_replaced(
         self, read_mock, tracks_mock, replace_mock, _duration_mock, verify_mock
     ) -> None:
@@ -282,9 +282,9 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
             tracks[1],
         )
 
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.replace_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.replace_media_metadata")
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher."
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher."
         "find_wikipedia_tracks",
         return_value=[
             {
@@ -294,7 +294,7 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
             }
         ],
     )
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.read_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.read_media_metadata")
     def test_force_recheck_replaces_catalog_credit_with_album_table_singers(
         self, read_mock, _tracks_mock, replace_mock
     ) -> None:
@@ -328,7 +328,7 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
             )
 
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher._media_duration",
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher._media_duration",
         return_value=246.0,
     )
     def test_conflicting_catalog_album_requires_matching_duration(
@@ -345,7 +345,7 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
             )
         )
 
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.read_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.read_media_metadata")
     def test_unanimous_sibling_album_year_is_used_as_consensus(self, read_mock) -> None:
         read_mock.side_effect = [
             EditableMediaMetadata(album="Hawa Bodol", year=""),
@@ -369,7 +369,7 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
         )
 
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher.find_album_release_year",
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher.find_album_release_year",
         return_value={"year": "1999", "page_title": "Aa Ab Laut Chalen"},
     )
     def test_conflicting_sibling_years_use_one_verified_album_year(self, _year_mock) -> None:
@@ -385,14 +385,14 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
         )
 
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher._media_quality_score",
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher._media_quality_score",
         side_effect=[(128000, 0, 100), (320000, 1, 200)],
     )
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher._media_duration",
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher._media_duration",
         side_effect=[240.0, 241.0],
     )
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.read_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.read_media_metadata")
     def test_enricher_removes_a_lower_quality_duplicate_recording(
         self, read_mock, _duration_mock, _quality_mock
     ) -> None:
@@ -415,10 +415,10 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
             self.assertEqual(existing.read_bytes(), b"existing")
 
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher._media_duration",
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher._media_duration",
         side_effect=[240.0, 420.0],
     )
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.read_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.read_media_metadata")
     def test_enricher_preserves_same_named_tracks_with_different_durations(
         self, read_mock, _duration_mock
     ) -> None:
@@ -441,11 +441,11 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
             self.assertTrue(existing.exists())
 
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher.reorder_track_numbers",
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher.reorder_track_numbers",
         return_value=1,
     )
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.replace_media_metadata")
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.read_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.replace_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.read_media_metadata")
     def test_rectifies_implausible_single_song_track_number(
         self, read_mock, _replace_mock, reorder_mock
     ) -> None:
@@ -472,8 +472,8 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
             self.assertEqual(report.completed, (song,))
             self.assertTrue(tracker.is_file())
 
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.replace_media_metadata")
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.read_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.replace_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.read_media_metadata")
     def test_normalizes_legacy_artist_separator_in_tag_and_filename(
         self, read_mock, replace_mock
     ) -> None:
@@ -509,13 +509,13 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
                 artwork_path=None,
             )
 
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.replace_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.replace_media_metadata")
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher.find_album_art",
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher.find_album_art",
         return_value="",
     )
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher.verify_metadata_evidence",
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher.verify_metadata_evidence",
         return_value=MetadataVerificationDecision(
             "review",
             {},
@@ -526,7 +526,7 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
             (),
         ),
     )
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.read_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.read_media_metadata")
     def test_year_qualified_folder_repairs_title_track_without_internet_evidence(
         self, read_mock, _verify_mock, _album_art_mock, replace_mock
     ) -> None:
@@ -569,11 +569,11 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
             )
 
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher."
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher."
         "MAX_PARALLEL_WORKERS",
         12,
     )
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher._enrich_one_file")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher._enrich_one_file")
     def test_more_than_nine_workers_execute_concurrently(self, enrich_one_mock) -> None:
         barrier = threading.Barrier(12, timeout=30)
         state_lock = threading.Lock()
@@ -603,20 +603,20 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
         self.assertEqual(report.scanned, 12)
         self.assertEqual(maximum_active, 12)
 
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.replace_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.replace_media_metadata")
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher.find_album_art",
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher.find_album_art",
         return_value="https://example.com/cover.jpg",
     )
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher.find_album_release_year",
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher.find_album_release_year",
         return_value={"year": "2020", "page_title": "Album"},
     )
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher.find_wikipedia_tracks",
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher.find_wikipedia_tracks",
         return_value=[{"title": "Song", "artists": "Exact Singer"}],
     )
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.read_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.read_media_metadata")
     def test_exact_wikipedia_match_fills_only_missing_fields(
         self, read_mock, _tracks_mock, _year_mock, _art_mock, replace_mock
     ) -> None:
@@ -639,20 +639,20 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
                 artwork_path="https://example.com/cover.jpg",
             )
 
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.replace_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.replace_media_metadata")
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher.find_catalog_song_metadata",
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher.find_catalog_song_metadata",
         return_value={},
     )
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher.find_album_release_year",
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher.find_album_release_year",
         side_effect=LookupError("not found"),
     )
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher.find_wikipedia_tracks",
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher.find_wikipedia_tracks",
         return_value=[],
     )
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.read_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.read_media_metadata")
     def test_no_verified_match_does_not_edit_the_file(
         self, read_mock, _tracks_mock, _year_mock, _catalog_mock, replace_mock
     ) -> None:
@@ -665,9 +665,9 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
             self.assertEqual(len(report.skipped), 1)
             replace_mock.assert_not_called()
 
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.replace_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.replace_media_metadata")
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher.find_catalog_song_metadata",
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher.find_catalog_song_metadata",
         return_value={
             "title": "Chine Phelechhi Rastaghat",
             "album": "Aschhe Bachhor Abar Hobe",
@@ -677,10 +677,10 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
         },
     )
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher.find_wikipedia_song_metadata",
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher.find_wikipedia_song_metadata",
         return_value={},
     )
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.read_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.read_media_metadata")
     def test_title_artist_filename_uses_verified_catalog_fallback(
         self, read_mock, _wikipedia_mock, catalog_mock, replace_mock
     ) -> None:
@@ -710,13 +710,13 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
                 artwork_path="https://example.com/album.jpg",
             )
 
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.replace_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.replace_media_metadata")
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher.find_catalog_song_metadata",
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher.find_catalog_song_metadata",
         return_value={},
     )
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher.find_wikipedia_song_metadata",
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher.find_wikipedia_song_metadata",
         return_value={
             "title": "Song",
             "album": "Arijit Singh Hits",
@@ -724,7 +724,7 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
             "year": "2020",
         },
     )
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.read_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.read_media_metadata")
     def test_rejects_artist_as_album_but_keeps_independently_verified_year(
         self, read_mock, _wiki_mock, _catalog_mock, replace_mock
     ) -> None:
@@ -741,9 +741,9 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
                 artwork_path=None,
             )
 
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.replace_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.replace_media_metadata")
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher.find_wikipedia_song_metadata",
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher.find_wikipedia_song_metadata",
         return_value={
             "title": "Song",
             "album": "Verified Film",
@@ -751,7 +751,7 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
             "year": "2020",
         },
     )
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.read_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.read_media_metadata")
     def test_repairs_artist_contaminated_album_even_when_other_fields_are_complete(
         self, read_mock, _wiki_mock, replace_mock
     ) -> None:
@@ -774,8 +774,8 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
                 track, {"album": "Verified Film (2020)"}, artwork_path=None
             )
 
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.replace_media_metadata")
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.read_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.replace_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.read_media_metadata")
     def test_complete_audio_is_renamed_recursively_and_video_is_not_scanned(
         self, read_mock, _replace_mock
     ) -> None:
@@ -807,20 +807,20 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
             self.assertEqual(read_mock.call_args_list[0].args, (original,))
             self.assertEqual(read_mock.call_args_list[1].args, (renamed,))
 
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.replace_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.replace_media_metadata")
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher.find_album_release_year",
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher.find_album_release_year",
         return_value={},
     )
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher.find_catalog_song_metadata",
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher.find_catalog_song_metadata",
         return_value={},
     )
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher.find_wikipedia_tracks",
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher.find_wikipedia_tracks",
         return_value=[],
     )
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.read_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.read_media_metadata")
     def test_structured_filename_retags_missing_core_fields_without_inventing_extras(
         self, read_mock, _wiki_mock, _catalog_mock, _year_mock, replace_mock
     ) -> None:
@@ -844,16 +844,16 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
                 artwork_path=None,
             )
 
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.replace_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.replace_media_metadata")
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher.find_catalog_song_metadata",
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher.find_catalog_song_metadata",
         return_value={},
     )
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher.find_wikipedia_song_metadata",
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher.find_wikipedia_song_metadata",
         return_value={},
     )
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.read_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.read_media_metadata")
     def test_removes_artist_contaminated_album_when_no_replacement_is_verified(
         self, read_mock, _wiki_mock, _catalog_mock, replace_mock
     ) -> None:
@@ -880,21 +880,21 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
                 track, {"album": ""}, artwork_path=None
             )
 
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.replace_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.replace_media_metadata")
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher.find_album_release_year",
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher.find_album_release_year",
         return_value={},
     )
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher.find_catalog_song_metadata",
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher.find_catalog_song_metadata",
         return_value={},
     )
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher.find_wikipedia_tracks",
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher.find_wikipedia_tracks",
         return_value=[],
     )
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.read_media_metadata")
-    @patch("youtube_audio_video_downloader.services.album_folders.read_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.read_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_folders.read_media_metadata")
     def test_repairs_soundtrack_suffix_in_source_and_destination_trees(
         self, folder_read_mock, read_mock, _wiki_mock, _catalog_mock, _year_mock,
         replace_mock,
@@ -939,9 +939,9 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
             for call in replace_mock.call_args_list:
                 self.assertEqual(call.args[1], {"album": "Byabodhan (2025)"})
 
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.replace_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.replace_media_metadata")
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher.find_catalog_song_metadata",
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher.find_catalog_song_metadata",
         return_value={
             "title": "Bhalo Lage Swapnoke",
             "album": "Hero",
@@ -951,7 +951,7 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
         },
     )
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher.find_wikipedia_song_metadata",
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher.find_wikipedia_song_metadata",
         return_value={
             "title": "Bhalo Lage Swapnoke",
             "album": "Hero",
@@ -960,7 +960,7 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
             "page_title": "Sonu Nigam discography",
         },
     )
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.read_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.read_media_metadata")
     def test_preserves_existing_album_and_year_while_refreshing_artwork(
         self, read_mock, _wiki_mock, _catalog_mock, replace_mock
     ) -> None:
@@ -986,13 +986,13 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
                 artwork_path="https://covers.example/hero.jpg",
             )
 
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.replace_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.replace_media_metadata")
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher.find_album_art",
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher.find_album_art",
         return_value="https://covers.example/bhoot-bangla.jpg",
     )
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher.verify_metadata_evidence",
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher.verify_metadata_evidence",
         return_value=MetadataVerificationDecision(
             "review",
             {},
@@ -1004,7 +1004,7 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
         ),
     )
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher.find_catalog_song_metadata",
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher.find_catalog_song_metadata",
         return_value={
             "title": "Tu Hi Disda",
             "album": "Love on Repeat",
@@ -1013,7 +1013,7 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
             "album_art": "https://covers.example/love-on-repeat.jpg",
         },
     )
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.read_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.read_media_metadata")
     def test_album_folder_repairs_prior_compilation_tag_and_wrong_artwork(
         self,
         read_mock,
@@ -1056,9 +1056,9 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
                 artwork_path="https://covers.example/bhoot-bangla.jpg",
             )
 
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.replace_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.replace_media_metadata")
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher.find_catalog_song_metadata",
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher.find_catalog_song_metadata",
         return_value={
             "title": "Kichu Hashi Kichu Asha (Original)",
             "album": "Bandhan (Original Motion Picture Soundtrack) [Original]",
@@ -1068,7 +1068,7 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
         },
     )
     @patch(
-        "youtube_audio_video_downloader.services.album_metadata_enricher.find_wikipedia_song_metadata",
+        "youtube_audio_video_downloader.services.albums.album_metadata_enricher.find_wikipedia_song_metadata",
         return_value={
             "title": "Kichu Hashi Kichu Asha",
             "album": "Bandhan",
@@ -1076,7 +1076,7 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
             "year": "2004",
         },
     )
-    @patch("youtube_audio_video_downloader.services.album_metadata_enricher.read_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_metadata_enricher.read_media_metadata")
     def test_replaces_modern_lofi_metadata_with_verified_original(
         self, read_mock, _wiki_mock, _catalog_mock, replace_mock
     ) -> None:
@@ -1107,7 +1107,7 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
                 artwork_path="https://covers.example/bandhan.jpg",
             )
 
-    @patch("youtube_audio_video_downloader.gui.operations.enrich_folder_metadata")
+    @patch("youtube_audio_video_downloader.gui.runtime.operations.enrich_folder_metadata")
     def test_gui_operation_reports_parallel_enrichment(self, enrich_mock) -> None:
         enrich_mock.return_value = MetadataEnrichmentReport(
             scanned=4,
@@ -1128,14 +1128,14 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
         self.assertEqual(enrich_mock.call_args.kwargs["additional_folders"], ("",))
 
     @patch(
-        "youtube_audio_video_downloader.gui.operations._reorder_album_from_wikipedia",
+        "youtube_audio_video_downloader.gui.runtime.operations._reorder_album_from_wikipedia",
         return_value=2,
     )
     @patch(
-        "youtube_audio_video_downloader.gui.operations.read_media_metadata",
+        "youtube_audio_video_downloader.gui.runtime.operations.read_media_metadata",
         return_value=EditableMediaMetadata(album="Saawariya"),
     )
-    @patch("youtube_audio_video_downloader.gui.operations.enrich_folder_metadata")
+    @patch("youtube_audio_video_downloader.gui.runtime.operations.enrich_folder_metadata")
     def test_album_enricher_applies_wikipedia_order_to_every_completed_album_folder(
         self, enrich_mock, _read_mock, reorder_mock
     ) -> None:

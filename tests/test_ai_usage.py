@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from youtube_audio_video_downloader.gui.ai_usage import operation_ai_usage
+from youtube_audio_video_downloader.gui.runtime.ai_usage import operation_ai_usage
 
 
 @pytest.mark.parametrize(

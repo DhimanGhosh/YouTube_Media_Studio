@@ -6,7 +6,7 @@ from urllib.error import URLError
 
 import pytest
 
-from youtube_audio_video_downloader.services import ai_provider
+from youtube_audio_video_downloader.services.ai import ai_provider
 
 
 class Response:
@@ -179,7 +179,7 @@ def test_selected_generic_provider_routes_legacy_structured_calls_through_agno(
 ) -> None:
     monkeypatch.setenv("YOUTUBE_MEDIA_STUDIO_AI_PROVIDER", "openai")
     with patch(
-        "youtube_audio_video_downloader.services.agno_provider.run_structured_json_agent",
+        "youtube_audio_video_downloader.services.ai.agno_provider.run_structured_json_agent",
         return_value=({"answer": "hosted"}, "OpenAI", "gpt-test"),
     ) as run_agent:
         result = ai_provider.chat_json(

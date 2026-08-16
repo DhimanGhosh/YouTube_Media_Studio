@@ -383,7 +383,7 @@ def build_desktop(target: str) -> Path:
     run(
         frozen_command(
             name=EXECUTABLE_BASENAME,
-            entry="run_gui.py",
+            entry="run_app.py",
             output=gui_output,
             windowed=True,
             onefile=target == "windows",

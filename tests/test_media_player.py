@@ -23,7 +23,7 @@ from PyQt6.QtMultimedia import QAudioBuffer, QAudioFormat, QMediaPlayer  # noqa:
 from PyQt6.QtTest import QSignalSpy, QTest  # noqa: E402
 from PyQt6.QtWidgets import QApplication, QListWidget, QMenu, QStackedWidget  # noqa: E402
 
-from youtube_audio_video_downloader.gui.media_player import (  # noqa: E402
+from youtube_audio_video_downloader.gui.media.media_player import (  # noqa: E402
     ArtistRepairDialog,
     EMBEDDED_VIDEO_MAX_HEIGHT,
     EMBEDDED_VIDEO_MIN_HEIGHT,
@@ -32,20 +32,20 @@ from youtube_audio_video_downloader.gui.media_player import (  # noqa: E402
     VIDEO_TABLE_ROW_HEIGHT,
     VIDEO_THUMBNAIL_SIZE,
 )
-from youtube_audio_video_downloader.gui.widgets import (  # noqa: E402
+from youtube_audio_video_downloader.gui.components.widgets import (  # noqa: E402
     BlankClickSelectionFilter,
 )
-from youtube_audio_video_downloader.services.library_recommendations import (  # noqa: E402
+from youtube_audio_video_downloader.services.ai.library_recommendations import (  # noqa: E402
     LibraryRecommendation,
 )
-from youtube_audio_video_downloader.services.artist_canonicalizer import (  # noqa: E402
+from youtube_audio_video_downloader.services.media.artist_canonicalizer import (  # noqa: E402
     ArtistRenameSuggestion,
 )
-from youtube_audio_video_downloader.services.media_library import LibraryItem  # noqa: E402
-from youtube_audio_video_downloader.services.media_playlists import (  # noqa: E402
+from youtube_audio_video_downloader.services.media.media_library import LibraryItem  # noqa: E402
+from youtube_audio_video_downloader.services.media.media_playlists import (  # noqa: E402
     decode_playlists,
 )
-from youtube_audio_video_downloader.services.remote_media import (  # noqa: E402
+from youtube_audio_video_downloader.services.media.remote_media import (  # noqa: E402
     RemoteMediaServer,
     media_id,
 )
@@ -828,7 +828,7 @@ class MediaPlayerPageTest(unittest.TestCase):
         with (
             patch.dict(os.environ, {"YMS_DISABLE_REMOTE_ACCESS": ""}),
             patch(
-                "youtube_audio_video_downloader.gui.media_player.RemoteMediaServer",
+                "youtube_audio_video_downloader.gui.media.media_player.RemoteMediaServer",
                 return_value=restarted,
             ) as server_type,
         ):
@@ -857,7 +857,7 @@ class MediaPlayerPageTest(unittest.TestCase):
         with (
             patch.dict(os.environ, {"YMS_DISABLE_REMOTE_ACCESS": ""}),
             patch(
-                "youtube_audio_video_downloader.gui.media_player.RemoteMediaServer"
+                "youtube_audio_video_downloader.gui.media.media_player.RemoteMediaServer"
             ) as server_type,
         ):
             page = MediaLibraryPage(settings)
@@ -1036,7 +1036,7 @@ class MediaPlayerPageTest(unittest.TestCase):
         current_path = self.page.queue[self.page.queue_index].path
 
         with patch(
-            "youtube_audio_video_downloader.gui.media_player.random.shuffle",
+            "youtube_audio_video_downloader.gui.media.media_player.random.shuffle",
             side_effect=lambda values: values.reverse(),
         ):
             self.page.set_shuffle_enabled(True)
@@ -1052,7 +1052,7 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.page.filtered = [songs[0], songs[1], songs[2], songs[1], songs[3]]
         self.page._load_current = Mock()
         with patch(
-            "youtube_audio_video_downloader.gui.media_player.random.shuffle",
+            "youtube_audio_video_downloader.gui.media.media_player.random.shuffle",
             side_effect=lambda values: values.reverse(),
         ) as shuffle_mock:
             self.page.shuffle_all_matches()
@@ -1170,7 +1170,7 @@ class MediaPlayerPageTest(unittest.TestCase):
         )
         expected = [LibraryRecommendation(item, "Artist matches the request", True)]
         with patch(
-            "youtube_audio_video_downloader.gui.media_player.recommend_library_tracks",
+            "youtube_audio_video_downloader.gui.media.media_player.recommend_library_tracks",
             return_value=expected,
         ) as recommendation_mock:
             self.page.recommendation_request.setText("calm Test Artist songs")
@@ -1202,7 +1202,7 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.page.recommendation_limit.setValue(5)
         self.page.recommendation_request.setText("slow bengali songs, return 12 results")
         with patch(
-            "youtube_audio_video_downloader.gui.media_player.recommend_library_tracks",
+            "youtube_audio_video_downloader.gui.media.media_player.recommend_library_tracks",
             return_value=[],
         ) as recommendation_mock:
             self.page.request_ai_recommendations()
@@ -1220,7 +1220,7 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.page.recommendation_limit.setValue(5)
         for request, expected in cases:
             with self.subTest(request=request), patch(
-                "youtube_audio_video_downloader.gui.media_player.recommend_library_tracks",
+                "youtube_audio_video_downloader.gui.media.media_player.recommend_library_tracks",
                 return_value=[],
             ) as recommendation_mock:
                 self.page.recommendation_request.setText(request)
@@ -1490,6 +1490,20 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.assertEqual(self.page.aspect_button.text(), "Aspect: 16:9")
         self.assertEqual(self.page.crop_button.text(), "Crop: 16:10")
 
+        self.page._repeat_mode = "all"
+        self.page._advance_after_end()
+        self.assertEqual(self.page.aspect_button.text(), "Aspect: 16:9")
+        self.assertEqual(self.page.crop_button.text(), "Crop: 16:10")
+
+        self.page.stop()
+        self.assertEqual(self.page.crop_button.text(), "Crop: 16:10")
+        self.page.play()
+        self.assertEqual(self.page.aspect_button.text(), "Aspect: Default")
+        self.assertEqual(self.page.crop_button.text(), "Crop: Default")
+
+        self.page.cycle_video_aspect()
+        self.page.cycle_video_crop()
+
         self.page._replace_queue([second])
         self.assertEqual(self.page.aspect_button.text(), "Aspect: Default")
         self.assertEqual(self.page.crop_button.text(), "Crop: Default")
@@ -1620,7 +1634,7 @@ class MediaPlayerPageTest(unittest.TestCase):
         )
 
         with patch(
-            "youtube_audio_video_downloader.gui.media_player.video_thumbnail_bytes",
+            "youtube_audio_video_downloader.gui.media.media_player.video_thumbnail_bytes",
             return_value=bytes(payload),
         ):
             self.page.apply_filters()
@@ -1681,7 +1695,7 @@ class MediaPlayerPageTest(unittest.TestCase):
         buffer.close()
         self.page._artwork_cache.clear()
         with patch(
-            "youtube_audio_video_downloader.gui.media_player.artwork_bytes",
+            "youtube_audio_video_downloader.gui.media.media_player.artwork_bytes",
             return_value=bytes(payload),
         ):
             self.page._render_albums()
@@ -1713,7 +1727,7 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.page.queue_index = 0
 
         with patch(
-            "youtube_audio_video_downloader.gui.media_player.artwork_bytes",
+            "youtube_audio_video_downloader.gui.media.media_player.artwork_bytes",
             return_value=bytes(payload),
         ):
             self.page._load_current()

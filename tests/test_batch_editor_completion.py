@@ -11,7 +11,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PyQt6.QtWidgets import QApplication  # noqa: E402
 from PyQt6.QtWidgets import QPushButton  # noqa: E402
 
-from youtube_audio_video_downloader.gui.widgets import JsonBatchEditor  # noqa: E402
+from youtube_audio_video_downloader.gui.components.widgets import JsonBatchEditor  # noqa: E402
 
 
 class BatchEditorCompletionTest(unittest.TestCase):

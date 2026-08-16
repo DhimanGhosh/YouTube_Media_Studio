@@ -10,8 +10,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from youtube_audio_video_downloader.core.cancellation import CancellationToken
-from youtube_audio_video_downloader.gui.operations import execute_operation
-from youtube_audio_video_downloader.services.album_consolidator import (
+from youtube_audio_video_downloader.gui.runtime.operations import execute_operation
+from youtube_audio_video_downloader.services.albums.album_consolidator import (
     ConsolidationReport,
     _reorder_album_from_wikipedia,
     _wikipedia_track_index,
@@ -19,9 +19,9 @@ from youtube_audio_video_downloader.services.album_consolidator import (
     album_contains_artist,
     consolidate_albums,
 )
-from youtube_audio_video_downloader.services.media_metadata import EditableMediaMetadata
-from youtube_audio_video_downloader.services.media_metadata import read_media_metadata
-from youtube_audio_video_downloader.services.album_metadata_enricher import (
+from youtube_audio_video_downloader.services.media.media_metadata import EditableMediaMetadata
+from youtube_audio_video_downloader.services.media.media_metadata import read_media_metadata
+from youtube_audio_video_downloader.services.albums.album_metadata_enricher import (
     MetadataEnrichmentReport,
 )
 
@@ -29,7 +29,7 @@ from youtube_audio_video_downloader.services.album_metadata_enricher import (
 class AlbumConsolidatorTest(unittest.TestCase):
     def setUp(self) -> None:
         self.reorder_patcher = patch(
-            "youtube_audio_video_downloader.services.album_consolidator._reorder_album_from_wikipedia",
+            "youtube_audio_video_downloader.services.albums.album_consolidator._reorder_album_from_wikipedia",
             return_value=0,
         )
         self.reorder_patcher.start()
@@ -43,7 +43,7 @@ class AlbumConsolidatorTest(unittest.TestCase):
         )
         self.assertTrue(album_contains_artist("Hits of Kumar Sanu", "Kumar Sanu"))
 
-    @patch("youtube_audio_video_downloader.services.album_consolidator.read_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_consolidator.read_media_metadata")
     def test_groups_audio_and_video_by_album_without_overwriting(self, read_mock) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -80,7 +80,7 @@ class AlbumConsolidatorTest(unittest.TestCase):
             self.assertEqual(existing.read_bytes(), b"existing")
             self.assertNotIn(unknown, [Path(call.args[0]) for call in read_mock.call_args_list])
 
-    @patch("youtube_audio_video_downloader.services.album_consolidator.read_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_consolidator.read_media_metadata")
     def test_agentic_move_leaves_unverified_audio_in_source(self, read_mock) -> None:
         read_mock.return_value = EditableMediaMetadata(
             title="Song", album="Possibly Wrong (2012)", artists="Artist"
@@ -105,8 +105,8 @@ class AlbumConsolidatorTest(unittest.TestCase):
             self.assertTrue(review.is_file())
             self.assertTrue(any("left in source for review" in item for item in report.skipped))
 
-    @patch("youtube_audio_video_downloader.services.album_consolidator.replace_media_metadata")
-    @patch("youtube_audio_video_downloader.services.album_consolidator.read_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_consolidator.replace_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_consolidator.read_media_metadata")
     def test_move_normalizes_soundtrack_release_suffix_before_grouping(
         self, read_mock, replace_mock
     ) -> None:
@@ -128,8 +128,8 @@ class AlbumConsolidatorTest(unittest.TestCase):
             self.assertEqual(report.moved, (moved,))
             replace_mock.assert_called_once_with(track, {"album": "Byabodhan"})
 
-    @patch("youtube_audio_video_downloader.services.album_consolidator.replace_media_metadata")
-    @patch("youtube_audio_video_downloader.services.album_consolidator.read_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_consolidator.replace_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_consolidator.read_media_metadata")
     def test_removes_album_tag_containing_a_credited_artist(
         self, read_mock, replace_mock
     ) -> None:
@@ -151,11 +151,11 @@ class AlbumConsolidatorTest(unittest.TestCase):
             replace_mock.assert_called_once_with(track, {"album": ""})
 
     @patch(
-        "youtube_audio_video_downloader.services.album_consolidator._probe_album",
+        "youtube_audio_video_downloader.services.albums.album_consolidator._probe_album",
         return_value="",
     )
-    @patch("youtube_audio_video_downloader.services.album_consolidator.replace_media_metadata")
-    @patch("youtube_audio_video_downloader.services.album_consolidator.read_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_consolidator.replace_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_consolidator.read_media_metadata")
     def test_does_not_tag_structured_name_when_album_contains_artist(
         self, read_mock, replace_mock, _probe_mock
     ) -> None:
@@ -175,11 +175,11 @@ class AlbumConsolidatorTest(unittest.TestCase):
             replace_mock.assert_not_called()
 
     @patch(
-        "youtube_audio_video_downloader.services.album_consolidator._probe_album",
+        "youtube_audio_video_downloader.services.albums.album_consolidator._probe_album",
         return_value="",
     )
-    @patch("youtube_audio_video_downloader.services.album_consolidator.replace_media_metadata")
-    @patch("youtube_audio_video_downloader.services.album_consolidator.read_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_consolidator.replace_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_consolidator.read_media_metadata")
     def test_untagged_structured_filename_is_tagged_before_move(
         self, read_mock, replace_mock, _probe_mock
     ) -> None:
@@ -237,7 +237,7 @@ class AlbumConsolidatorTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "inside the source"):
                 consolidate_albums(source, source / "organized")
 
-    @patch("youtube_audio_video_downloader.services.album_consolidator.read_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_consolidator.read_media_metadata")
     def test_album_already_under_destination_is_not_deleted(self, read_mock) -> None:
         read_mock.return_value = EditableMediaMetadata(
             title="Song", album="Album (2020)", artists="Artist", year="2020"
@@ -255,7 +255,7 @@ class AlbumConsolidatorTest(unittest.TestCase):
             self.assertEqual(report.deleted, ())
             self.assertTrue(track.is_file())
 
-    @patch("youtube_audio_video_downloader.services.album_consolidator.read_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_consolidator.read_media_metadata")
     def test_identical_existing_destination_title_deletes_source(self, read_mock) -> None:
         read_mock.return_value = EditableMediaMetadata(album="Album")
         with tempfile.TemporaryDirectory() as directory:
@@ -275,7 +275,7 @@ class AlbumConsolidatorTest(unittest.TestCase):
             self.assertFalse(track.exists())
             self.assertEqual(target.read_bytes(), b"identical media")
 
-    @patch("youtube_audio_video_downloader.services.album_consolidator.read_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_consolidator.read_media_metadata")
     def test_existing_destination_title_deletes_source_without_copying(
         self, read_mock
     ) -> None:
@@ -303,7 +303,7 @@ class AlbumConsolidatorTest(unittest.TestCase):
             self.assertEqual(existing.read_bytes(), b"existing media")
             self.assertFalse((existing.parent / track.name).exists())
 
-    @patch("youtube_audio_video_downloader.services.album_consolidator.time.sleep")
+    @patch("youtube_audio_video_downloader.services.albums.album_consolidator.time.sleep")
     @patch.object(Path, "rename", side_effect=PermissionError("file is in use"))
     def test_failed_same_volume_move_never_leaves_a_destination_copy(
         self, _rename_mock, _sleep_mock
@@ -320,10 +320,10 @@ class AlbumConsolidatorTest(unittest.TestCase):
             self.assertFalse(target.exists())
 
     @patch(
-        "youtube_audio_video_downloader.services.album_consolidator._probe_album",
+        "youtube_audio_video_downloader.services.albums.album_consolidator._probe_album",
         return_value="Video Album",
     )
-    @patch("youtube_audio_video_downloader.services.album_consolidator.read_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_consolidator.read_media_metadata")
     def test_uses_ffprobe_album_fallback_for_video_containers(
         self, read_mock, _probe_mock
     ) -> None:
@@ -340,8 +340,8 @@ class AlbumConsolidatorTest(unittest.TestCase):
             self.assertEqual(report.moved, (expected,))
             self.assertTrue(expected.is_file())
 
-    @patch("youtube_audio_video_downloader.gui.operations.enrich_media_files")
-    @patch("youtube_audio_video_downloader.gui.operations.consolidate_albums")
+    @patch("youtube_audio_video_downloader.gui.runtime.operations.enrich_media_files")
+    @patch("youtube_audio_video_downloader.gui.runtime.operations.consolidate_albums")
     def test_gui_operation_enriches_only_moved_files_by_default(
         self, consolidate_mock, enrich_files_mock
     ) -> None:
@@ -375,9 +375,9 @@ class AlbumConsolidatorTest(unittest.TestCase):
             [Path("library/Album/one.mp3"), Path("library/Album/two.mp3")],
         )
 
-    @patch("youtube_audio_video_downloader.gui.operations.enrich_folder_metadata")
-    @patch("youtube_audio_video_downloader.gui.operations.enrich_media_files")
-    @patch("youtube_audio_video_downloader.gui.operations.consolidate_albums")
+    @patch("youtube_audio_video_downloader.gui.runtime.operations.enrich_folder_metadata")
+    @patch("youtube_audio_video_downloader.gui.runtime.operations.enrich_media_files")
+    @patch("youtube_audio_video_downloader.gui.runtime.operations.consolidate_albums")
     def test_gui_operation_can_skip_repeated_enrichment(
         self, consolidate_mock, enrich_files_mock, enrich_folder_mock
     ) -> None:
@@ -405,9 +405,9 @@ class AlbumConsolidatorTest(unittest.TestCase):
         enrich_files_mock.assert_not_called()
         enrich_folder_mock.assert_not_called()
 
-    @patch("youtube_audio_video_downloader.gui.operations.enrich_folder_metadata")
-    @patch("youtube_audio_video_downloader.gui.operations.enrich_media_files")
-    @patch("youtube_audio_video_downloader.gui.operations.consolidate_albums")
+    @patch("youtube_audio_video_downloader.gui.runtime.operations.enrich_folder_metadata")
+    @patch("youtube_audio_video_downloader.gui.runtime.operations.enrich_media_files")
+    @patch("youtube_audio_video_downloader.gui.runtime.operations.consolidate_albums")
     def test_gui_operation_can_enrich_the_complete_destination(
         self, consolidate_mock, enrich_files_mock, enrich_folder_mock
     ) -> None:
@@ -440,9 +440,9 @@ class AlbumConsolidatorTest(unittest.TestCase):
         self.assertEqual(enrich_folder_mock.call_args.args[0], Path("library").resolve())
         self.assertEqual(enrich_folder_mock.call_args.kwargs["workers"], 7)
 
-    @patch("youtube_audio_video_downloader.services.album_consolidator.reorder_track_numbers")
-    @patch("youtube_audio_video_downloader.services.album_consolidator.find_wikipedia_tracks")
-    @patch("youtube_audio_video_downloader.services.album_consolidator.read_media_metadata")
+    @patch("youtube_audio_video_downloader.services.albums.album_consolidator.reorder_track_numbers")
+    @patch("youtube_audio_video_downloader.services.albums.album_consolidator.find_wikipedia_tracks")
+    @patch("youtube_audio_video_downloader.services.albums.album_consolidator.read_media_metadata")
     def test_wikipedia_order_is_compressed_to_the_local_subset(
         self, read_mock, wikipedia_mock, reorder_mock
     ) -> None:
@@ -471,7 +471,7 @@ class AlbumConsolidatorTest(unittest.TestCase):
         )
 
     @patch(
-        "youtube_audio_video_downloader.services.album_consolidator._track_duration",
+        "youtube_audio_video_downloader.services.albums.album_consolidator._track_duration",
         return_value=238.0,
     )
     def test_wikipedia_order_matches_versions_and_duration_confirmed_typos(

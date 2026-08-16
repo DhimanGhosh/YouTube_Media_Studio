@@ -12,7 +12,7 @@ from youtube_audio_video_downloader.domain.models import (
     ParsedSongMetadata,
     Song,
 )
-from youtube_audio_video_downloader.services.audio_downloader import (
+from youtube_audio_video_downloader.services.downloads.audio_downloader import (
     YouTubeAudioDownloader,
 )
 
@@ -33,7 +33,7 @@ class ExistingDownloadSkipTest(unittest.TestCase):
             existing.parent.mkdir()
             existing.write_bytes(b"existing")
             with patch(
-                "youtube_audio_video_downloader.services.audio_downloader.find_existing_album_track",
+                "youtube_audio_video_downloader.services.downloads.audio_downloader.find_existing_album_track",
                 return_value=existing,
             ), patch.object(downloader, "_wait_before_download") as wait_mock:
                 result = downloader._download_song(song, root)

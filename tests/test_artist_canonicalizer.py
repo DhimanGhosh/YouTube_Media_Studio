@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from youtube_audio_video_downloader.services.artist_canonicalizer import (
+from youtube_audio_video_downloader.services.media.artist_canonicalizer import (
     apply_artist_replacements,
     repair_artist_metadata,
     suggest_artist_renames,
 )
-from youtube_audio_video_downloader.services.media_metadata import EditableMediaMetadata
+from youtube_audio_video_downloader.services.media.media_metadata import EditableMediaMetadata
 
 
 def test_suggestions_merge_dotted_initials_and_short_full_name_variants() -> None:
@@ -41,10 +41,10 @@ def test_reviewed_replacements_remove_duplicate_credits() -> None:
 
 
 @patch(
-    "youtube_audio_video_downloader.services.artist_canonicalizer.replace_media_metadata"
+    "youtube_audio_video_downloader.services.media.artist_canonicalizer.replace_media_metadata"
 )
 @patch(
-    "youtube_audio_video_downloader.services.artist_canonicalizer.read_media_metadata"
+    "youtube_audio_video_downloader.services.media.artist_canonicalizer.read_media_metadata"
 )
 def test_repair_updates_artist_and_album_artist_tags(read_mock, replace_mock) -> None:
     read_mock.return_value = EditableMediaMetadata(

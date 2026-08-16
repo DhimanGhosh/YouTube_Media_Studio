@@ -28,20 +28,19 @@ parse arguments and delegate; GUI pages build parameter dictionaries and delegat
 | Package/module | Responsibility |
 | --- | --- |
 | `launcher.py` | Select GUI, CLI command, or runtime doctor; configure bundled tools |
-| `gui/app.py` | Create `QApplication`, storage, crash reporting, palette, and `MainWindow` |
-| `gui/main_window.py` | Navigation, forms, settings, operation lifecycle, dashboard, live logs |
-| `gui/widgets.py` | Reusable controls, batch editors, collapsible sections, async form helpers |
-| `gui/workers.py` | Background execution, retries, log capture, cancellation, progress signals |
-| `gui/operations.py` | Map operation names to service calls and normalize summaries |
-| `gui/media_player.py` | Library scan/search, album browser, queue, playback, curator presentation |
+| `gui/application/app.py` | Create `QApplication`, storage, crash reporting, palette, and `MainWindow` |
+| `gui/application/main_window.py` | Navigation, forms, settings, operation lifecycle, dashboard, live logs |
+| `gui/components/widgets.py` | Reusable controls, batch editors, collapsible sections, async form helpers |
+| `gui/runtime/workers.py` | Background execution, retries, log capture, cancellation, progress signals |
+| `gui/runtime/operations.py` | Map operation names to service calls and normalize summaries |
+| `gui/media/media_player.py` | Library scan/search, album browser, queue, playback, curator presentation |
 | `domain/models.py` | Immutable normalized download and selection records |
 | `loaders/json_loader.py` | Validate batch JSON and construct domain models |
-| `services/*_downloader.py` | Download planning, parallel execution, yt-dlp options, result reports |
-| `services/*_splitter.py` | Source acquisition, segment planning, FFmpeg splitting, tagging |
-| `services/media_*.py` | Scan, read/write tags, edit, trim, and redownload local media |
-| `services/album_*.py` | Album naming, editing, enrichment, folder normalization, consolidation |
-| `services/agno_provider.py` | Agno model construction, structured output, primary/fallback execution |
-| `services/*agent*.py` | Operation preflight, metadata adjudication, and semantic decisions |
+| `services/downloads/` | Search, download, extraction, range, and redownload workflows |
+| `services/albums/` | Album discovery, editing, enrichment, splitting, ordering, and organization |
+| `services/media/` | Library scanning, playlists, local editing, metadata access, and remote media |
+| `services/metadata/` | Evidence gathering, verification, tracking, release years, and enrichment |
+| `services/ai/` | Provider construction, recommendation, preflight, and adjudication agents |
 | `config/app_storage.py` | Resolve/migrate persistent application-data directories |
 | `config/runtime_tools.py` | Find bundled/system tools and hide Windows subprocess consoles |
 | `core/*` | Cancellation, exceptions, file access retries, safe filesystem names |
