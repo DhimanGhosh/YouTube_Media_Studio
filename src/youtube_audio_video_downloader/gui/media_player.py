@@ -125,6 +125,8 @@ VIDEO_TABLE_ROW_HEIGHT = 90
 VIDEO_TABLE_ARTWORK_WIDTH = round(VIDEO_TABLE_ROW_HEIGHT * 16 / 9)
 ARTWORK_COLUMN_INDEX = 1
 COMPACT_TABLE_ROW_HEIGHT = 30
+PLAYLIST_POSITION_ROLE = int(Qt.ItemDataRole.UserRole) + 1
+PLAYLIST_NAME_ROLE = int(Qt.ItemDataRole.UserRole) + 2
 VIDEO_ASPECT_MODES: tuple[tuple[str, float | None], ...] = (
     ("Default", None),
     ("16:9", 16 / 9),
@@ -593,14 +595,38 @@ class SortableTableItem(QTableWidgetItem):
         return self.text().casefold() < other.text().casefold()
 
 
-class AnimatedQueueList(QListWidget):
-    """Single-row internal-move list with a short visual glide after dropping."""
+class OptionalYearSpinBox(QSpinBox):
+    """Numeric year input whose zero value is presented as a real hint."""
+
+    def __init__(self, hint: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setRange(0, 2100)
+        self.lineEdit().setPlaceholderText(hint)
+        self.setAccessibleName(hint)
+
+    def textFromValue(self, value: int) -> str:  # noqa: N802
+        return "" if value == self.minimum() else str(value)
+
+    def valueFromText(self, text: str) -> int:  # noqa: N802
+        stripped = text.strip()
+        return int(stripped) if stripped.isdecimal() else self.minimum()
+
+
+class AnimatedReorderList(QListWidget):
+    """Internal-move list with a short visual glide after dropping."""
 
     orderChanged = pyqtSignal()
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        *,
+        selection_mode: QAbstractItemView.SelectionMode = (
+            QAbstractItemView.SelectionMode.SingleSelection
+        ),
+    ) -> None:
         super().__init__(parent)
-        self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.setSelectionMode(selection_mode)
         self.setDragEnabled(True)
         self.setAcceptDrops(True)
         self.setDropIndicatorShown(True)
@@ -1017,11 +1043,9 @@ class MediaLibraryPage(QWidget):
             self._media_type_changed
         )
         row.addWidget(self.media_type_filter)
-        self.year_from = QSpinBox()
-        self.year_to = QSpinBox()
+        self.year_from = OptionalYearSpinBox("From year")
+        self.year_to = OptionalYearSpinBox("To year")
         for spin, label in ((self.year_from, "From year"), (self.year_to, "To year")):
-            spin.setRange(0, 2100)
-            spin.setSpecialValueText(label)
             spin.setSizePolicy(
                 QSizePolicy.Policy.Fixed,
                 QSizePolicy.Policy.Fixed,
@@ -1029,8 +1053,9 @@ class MediaLibraryPage(QWidget):
             spin.setFixedWidth(
                 max(112, spin.fontMetrics().horizontalAdvance(label) + 52)
             )
-            spin.valueChanged.connect(self._schedule_search)
             row.addWidget(spin)
+        self.year_from.valueChanged.connect(self._year_from_changed)
+        self.year_to.valueChanged.connect(self._year_to_changed)
         self.online_search_button = QPushButton("Search online if missing")
         self.online_search_button.setObjectName("secondaryButton")
         self.online_search_button.setSizePolicy(
@@ -1689,15 +1714,33 @@ class MediaLibraryPage(QWidget):
             playlist_actions.addWidget(button)
         layout.addLayout(playlist_actions)
 
+        self.playlist_filter = QLineEdit()
+        self.playlist_filter.setAccessibleName("Filter playlist tracks")
+        self.playlist_filter.setPlaceholderText(
+            "Filter any track details…"
+        )
+        self.playlist_filter.setClearButtonEnabled(True)
+        self.playlist_filter.textChanged.connect(self._render_playlist_tracks)
+        layout.addWidget(self.playlist_filter)
+        self.playlist_filter_all = QCheckBox("Search all playlists")
+        self.playlist_filter_all.setToolTip(
+            "Show matching tracks from every saved playlist"
+        )
+        self.playlist_filter_all.toggled.connect(self._render_playlist_tracks)
+        layout.addWidget(self.playlist_filter_all)
+
         self.playlist_track_status = QLabel("Select or create a playlist")
         self.playlist_track_status.setObjectName("mutedLabel")
         self.playlist_track_status.setWordWrap(True)
         layout.addWidget(self.playlist_track_status)
-        self.playlist_tracks = QListWidget()
-        self.playlist_tracks.setSelectionMode(
-            QAbstractItemView.SelectionMode.ExtendedSelection
+        self.playlist_tracks = AnimatedReorderList(
+            selection_mode=QAbstractItemView.SelectionMode.ExtendedSelection
         )
         self.playlist_tracks.setAccessibleName("Tracks in selected playlist")
+        self.playlist_tracks.setToolTip(
+            "Drag tracks up or down to save a new playlist order"
+        )
+        self.playlist_tracks.orderChanged.connect(self._playlist_tracks_reordered)
         self.playlist_tracks.itemDoubleClicked.connect(
             lambda _entry: self.play_selected_playlist_tracks()
         )
@@ -1797,24 +1840,103 @@ class MediaLibraryPage(QWidget):
             for path in self.playlists.get(self._active_playlist, [])
         ]
 
+    @staticmethod
+    def _playlist_filter_matches(
+        item: LibraryItem,
+        playlist_name: str,
+        query: str,
+    ) -> bool:
+        """Match every search term against all useful playlist-track details."""
+
+        needles = [part.casefold() for part in query.split() if part.strip()]
+        haystack = " ".join(
+            (
+                item.title,
+                item.artists,
+                item.album,
+                str(item.year or ""),
+                item.media_type,
+                item.path,
+                playlist_name,
+            )
+        ).casefold()
+        return all(needle in haystack for needle in needles)
+
     def _render_playlist_tracks(self) -> None:
         self.playlist_tracks.clear()
-        paths = self.playlists.get(self._active_playlist, [])
-        if not self._active_playlist:
+        all_playlists = self.playlist_filter_all.isChecked()
+        self.playlist_tracks.setDragEnabled(not all_playlists)
+        self.playlist_tracks.setAcceptDrops(not all_playlists)
+        if not all_playlists and not self._active_playlist:
             self.playlist_track_status.setText("Select or create a playlist")
             return
-        self.playlist_track_status.setText(
-            f"{self._active_playlist} · {len(paths)} track(s)"
+        playlist_names = (
+            sorted(self.playlists, key=str.casefold)
+            if all_playlists
+            else [self._active_playlist]
         )
-        for item in self._active_playlist_items():
+        sources = [
+            (name, position, self._library_item_for_path(path))
+            for name in playlist_names
+            for position, path in enumerate(self.playlists.get(name, []))
+        ]
+        query = self.playlist_filter.text().strip()
+        visible = [
+            source
+            for source in sources
+            if self._playlist_filter_matches(source[2], source[0], query)
+        ]
+        scope = "All playlists" if all_playlists else self._active_playlist
+        count = (
+            f"{len(visible)} of {len(sources)} track(s)"
+            if query
+            else f"{len(visible)} track(s)"
+        )
+        self.playlist_track_status.setText(f"{scope} · {count}")
+        for playlist_name, position, item in visible:
             exists = Path(item.path).is_file()
             prefix = "" if exists else "[Missing] "
+            playlist_suffix = f" · {playlist_name}" if all_playlists else ""
             entry = QListWidgetItem(
                 f"{prefix}{item.title}\n{item.artists} · {item.album}"
+                f"{playlist_suffix}"
             )
             entry.setData(Qt.ItemDataRole.UserRole, item.path)
+            entry.setData(PLAYLIST_POSITION_ROLE, position)
+            entry.setData(PLAYLIST_NAME_ROLE, playlist_name)
             entry.setToolTip(item.path)
             self.playlist_tracks.addItem(entry)
+
+    def _playlist_tracks_reordered(self) -> None:
+        """Persist the selected playlist's displayed order after a drag."""
+
+        if (
+            self.playlist_filter_all.isChecked()
+            or not self._active_playlist
+            or self._active_playlist not in self.playlists
+        ):
+            return
+        entries = [
+            self.playlist_tracks.item(row)
+            for row in range(self.playlist_tracks.count())
+        ]
+        positions = sorted(
+            int(entry.data(PLAYLIST_POSITION_ROLE)) for entry in entries
+        )
+        paths = self.playlists[self._active_playlist]
+        if (
+            len(positions) != len(set(positions))
+            or any(position < 0 or position >= len(paths) for position in positions)
+        ):
+            self._render_playlist_tracks()
+            return
+        reordered = list(paths)
+        for position, entry in zip(positions, entries, strict=True):
+            reordered[position] = str(entry.data(Qt.ItemDataRole.UserRole) or "")
+        self.playlists[self._active_playlist] = reordered
+        for position, entry in zip(positions, entries, strict=True):
+            entry.setData(PLAYLIST_POSITION_ROLE, position)
+        self._save_playlists()
 
     def create_playlist(self, name: str | None = None) -> str:
         if name is None:
@@ -1957,28 +2079,46 @@ class MediaLibraryPage(QWidget):
         rows = sorted(
             {index.row() for index in self.playlist_tracks.selectionModel().selectedRows()}
         )
-        items = self._active_playlist_items()
-        return [items[row] for row in rows if 0 <= row < len(items)]
+        return [
+            self._library_item_for_path(
+                str(
+                    self.playlist_tracks.item(row).data(Qt.ItemDataRole.UserRole)
+                    or ""
+                )
+            )
+            for row in rows
+        ]
+
+    def _visible_playlist_items(self) -> list[LibraryItem]:
+        return [
+            self._library_item_for_path(
+                str(
+                    self.playlist_tracks.item(row).data(Qt.ItemDataRole.UserRole)
+                    or ""
+                )
+            )
+            for row in range(self.playlist_tracks.count())
+        ]
 
     def play_selected_playlist_tracks(self) -> None:
-        selected = self._selected_playlist_items() or self._active_playlist_items()
+        selected = self._selected_playlist_items() or self._visible_playlist_items()
         self._replace_queue(selected)
 
     def queue_selected_playlist_tracks(self) -> None:
-        selected = self._selected_playlist_items() or self._active_playlist_items()
+        selected = self._selected_playlist_items() or self._visible_playlist_items()
         self._append_to_queue(selected)
 
     def remove_selected_playlist_tracks(self) -> None:
-        if not self._active_playlist:
-            return
-        rows = sorted(
-            {index.row() for index in self.playlist_tracks.selectionModel().selectedRows()},
-            reverse=True,
-        )
-        paths = self.playlists[self._active_playlist]
-        for row in rows:
-            if 0 <= row < len(paths):
-                paths.pop(row)
+        removals: dict[str, set[int]] = {}
+        for entry in self.playlist_tracks.selectedItems():
+            name = str(entry.data(PLAYLIST_NAME_ROLE) or "")
+            position = int(entry.data(PLAYLIST_POSITION_ROLE))
+            removals.setdefault(name, set()).add(position)
+        for name, positions in removals.items():
+            paths = self.playlists.get(name, [])
+            for position in sorted(positions, reverse=True):
+                if 0 <= position < len(paths):
+                    paths.pop(position)
         self._save_playlists()
         self._render_playlists()
 
@@ -1994,7 +2134,9 @@ class MediaLibraryPage(QWidget):
         self._show_song_context_menu(
             selected,
             self.playlist_tracks.viewport().mapToGlobal(position),
-            source_playlist=self._active_playlist,
+            source_playlist=(
+                "" if self.playlist_filter_all.isChecked() else self._active_playlist
+            ),
         )
 
     def _build_queue_drawer(self) -> QWidget:
@@ -2020,7 +2162,7 @@ class MediaLibraryPage(QWidget):
         hint.setObjectName("mutedLabel")
         hint.setWordWrap(True)
         layout.addWidget(hint)
-        self.queue_list = AnimatedQueueList()
+        self.queue_list = AnimatedReorderList()
         self.queue_list.setAccessibleName("Current playback queue")
         self.queue_list.itemDoubleClicked.connect(self._play_queue_entry)
         self.queue_list.orderChanged.connect(self._queue_reordered)
@@ -2765,6 +2907,19 @@ class MediaLibraryPage(QWidget):
     def _schedule_search(self, *_args: object) -> None:
         self._search_request_id += 1
         self._search_debounce.start()
+
+    def _year_from_changed(self, value: int) -> None:
+        upper = self.year_to.value()
+        if value and upper and upper < value:
+            self.year_to.setValue(value)
+        self._schedule_search()
+
+    def _year_to_changed(self, value: int) -> None:
+        lower = self.year_from.value()
+        if value and lower and value < lower:
+            self.year_to.setValue(lower)
+            return
+        self._schedule_search()
 
     def _start_background_search(self) -> None:
         if self._search_thread is not None:
