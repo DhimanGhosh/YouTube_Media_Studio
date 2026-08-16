@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 
-REMOTE_MEDIA_HTML = Path(__file__).parents[1] / "assets" / "remote_media.html"
+REMOTE_MEDIA_HTML = Path(__file__).resolve().parents[2] / "assets" / "remote_media.html"
 
 
 def test_disconnect_stops_and_unloads_phone_media() -> None:

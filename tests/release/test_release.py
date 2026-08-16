@@ -11,7 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 
-SCRIPT = Path(__file__).resolve().parents[1] / "tools" / "release.py"
+SCRIPT = Path(__file__).resolve().parents[2] / "tools" / "release.py"
 SPEC = importlib.util.spec_from_file_location("release_tool", SCRIPT)
 assert SPEC and SPEC.loader
 release_tool = importlib.util.module_from_spec(SPEC)

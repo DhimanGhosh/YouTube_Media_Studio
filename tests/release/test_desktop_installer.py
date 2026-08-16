@@ -8,7 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 
-SCRIPT = Path(__file__).resolve().parents[1] / "tools" / "desktop_installer.py"
+SCRIPT = Path(__file__).resolve().parents[2] / "tools" / "desktop_installer.py"
 SPEC = importlib.util.spec_from_file_location("desktop_installer_tool", SCRIPT)
 assert SPEC and SPEC.loader
 installer = importlib.util.module_from_spec(SPEC)

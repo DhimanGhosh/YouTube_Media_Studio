@@ -2,7 +2,7 @@ from pathlib import Path
 
 
 WORKFLOW = (
-    Path(__file__).resolve().parents[1] / ".github" / "workflows" / "cross-platform-build.yml"
+    Path(__file__).resolve().parents[2] / ".github" / "workflows" / "cross-platform-build.yml"
 )
 
 

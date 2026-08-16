@@ -3,7 +3,7 @@ from pathlib import Path
 from youtube_audio_video_downloader import SUPPORTED_OPERATIONS
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 GUIDE = ROOT / "docs" / "PYTHON_LIBRARY.md"
 README = ROOT / "README.md"
 
