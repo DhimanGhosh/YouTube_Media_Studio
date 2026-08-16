@@ -2177,7 +2177,7 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(18, 18, 18, 18)
         self.tracks_input_file = PathPicker(
-            placeholder="Optional config/timestamps.txt",
+            placeholder="Optional timestamp text file",
             file_filter="Text files (*.txt);;All files (*)",
         )
         self.tracks_text = QPlainTextEdit()

@@ -323,9 +323,9 @@ youtube-media-studio [--data-dir FOLDER] <command> [options]
 | `doctor` | Verify FFmpeg, FFprobe, Deno, and yt-dlp |
 
 ```sh
-youtube-media-studio audio config/songs.json
-youtube-media-studio video config/videos.json
-youtube-media-studio album config/albums.json
+youtube-media-studio audio ~/youtube-media-jobs/songs.json
+youtube-media-studio video ~/youtube-media-jobs/videos.json
+youtube-media-studio album ~/youtube-media-jobs/albums.json
 youtube-media-studio doctor
 ```
 
@@ -384,7 +384,16 @@ uv run youtube-media-studio doctor
 ```
 
 Tracked job templates live in `config/*.sample.json`. Copy only the templates you
-need to their non-sample names; those local files are ignored by Git.
+need, preferably to a personal working directory outside the checkout. Non-sample
+job files are optional inputs and are not included in the repository. For example:
+
+```sh
+mkdir -p ~/youtube-media-jobs
+cp config/songs.sample.json ~/youtube-media-jobs/songs.json
+```
+
+Avoid staging personal job files because they may contain local paths or private
+download selections.
 
 <details>
 <summary><b>Quality checks and native builds</b></summary>
