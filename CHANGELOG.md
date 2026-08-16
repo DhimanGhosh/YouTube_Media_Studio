@@ -4,6 +4,11 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [2.11.2] - 2026-08-17
+
+### Fixed
+
+- fix: refine media library playback controls (#35) (`c0c9d4c`)
 ## [2.11.1] - 2026-08-17
 
 ### Changed

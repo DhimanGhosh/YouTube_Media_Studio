@@ -1,6 +1,6 @@
 [project]
 name = "youtube-media-studio"
-version = "2.11.1"
+version = "2.11.2"
 description = "AI-powered desktop and command-line toolkit for downloading, tagging, splitting, playing, and organizing media."
 readme = "README.md"
 authors = [
