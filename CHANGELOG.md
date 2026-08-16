@@ -4,6 +4,11 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [2.11.1] - 2026-08-17
+
+### Changed
+
+- test: organize suite by application area (#34) (`bb98f7c`)
 ## [2.11.0] - 2026-08-17
 
 ### Added
