@@ -11,7 +11,7 @@ from unittest.mock import patch
 from mutagen.id3 import TIT2, TRCK
 from mutagen.wave import WAVE
 
-from youtube_audio_video_downloader.services.track_reorder import reorder_track_numbers
+from youtube_audio_video_downloader.services.albums.track_reorder import reorder_track_numbers
 from youtube_audio_video_downloader.core.file_access import file_in_use_handler
 
 
@@ -39,7 +39,7 @@ class TrackReorderTest(unittest.TestCase):
 
             with (
                 patch(
-                    "youtube_audio_video_downloader.services.track_reorder.MutagenFile",
+                    "youtube_audio_video_downloader.services.albums.track_reorder.MutagenFile",
                     side_effect=[locked, available],
                 ),
                 file_in_use_handler(lambda _path, _action: None),
@@ -59,7 +59,7 @@ class TrackReorderTest(unittest.TestCase):
             second = _FakeAudio("2/12", "Second")
 
             with patch(
-                "youtube_audio_video_downloader.services.track_reorder.MutagenFile",
+                "youtube_audio_video_downloader.services.albums.track_reorder.MutagenFile",
                 side_effect=[first, second],
             ):
                 reorder_track_numbers([first_path, second_path])

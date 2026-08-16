@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from youtube_audio_video_downloader.services.album_art_finder import (
+from youtube_audio_video_downloader.services.albums.album_art_finder import (
     extract_square_image_urls,
     find_album_art,
     find_catalog_song_metadata,
@@ -83,7 +83,7 @@ class AlbumArtFinderTest(unittest.TestCase):
         '''
         self.assertEqual(extract_square_image_urls(page), ["https://example.com/cover.jpg"])
 
-    @patch("youtube_audio_video_downloader.services.album_art_finder.urlopen")
+    @patch("youtube_audio_video_downloader.services.albums.album_art_finder.urlopen")
     def test_catalog_lookup_returns_structured_exact_song_metadata(self, urlopen_mock) -> None:
         class Response:
             def __enter__(self):
@@ -113,7 +113,7 @@ class AlbumArtFinderTest(unittest.TestCase):
         self.assertEqual(result["duration_seconds"], "245.0")
         self.assertEqual(result["language"], "Bengali")
 
-    @patch("youtube_audio_video_downloader.services.album_art_finder.urlopen")
+    @patch("youtube_audio_video_downloader.services.albums.album_art_finder.urlopen")
     def test_catalog_lookup_uses_parent_collection_year_and_artwork(self, urlopen_mock) -> None:
         class Response:
             def __init__(self, payload: bytes):
@@ -148,7 +148,7 @@ class AlbumArtFinderTest(unittest.TestCase):
         self.assertEqual(result["album"], "Aamar Pujar Phool")
         self.assertEqual(result["album_art"], "https://correct/1200x1200bb.jpg")
 
-    @patch("youtube_audio_video_downloader.services.album_art_finder.urlopen")
+    @patch("youtube_audio_video_downloader.services.albums.album_art_finder.urlopen")
     def test_catalog_metadata_requires_every_multi_artist_hint(self, urlopen_mock) -> None:
         class Response:
             def __enter__(self):
@@ -175,7 +175,7 @@ class AlbumArtFinderTest(unittest.TestCase):
         self.assertEqual(result["album"], "Amanush")
         self.assertEqual(result["year"], "2010")
 
-    @patch("youtube_audio_video_downloader.services.album_art_finder.urlopen")
+    @patch("youtube_audio_video_downloader.services.albums.album_art_finder.urlopen")
     def test_catalog_song_art_requires_every_multi_artist_hint(self, urlopen_mock) -> None:
         class Response:
             def __enter__(self):
@@ -202,7 +202,7 @@ class AlbumArtFinderTest(unittest.TestCase):
             "https://right/1200x1200bb.jpg",
         )
 
-    @patch("youtube_audio_video_downloader.services.album_art_finder.urlopen")
+    @patch("youtube_audio_video_downloader.services.albums.album_art_finder.urlopen")
     def test_find_album_art_skips_current_catalog_cover(self, urlopen_mock) -> None:
         class Response:
             def __enter__(self):
@@ -230,14 +230,14 @@ class AlbumArtFinderTest(unittest.TestCase):
             "https://second/1200x1200bb.jpg",
         )
 
-    @patch("youtube_audio_video_downloader.services.album_art_finder.urlopen")
+    @patch("youtube_audio_video_downloader.services.albums.album_art_finder.urlopen")
     @patch(
-        "youtube_audio_video_downloader.services.serpapi_metadata."
+        "youtube_audio_video_downloader.services.metadata.serpapi_metadata."
         "find_serpapi_album_art",
         return_value="https://example.test/serpapi-cover.jpg",
     )
     @patch(
-        "youtube_audio_video_downloader.services.album_art_finder."
+        "youtube_audio_video_downloader.services.albums.album_art_finder."
         "_find_catalog_album_art",
         side_effect=OSError("catalog unavailable"),
     )
@@ -252,7 +252,7 @@ class AlbumArtFinderTest(unittest.TestCase):
         )
         google_open_mock.assert_not_called()
 
-    @patch("youtube_audio_video_downloader.services.album_art_finder.urlopen")
+    @patch("youtube_audio_video_downloader.services.albums.album_art_finder.urlopen")
     def test_catalog_metadata_can_skip_current_album(self, urlopen_mock) -> None:
         class Response:
             def __enter__(self):

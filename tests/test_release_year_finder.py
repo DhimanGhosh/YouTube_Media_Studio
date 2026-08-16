@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from youtube_audio_video_downloader.services.release_year_finder import (
+from youtube_audio_video_downloader.services.metadata.release_year_finder import (
     extract_release_year,
     find_album_release_year,
 )
@@ -19,7 +19,7 @@ class ReleaseYearFinderTest(unittest.TestCase):
     def test_does_not_use_unrelated_year(self) -> None:
         self.assertEqual(extract_release_year("Released in prose in 2017"), "")
 
-    @patch("youtube_audio_video_downloader.services.release_year_finder._wikipedia_api")
+    @patch("youtube_audio_video_downloader.services.metadata.release_year_finder._wikipedia_api")
     def test_retries_with_exact_film_query_when_soundtrack_search_is_noisy(
         self, api_mock
     ) -> None:
@@ -41,7 +41,7 @@ class ReleaseYearFinderTest(unittest.TestCase):
 
         self.assertEqual(result["year"], "1999")
 
-    @patch("youtube_audio_video_downloader.services.release_year_finder._wikipedia_api")
+    @patch("youtube_audio_video_downloader.services.metadata.release_year_finder._wikipedia_api")
     def test_find_again_skips_current_year(self, api_mock) -> None:
         api_mock.side_effect = [
             {

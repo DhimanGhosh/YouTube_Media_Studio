@@ -373,7 +373,7 @@ manifest, changelog entry, Git tag, and release title.
 git clone https://github.com/DhimanGhosh/YouTube_Media_Studio.git
 cd YouTube_Media_Studio
 uv sync --extra gui --group dev
-uv run python run_gui.py
+uv run python run_app.py
 ```
 
 Run the CLI from the checkout:
@@ -425,10 +425,19 @@ src/youtube_audio_video_downloader/
   config/                            Settings and runtime discovery
   core/                              Shared filesystem and cancellation tools
   domain/                            Data models
-  gui/                               PyQt6 desktop application
+  gui/                               PyQt6 desktop packages
+    application/                     Entry point and main window
+    components/                      Shared resources, theme, and widgets
+    media/                           Media Library player and visualization
+    runtime/                         Operations, workers, diagnostics, and AI usage
   loaders/                           Job-file loading
   metadata/                          Media tagging
-  services/                          Download, editing, search, and library logic
+  services/                          Categorized application services
+    ai/                              Providers, agents, and recommendations
+    albums/                          Album enrichment, splitting, and organization
+    downloads/                       Search, download, extraction, and redownload
+    media/                           Local library, editing, playlists, and remote access
+    metadata/                        Evidence, verification, and metadata tracking
   utils/                             Parsing and normalization helpers
 tests/                               Automated test suite
 tools/desktop_installer.py           Native graphical installer/uninstaller

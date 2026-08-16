@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import MagicMock, patch
 
-from youtube_audio_video_downloader.services.song_selection_enricher import (
+from youtube_audio_video_downloader.services.metadata.song_selection_enricher import (
     _find_external_metadata,
     enrich_selected_song,
 )
@@ -14,7 +14,7 @@ from youtube_audio_video_downloader.services.song_selection_enricher import (
 class SongSelectionEnricherTest(unittest.TestCase):
     def setUp(self) -> None:
         self.external_metadata = patch(
-            "youtube_audio_video_downloader.services.song_selection_enricher._find_external_metadata",
+            "youtube_audio_video_downloader.services.metadata.song_selection_enricher._find_external_metadata",
             return_value={},
         ).start()
         self.addCleanup(patch.stopall)
@@ -41,7 +41,7 @@ class SongSelectionEnricherTest(unittest.TestCase):
         with (
             patch("yt_dlp.YoutubeDL", return_value=downloader),
             patch(
-                "youtube_audio_video_downloader.services.song_selection_enricher.find_song_art",
+                "youtube_audio_video_downloader.services.metadata.song_selection_enricher.find_song_art",
                 return_value="https://covers.example/song.jpg",
             ) as art_finder,
         ):
@@ -74,11 +74,11 @@ class SongSelectionEnricherTest(unittest.TestCase):
         with (
             patch("yt_dlp.YoutubeDL", return_value=downloader),
             patch(
-                "youtube_audio_video_downloader.services.song_selection_enricher.find_song_art",
+                "youtube_audio_video_downloader.services.metadata.song_selection_enricher.find_song_art",
                 side_effect=LookupError("not found"),
             ),
             patch(
-                "youtube_audio_video_downloader.services.song_selection_enricher._resolve_with_ollama",
+                "youtube_audio_video_downloader.services.metadata.song_selection_enricher._resolve_with_ollama",
                 side_effect=ConnectionError("Ollama unavailable"),
             ),
         ):
@@ -107,7 +107,7 @@ class SongSelectionEnricherTest(unittest.TestCase):
         with (
             patch("yt_dlp.YoutubeDL", return_value=downloader),
             patch(
-                "youtube_audio_video_downloader.services.song_selection_enricher._resolve_with_ollama",
+                "youtube_audio_video_downloader.services.metadata.song_selection_enricher._resolve_with_ollama",
                 return_value={
                     "title": "Zindagi Aa Raha Hoon Main",
                     "album": "Unknown",
@@ -115,7 +115,7 @@ class SongSelectionEnricherTest(unittest.TestCase):
                 },
             ),
             patch(
-                "youtube_audio_video_downloader.services.song_selection_enricher.find_song_art",
+                "youtube_audio_video_downloader.services.metadata.song_selection_enricher.find_song_art",
                 return_value="https://covers.example/song.jpg",
             ),
         ):
@@ -142,11 +142,11 @@ class SongSelectionEnricherTest(unittest.TestCase):
         with (
             patch("yt_dlp.YoutubeDL", return_value=downloader),
             patch(
-                "youtube_audio_video_downloader.services.song_selection_enricher._resolve_with_ollama",
+                "youtube_audio_video_downloader.services.metadata.song_selection_enricher._resolve_with_ollama",
                 side_effect=ConnectionError("Ollama unavailable"),
             ),
             patch(
-                "youtube_audio_video_downloader.services.song_selection_enricher.find_song_art",
+                "youtube_audio_video_downloader.services.metadata.song_selection_enricher.find_song_art",
                 side_effect=LookupError("not found"),
             ),
         ):
@@ -180,7 +180,7 @@ class SongSelectionEnricherTest(unittest.TestCase):
         with (
             patch("yt_dlp.YoutubeDL", return_value=downloader),
             patch(
-                "youtube_audio_video_downloader.services.song_selection_enricher.find_song_art"
+                "youtube_audio_video_downloader.services.metadata.song_selection_enricher.find_song_art"
             ) as art_finder,
         ):
             result = enrich_selected_song(
@@ -214,15 +214,15 @@ class SongSelectionEnricherTest(unittest.TestCase):
             album_art="https://covers.example/hero.jpg",
         )
         with patch(
-            "youtube_audio_video_downloader.services.song_selection_enricher."
+            "youtube_audio_video_downloader.services.metadata.song_selection_enricher."
             "find_wikipedia_song_metadata",
             return_value=wikipedia,
         ), patch(
-            "youtube_audio_video_downloader.services.song_selection_enricher."
+            "youtube_audio_video_downloader.services.metadata.song_selection_enricher."
             "find_catalog_song_metadata",
             return_value=catalog,
         ), patch(
-            "youtube_audio_video_downloader.services.song_selection_enricher."
+            "youtube_audio_video_downloader.services.metadata.song_selection_enricher."
             "verify_metadata_evidence",
             return_value=decision,
         ) as verifier_mock:

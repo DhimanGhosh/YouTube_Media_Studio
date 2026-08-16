@@ -21,9 +21,10 @@ from PyQt6.QtCore import (  # noqa: E402
 from PyQt6.QtGui import QColor, QIcon, QPixmap, QWheelEvent  # noqa: E402
 from PyQt6.QtMultimedia import QAudioBuffer, QAudioFormat, QMediaPlayer  # noqa: E402
 from PyQt6.QtTest import QSignalSpy, QTest  # noqa: E402
-from PyQt6.QtWidgets import QApplication, QMenu  # noqa: E402
+from PyQt6.QtWidgets import QApplication, QListWidget, QMenu, QStackedWidget  # noqa: E402
 
-from youtube_audio_video_downloader.gui.media_player import (  # noqa: E402
+from youtube_audio_video_downloader.gui.media.media_player import (  # noqa: E402
+    ArtistRepairDialog,
     EMBEDDED_VIDEO_MAX_HEIGHT,
     EMBEDDED_VIDEO_MIN_HEIGHT,
     FULLSCREEN_VIDEO_MAX_HEIGHT,
@@ -31,17 +32,20 @@ from youtube_audio_video_downloader.gui.media_player import (  # noqa: E402
     VIDEO_TABLE_ROW_HEIGHT,
     VIDEO_THUMBNAIL_SIZE,
 )
-from youtube_audio_video_downloader.gui.widgets import (  # noqa: E402
+from youtube_audio_video_downloader.gui.components.widgets import (  # noqa: E402
     BlankClickSelectionFilter,
 )
-from youtube_audio_video_downloader.services.library_recommendations import (  # noqa: E402
+from youtube_audio_video_downloader.services.ai.library_recommendations import (  # noqa: E402
     LibraryRecommendation,
 )
-from youtube_audio_video_downloader.services.media_library import LibraryItem  # noqa: E402
-from youtube_audio_video_downloader.services.media_playlists import (  # noqa: E402
+from youtube_audio_video_downloader.services.media.artist_canonicalizer import (  # noqa: E402
+    ArtistRenameSuggestion,
+)
+from youtube_audio_video_downloader.services.media.media_library import LibraryItem  # noqa: E402
+from youtube_audio_video_downloader.services.media.media_playlists import (  # noqa: E402
     decode_playlists,
 )
-from youtube_audio_video_downloader.services.remote_media import (  # noqa: E402
+from youtube_audio_video_downloader.services.media.remote_media import (  # noqa: E402
     RemoteMediaServer,
     media_id,
 )
@@ -115,6 +119,80 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.assertEqual(self.page.table.item(0, 0).text(), "Short")
         self.page.table.sortItems(4, Qt.SortOrder.AscendingOrder)
         self.assertEqual(self.page.table.item(0, 0).text(), "Long")
+
+    def test_playlist_and_queue_drawers_are_horizontally_resizable(self) -> None:
+        self.assertIs(self.page.drawer_splitter.widget(0), self.page.playlist_drawer)
+        self.assertIs(self.page.drawer_splitter.widget(2), self.page.queue_drawer)
+        self.assertEqual(self.page.playlist_drawer.maximumWidth(), 16_777_215)
+        self.assertEqual(self.page.queue_drawer.maximumWidth(), 16_777_215)
+
+        self.page.resize(2400, 900)
+        self.page.show()
+        self.page.playlist_toggle_button.setChecked(True)
+        self.page.queue_toggle_button.setChecked(True)
+        QTest.qWait(20)
+        self.page.drawer_splitter.setSizes([280, 760, 360])
+        self.page._save_drawer_widths(0, 0)
+
+        sizes = self.page.drawer_splitter.sizes()
+        self.assertGreater(sizes[0], 180)
+        self.assertGreater(sizes[2], 180)
+        self.assertEqual(
+            self.page.settings.value("library/playlist_drawer_width", type=int),
+            sizes[0],
+        )
+        self.assertEqual(
+            self.page.settings.value("library/queue_drawer_width", type=int),
+            sizes[2],
+        )
+
+    def test_artist_and_track_sections_are_horizontally_resizable(self) -> None:
+        self.assertIs(
+            self.page.artist_track_splitter.widget(0).findChild(QListWidget),
+            self.page.facets,
+        )
+        self.assertIs(
+            self.page.artist_track_splitter.widget(1).findChild(QStackedWidget),
+            self.page.media_view_stack,
+        )
+        self.page.artist_track_splitter.setSizes([310, 890])
+        self.page.artist_track_splitter.splitterMoved.emit(310, 1)
+        self.assertEqual(
+            self.page.settings.value("library/artist_pane_width", type=int),
+            self.page.artist_track_splitter.sizes()[0],
+        )
+
+    def test_folder_and_search_controls_share_one_thirty_seventy_row(self) -> None:
+        self.page.resize(1400, 900)
+        self.page.show()
+        QTest.qWait(20)
+
+        self.assertEqual(
+            self.page.folder_controls.mapTo(self.page, QPoint(0, 0)).y(),
+            self.page.search_controls.mapTo(self.page, QPoint(0, 0)).y(),
+        )
+        combined = self.page.folder_controls.width() + self.page.search_controls.width()
+        self.assertAlmostEqual(
+            self.page.folder_controls.width() / combined,
+            0.3,
+            delta=0.08,
+        )
+
+    def test_artist_repair_review_allows_editing_the_proposed_name(self) -> None:
+        dialog = ArtistRepairDialog(
+            [ArtistRenameSuggestion("K.K.", "KK", 12)], self.page
+        )
+        try:
+            dialog.table.item(0, 1).setText("Kumar Sanu")
+            self.assertEqual(dialog.replacements(), {"K.K.": "Kumar Sanu"})
+            self.assertFalse(
+                bool(dialog.table.item(0, 0).flags() & Qt.ItemFlag.ItemIsEditable)
+            )
+            self.assertTrue(
+                bool(dialog.table.item(0, 1).flags() & Qt.ItemFlag.ItemIsEditable)
+            )
+        finally:
+            dialog.deleteLater()
 
     def test_track_columns_resize_for_every_new_result_set(self) -> None:
         short = media("Compact", 2005, 60_000)
@@ -750,7 +828,7 @@ class MediaPlayerPageTest(unittest.TestCase):
         with (
             patch.dict(os.environ, {"YMS_DISABLE_REMOTE_ACCESS": ""}),
             patch(
-                "youtube_audio_video_downloader.gui.media_player.RemoteMediaServer",
+                "youtube_audio_video_downloader.gui.media.media_player.RemoteMediaServer",
                 return_value=restarted,
             ) as server_type,
         ):
@@ -779,7 +857,7 @@ class MediaPlayerPageTest(unittest.TestCase):
         with (
             patch.dict(os.environ, {"YMS_DISABLE_REMOTE_ACCESS": ""}),
             patch(
-                "youtube_audio_video_downloader.gui.media_player.RemoteMediaServer"
+                "youtube_audio_video_downloader.gui.media.media_player.RemoteMediaServer"
             ) as server_type,
         ):
             page = MediaLibraryPage(settings)
@@ -880,13 +958,50 @@ class MediaPlayerPageTest(unittest.TestCase):
     def test_player_controls_have_visible_icons_and_mode_labels(self) -> None:
         self.assertTrue(self.page.play_button.text() == "")
         self.assertFalse(self.page.play_button.icon().isNull())
+        self.assertEqual(self.page.seek_backward_button.text(), "<<")
+        self.assertEqual(self.page.seek_forward_button.text(), ">>")
         self.assertEqual(self.page.library_refresh_button.text(), "Refresh")
         self.assertEqual(self.page.shuffle_button.text(), "Shuffle off")
         self.assertEqual(self.page.repeat_button.text(), "Repeat off")
+        layout = self.page.player_controls.layout()
+        ordered_controls = (
+            self.page.shuffle_button,
+            self.page.seek_backward_button,
+            self.page.previous_button,
+            self.page.play_button,
+            self.page.next_button,
+            self.page.seek_forward_button,
+            self.page.stop_button,
+            self.page.repeat_button,
+            self.page.aspect_button,
+            self.page.crop_button,
+            self.page.fullscreen_button,
+        )
+        self.assertEqual(
+            [layout.indexOf(control) for control in ordered_controls],
+            list(range(len(ordered_controls))),
+        )
 
         self.page._state_changed(QMediaPlayer.PlaybackState.PlayingState)
         self.assertFalse(self.page.play_button.icon().isNull())
         self.assertEqual(self.page.play_button.text(), "")
+
+    def test_audio_transport_seeks_and_hides_video_only_controls(self) -> None:
+        player = Mock()
+        player.position.return_value = 30_000
+        player.duration.return_value = 90_000
+        self.page.player = player
+        self.page.set_video_seek_seconds(7)
+
+        QTest.mouseClick(self.page.seek_backward_button, Qt.MouseButton.LeftButton)
+        player.setPosition.assert_called_once_with(23_000)
+        player.setPosition.reset_mock()
+        QTest.mouseClick(self.page.seek_forward_button, Qt.MouseButton.LeftButton)
+        player.setPosition.assert_called_once_with(37_000)
+
+        self.assertTrue(self.page.aspect_button.isHidden())
+        self.assertTrue(self.page.crop_button.isHidden())
+        self.assertTrue(self.page.fullscreen_button.isHidden())
 
     def test_repeat_modes_control_end_of_queue(self) -> None:
         self.page.queue = list(self.page.items)
@@ -921,7 +1036,7 @@ class MediaPlayerPageTest(unittest.TestCase):
         current_path = self.page.queue[self.page.queue_index].path
 
         with patch(
-            "youtube_audio_video_downloader.gui.media_player.random.shuffle",
+            "youtube_audio_video_downloader.gui.media.media_player.random.shuffle",
             side_effect=lambda values: values.reverse(),
         ):
             self.page.set_shuffle_enabled(True)
@@ -937,7 +1052,7 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.page.filtered = [songs[0], songs[1], songs[2], songs[1], songs[3]]
         self.page._load_current = Mock()
         with patch(
-            "youtube_audio_video_downloader.gui.media_player.random.shuffle",
+            "youtube_audio_video_downloader.gui.media.media_player.random.shuffle",
             side_effect=lambda values: values.reverse(),
         ) as shuffle_mock:
             self.page.shuffle_all_matches()
@@ -1055,7 +1170,7 @@ class MediaPlayerPageTest(unittest.TestCase):
         )
         expected = [LibraryRecommendation(item, "Artist matches the request", True)]
         with patch(
-            "youtube_audio_video_downloader.gui.media_player.recommend_library_tracks",
+            "youtube_audio_video_downloader.gui.media.media_player.recommend_library_tracks",
             return_value=expected,
         ) as recommendation_mock:
             self.page.recommendation_request.setText("calm Test Artist songs")
@@ -1087,7 +1202,7 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.page.recommendation_limit.setValue(5)
         self.page.recommendation_request.setText("slow bengali songs, return 12 results")
         with patch(
-            "youtube_audio_video_downloader.gui.media_player.recommend_library_tracks",
+            "youtube_audio_video_downloader.gui.media.media_player.recommend_library_tracks",
             return_value=[],
         ) as recommendation_mock:
             self.page.request_ai_recommendations()
@@ -1105,7 +1220,7 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.page.recommendation_limit.setValue(5)
         for request, expected in cases:
             with self.subTest(request=request), patch(
-                "youtube_audio_video_downloader.gui.media_player.recommend_library_tracks",
+                "youtube_audio_video_downloader.gui.media.media_player.recommend_library_tracks",
                 return_value=[],
             ) as recommendation_mock:
                 self.page.recommendation_request.setText(request)
@@ -1223,23 +1338,37 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.app.processEvents()
 
         self.assertTrue(self.page._player_fullscreen)
-        self.assertTrue(self.page.window().isFullScreen())
+        fullscreen = self.page._fullscreen_window
+        overlay = self.page._fullscreen_controls_overlay
+        self.assertIsNotNone(fullscreen)
+        self.assertIsNotNone(overlay)
+        self.assertTrue(fullscreen.isFullScreen())
+        self.assertTrue(
+            bool(fullscreen.windowFlags() & Qt.WindowType.FramelessWindowHint)
+        )
         self.assertEqual(
             self.page.video_viewport.maximumHeight(), FULLSCREEN_VIDEO_MAX_HEIGHT
         )
-        self.assertEqual(
-            self.page.fullscreen_button.text(), "Exit full screen"
-        )
+        self.assertEqual(self.page.fullscreen_button.text(), "Exit full screen")
+        self.assertIs(self.page.video_viewport.window(), fullscreen)
+        self.assertIs(overlay.window(), fullscreen)
         self.assertIs(self.page.position.window(), self.page.window())
         self.assertIs(self.page.volume.window(), self.page.window())
-        self.assertIs(self.page.aspect_button.window(), self.page.window())
-        self.assertIs(self.page.crop_button.window(), self.page.window())
-        self.assertTrue(self.page.library_splitter.isHidden())
-        self.assertFalse(
-            self.page.video_viewport.geometry().intersects(
-                self.page.player_controls.geometry()
-            )
+        self.assertFalse(self.page.library_splitter.isHidden())
+        self.assertEqual(self.page.fullscreen_backward_button.text(), "<<")
+        self.assertEqual(self.page.fullscreen_forward_button.text(), ">>")
+
+        QTest.qWait(220)
+        self.assertTrue(overlay.isVisible())
+        self.page._animate_fullscreen_controls(False)
+        QTest.qWait(220)
+        self.assertTrue(overlay.isHidden())
+        self.assertEqual(
+            self.page.video_viewport.geometry(), fullscreen.rect()
         )
+        QTest.mouseMove(self.page.video_viewport, QPoint(12, 12))
+        QTest.qWait(220)
+        self.assertTrue(overlay.isVisible())
 
         QTest.keyClick(self.page.video, Qt.Key.Key_C)
         self.app.processEvents()
@@ -1264,11 +1393,13 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.assertTrue(self.page._player_fullscreen)
 
         QTest.mouseClick(
-            self.page.fullscreen_button, Qt.MouseButton.LeftButton
+            self.page.fullscreen_exit_button, Qt.MouseButton.LeftButton
         )
         self.app.processEvents()
 
         self.assertFalse(self.page._player_fullscreen)
+        self.assertFalse(self.page.window().isFullScreen())
+        self.assertIs(self.page.video_viewport.window(), self.page.window())
         self.assertIs(self.page.player_card.parent(), self.page._player_host)
         self.assertFalse(self.page.library_splitter.isHidden())
         self.assertEqual(
@@ -1358,6 +1489,20 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.page.cycle_video_crop()
         self.assertEqual(self.page.aspect_button.text(), "Aspect: 16:9")
         self.assertEqual(self.page.crop_button.text(), "Crop: 16:10")
+
+        self.page._repeat_mode = "all"
+        self.page._advance_after_end()
+        self.assertEqual(self.page.aspect_button.text(), "Aspect: 16:9")
+        self.assertEqual(self.page.crop_button.text(), "Crop: 16:10")
+
+        self.page.stop()
+        self.assertEqual(self.page.crop_button.text(), "Crop: 16:10")
+        self.page.play()
+        self.assertEqual(self.page.aspect_button.text(), "Aspect: Default")
+        self.assertEqual(self.page.crop_button.text(), "Crop: Default")
+
+        self.page.cycle_video_aspect()
+        self.page.cycle_video_crop()
 
         self.page._replace_queue([second])
         self.assertEqual(self.page.aspect_button.text(), "Aspect: Default")
@@ -1489,7 +1634,7 @@ class MediaPlayerPageTest(unittest.TestCase):
         )
 
         with patch(
-            "youtube_audio_video_downloader.gui.media_player.video_thumbnail_bytes",
+            "youtube_audio_video_downloader.gui.media.media_player.video_thumbnail_bytes",
             return_value=bytes(payload),
         ):
             self.page.apply_filters()
@@ -1550,7 +1695,7 @@ class MediaPlayerPageTest(unittest.TestCase):
         buffer.close()
         self.page._artwork_cache.clear()
         with patch(
-            "youtube_audio_video_downloader.gui.media_player.artwork_bytes",
+            "youtube_audio_video_downloader.gui.media.media_player.artwork_bytes",
             return_value=bytes(payload),
         ):
             self.page._render_albums()
@@ -1582,7 +1727,7 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.page.queue_index = 0
 
         with patch(
-            "youtube_audio_video_downloader.gui.media_player.artwork_bytes",
+            "youtube_audio_video_downloader.gui.media.media_player.artwork_bytes",
             return_value=bytes(payload),
         ):
             self.page._load_current()

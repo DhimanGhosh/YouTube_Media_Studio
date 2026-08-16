@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from youtube_audio_video_downloader.domain.models import ExistingMp3TagJob, ParsedSongMetadata, Song, VideoJob
+from youtube_audio_video_downloader.utils.artist_name_formatter import format_artist_names
 
 
 FILE_NAME_DELIMITER = " - "
@@ -44,9 +45,11 @@ def parse_artists(artists_value: Any) -> list[str]:
     """Parse artists from either a comma-separated string or a JSON list."""
 
     if isinstance(artists_value, list):
-        return [str(artist).strip() for artist in artists_value if str(artist).strip()]
+        artists_value = ", ".join(
+            str(artist).strip() for artist in artists_value if str(artist).strip()
+        )
 
-    artists_text = str(artists_value or "").strip()
+    artists_text = format_artist_names(str(artists_value or "").strip())
     return [artist.strip() for artist in artists_text.split(",") if artist.strip()]
 
 

@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 from youtube_audio_video_downloader.core.exceptions import UserCancelledError
-from youtube_audio_video_downloader.services.jukebox_splitter import YouTubeJukeboxSplitter
+from youtube_audio_video_downloader.services.albums.jukebox_splitter import YouTubeJukeboxSplitter
 from youtube_audio_video_downloader.config.settings import DownloadSettings
 
 

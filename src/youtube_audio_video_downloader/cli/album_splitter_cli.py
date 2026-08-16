@@ -6,7 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from youtube_audio_video_downloader.services.album_splitter import YouTubeAlbumSplitter
+from youtube_audio_video_downloader.services.albums.album_splitter import YouTubeAlbumSplitter
 from youtube_audio_video_downloader.core.exceptions import UserCancelledError
 from youtube_audio_video_downloader.config.settings import DownloadSettings
 

@@ -12,9 +12,9 @@ from unittest.mock import patch
 from mutagen.id3 import APIC, COMM, ID3, TALB, TCON, TIT2, TPE1, TPE2, TPOS, TXXX
 
 from youtube_audio_video_downloader.core.cancellation import CancellationToken
-from youtube_audio_video_downloader.gui.operations import execute_operation
-from youtube_audio_video_downloader.services.media_editor import edit_media_file
-from youtube_audio_video_downloader.services.media_metadata import (
+from youtube_audio_video_downloader.gui.runtime.operations import execute_operation
+from youtube_audio_video_downloader.services.media.media_editor import edit_media_file
+from youtube_audio_video_downloader.services.media.media_metadata import (
     read_media_metadata,
     replace_media_metadata,
 )
@@ -69,7 +69,16 @@ class MediaMetadataTest(unittest.TestCase):
             replace_media_metadata(source, {"album_artist": "New Album Artist"})
             self.assertEqual(read_media_metadata(source).album_artist, "New Album Artist")
 
-    @patch("youtube_audio_video_downloader.gui.operations.edit_media_file")
+            replace_media_metadata(
+                source,
+                {"artists": "K.K., A. R. Rahman, Arijit"},
+            )
+            self.assertEqual(
+                read_media_metadata(source).artists,
+                "KK, AR Rahman, Arijit Singh",
+            )
+
+    @patch("youtube_audio_video_downloader.gui.runtime.operations.edit_media_file")
     def test_unified_gui_operation_routes_metadata_only_edit(self, edit_mock) -> None:
         edit_mock.return_value = [Path("song.mp3")]
         summary = execute_operation(
@@ -81,6 +90,29 @@ class MediaMetadataTest(unittest.TestCase):
         self.assertEqual(summary.tagged, 1)
         self.assertEqual(summary.downloaded, 0)
         self.assertEqual(summary.completed_items, ("song.mp3",))
+
+    @patch("youtube_audio_video_downloader.gui.runtime.operations.edit_media_file")
+    def test_unified_gui_operation_routes_permanent_video_display_edit(
+        self, edit_mock
+    ) -> None:
+        edit_mock.return_value = [Path("movie.mp4")]
+        summary = execute_operation(
+            "edit_media",
+            {
+                "action": "video_display",
+                "input_path": "movie.mp4",
+                "metadata": {},
+                "crop_ratio": "2.35:1",
+                "aspect_ratio": "16:9",
+            },
+            CancellationToken(),
+        )
+
+        self.assertEqual(summary.downloaded, 0)
+        self.assertEqual(summary.tagged, 1)
+        edit_mock.assert_called_once()
+        self.assertEqual(edit_mock.call_args.kwargs["crop_ratio"], "2.35:1")
+        self.assertEqual(edit_mock.call_args.kwargs["aspect_ratio"], "16:9")
 
     @unittest.skipUnless(shutil.which("ffprobe"), "needs FFprobe")
     def test_trim_and_metadata_are_applied_as_one_edit(self) -> None:
@@ -117,7 +149,7 @@ class MediaMetadataTest(unittest.TestCase):
             self.assertTrue(expected.is_file())
             self.assertFalse(source.exists())
 
-    @patch("youtube_audio_video_downloader.services.media_metadata.urlopen")
+    @patch("youtube_audio_video_downloader.services.media.media_metadata.urlopen")
     def test_artwork_accepts_an_https_image_url(self, urlopen_mock) -> None:
         class Response:
             def __enter__(self):

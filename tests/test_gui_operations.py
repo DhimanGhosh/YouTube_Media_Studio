@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from youtube_audio_video_downloader.core.cancellation import CancellationToken
-from youtube_audio_video_downloader.gui.operations import execute_operation
+from youtube_audio_video_downloader.gui.runtime.operations import execute_operation
 from youtube_audio_video_downloader.domain.models import (
     AudioQuality,
     DownloadResult,
@@ -18,10 +18,10 @@ from youtube_audio_video_downloader.domain.models import (
     VideoJob,
     VideoQuality,
 )
-from youtube_audio_video_downloader.services.album_metadata_enricher import (
+from youtube_audio_video_downloader.services.albums.album_metadata_enricher import (
     MetadataEnrichmentReport,
 )
-from youtube_audio_video_downloader.services.video_downloader import YouTubeVideoDownloader
+from youtube_audio_video_downloader.services.downloads.video_downloader import YouTubeVideoDownloader
 
 
 class GuiOperationsTest(unittest.TestCase):
@@ -44,7 +44,7 @@ class GuiOperationsTest(unittest.TestCase):
             ),
         ]
         with tempfile.TemporaryDirectory() as temporary_directory, patch(
-            "youtube_audio_video_downloader.gui.operations.YouTubeAlbumSplitter"
+            "youtube_audio_video_downloader.gui.runtime.operations.YouTubeAlbumSplitter"
         ) as splitter_class:
             splitter_class.return_value.split_from_input.return_value = results
             summary = execute_operation(
@@ -89,7 +89,7 @@ class GuiOperationsTest(unittest.TestCase):
             ),
         ]
         with tempfile.TemporaryDirectory() as temporary_directory, patch(
-            "youtube_audio_video_downloader.gui.operations.YouTubeJukeboxSplitter"
+            "youtube_audio_video_downloader.gui.runtime.operations.YouTubeJukeboxSplitter"
         ) as splitter_class:
             splitter_class.return_value.split_from_json.return_value = results
             summary = execute_operation(
@@ -131,12 +131,12 @@ class GuiOperationsTest(unittest.TestCase):
                 completed=(downloaded,),
             )
             with patch(
-                "youtube_audio_video_downloader.gui.operations.YouTubeAudioDownloader"
+                "youtube_audio_video_downloader.gui.runtime.operations.YouTubeAudioDownloader"
             ) as downloader_class, patch(
-                "youtube_audio_video_downloader.gui.operations.enrich_media_files",
+                "youtube_audio_video_downloader.gui.runtime.operations.enrich_media_files",
                 return_value=report,
             ) as enrich_mock, patch(
-                "youtube_audio_video_downloader.gui.operations.consolidate_audio_in_place"
+                "youtube_audio_video_downloader.gui.runtime.operations.consolidate_audio_in_place"
             ) as consolidate_mock:
                 downloader_class.return_value.download_from_json.return_value = [result]
 
@@ -175,7 +175,7 @@ class GuiOperationsTest(unittest.TestCase):
                 file_name=str(downloaded),
             )
             with patch(
-                "youtube_audio_video_downloader.gui.operations.YouTubeAudioDownloader"
+                "youtube_audio_video_downloader.gui.runtime.operations.YouTubeAudioDownloader"
             ) as downloader_class:
                 downloader_class.return_value.download_from_json.return_value = [result]
                 summary = execute_operation(
@@ -203,7 +203,7 @@ class GuiOperationsTest(unittest.TestCase):
                 file_name=str(Path("Artist") / "Album" / "Song.mp3"),
             )
             with patch(
-                "youtube_audio_video_downloader.gui.operations.YouTubeAudioDownloader"
+                "youtube_audio_video_downloader.gui.runtime.operations.YouTubeAudioDownloader"
             ) as downloader_class:
                 downloader_class.return_value.download_from_json.return_value = [result]
                 summary = execute_operation(
@@ -247,12 +247,12 @@ class GuiOperationsTest(unittest.TestCase):
                     completed=(downloaded,),
                 )
                 with patch(
-                    f"youtube_audio_video_downloader.gui.operations.{service_name}"
+                    f"youtube_audio_video_downloader.gui.runtime.operations.{service_name}"
                 ) as service_class, patch(
-                    "youtube_audio_video_downloader.gui.operations.enrich_media_files",
+                    "youtube_audio_video_downloader.gui.runtime.operations.enrich_media_files",
                     return_value=report,
                 ) as enrich_mock, patch(
-                    "youtube_audio_video_downloader.gui.operations.consolidate_audio_in_place"
+                    "youtube_audio_video_downloader.gui.runtime.operations.consolidate_audio_in_place"
                 ):
                     getattr(service_class.return_value, service_method).return_value = [result]
                     params = {
@@ -277,7 +277,7 @@ class GuiOperationsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary_directory:
             output_dir = Path(temporary_directory) / "my songs"
             with patch(
-                "youtube_audio_video_downloader.gui.operations.YouTubeAudioDownloader"
+                "youtube_audio_video_downloader.gui.runtime.operations.YouTubeAudioDownloader"
             ) as downloader_class:
                 downloader_class.return_value.download_from_json.return_value = []
                 execute_operation(
@@ -312,7 +312,7 @@ class GuiOperationsTest(unittest.TestCase):
             "album_art": "https://example.com/cover.jpg",
         }
         with patch(
-            "youtube_audio_video_downloader.gui.operations.enrich_selected_song",
+            "youtube_audio_video_downloader.gui.runtime.operations.enrich_selected_song",
             return_value=enriched,
         ):
             summary = execute_operation(

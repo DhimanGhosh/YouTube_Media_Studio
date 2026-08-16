@@ -4,7 +4,7 @@ import json
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
-from youtube_audio_video_downloader.services import serpapi_metadata
+from youtube_audio_video_downloader.services.metadata import serpapi_metadata
 
 
 class _Response:

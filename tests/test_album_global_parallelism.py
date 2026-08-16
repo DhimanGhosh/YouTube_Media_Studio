@@ -9,7 +9,7 @@ from types import MethodType
 
 from youtube_audio_video_downloader.config.settings import DownloadSettings
 from youtube_audio_video_downloader.domain.models import DownloadResult, DownloadStatus
-from youtube_audio_video_downloader.services.album_splitter import (
+from youtube_audio_video_downloader.services.albums.album_splitter import (
     AlbumSongSpec,
     AlbumSplitJob,
     YouTubeAlbumSplitter,

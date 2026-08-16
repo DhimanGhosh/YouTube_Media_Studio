@@ -5,13 +5,13 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from youtube_audio_video_downloader.services.song_search import (
+from youtube_audio_video_downloader.services.downloads.song_search import (
     _intent_from_payload,
     _local_intent,
     routed_result_title,
     understand_song_request,
 )
-from youtube_audio_video_downloader.services.ai_provider import AIResponse
+from youtube_audio_video_downloader.services.ai.ai_provider import AIResponse
 
 
 class SongSearchTest(unittest.TestCase):
@@ -22,7 +22,7 @@ class SongSearchTest(unittest.TestCase):
             selected,
         )
 
-    @patch("youtube_audio_video_downloader.services.song_search.chat_json")
+    @patch("youtube_audio_video_downloader.services.downloads.song_search.chat_json")
     def test_ai_disabled_never_calls_a_model(self, chat_mock) -> None:
         intent = understand_song_request("Hawayein by Arijit Singh", use_ai=False)
 
@@ -42,7 +42,7 @@ class SongSearchTest(unittest.TestCase):
         self.assertEqual(intent.workflow, "audio")
         self.assertIn("official audio", intent.search_query)
 
-    @patch("youtube_audio_video_downloader.services.song_search.chat_json")
+    @patch("youtube_audio_video_downloader.services.downloads.song_search.chat_json")
     def test_ai_search_intent_is_independently_reviewed(self, chat_mock) -> None:
         extracted = {
             "title": "Gangster Hindi Full Album",

@@ -7,7 +7,7 @@ from agno.models.anthropic import Claude
 from agno.models.ollama import Ollama
 from agno.models.openai import OpenAIChat
 
-from youtube_audio_video_downloader.services.agno_provider import (
+from youtube_audio_video_downloader.services.ai.agno_provider import (
     _configured_models,
     configure_agno_environment,
 )

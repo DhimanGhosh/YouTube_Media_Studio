@@ -10,12 +10,12 @@ from pathlib import Path
 from youtube_audio_video_downloader.domain.models import (
     ParsedSongMetadata, Song, VideoJob, VideoQuality,
 )
-from youtube_audio_video_downloader.services.audio_downloader import YouTubeAudioDownloader
+from youtube_audio_video_downloader.services.downloads.audio_downloader import YouTubeAudioDownloader
 
-from youtube_audio_video_downloader.services.download_range import (
+from youtube_audio_video_downloader.services.downloads.download_range import (
     build_download_range_options,
 )
-from youtube_audio_video_downloader.services.video_downloader import YouTubeVideoDownloader
+from youtube_audio_video_downloader.services.downloads.video_downloader import YouTubeVideoDownloader
 
 
 class DownloadRangeTest(unittest.TestCase):

@@ -21,11 +21,11 @@ from PyQt6.QtWidgets import (  # noqa: E402
     QWidget,
 )
 
-from youtube_audio_video_downloader.gui.main_window import MainWindow  # noqa: E402
-from youtube_audio_video_downloader.gui.theme import APP_STYLE  # noqa: E402
+from youtube_audio_video_downloader.gui.application.main_window import MainWindow  # noqa: E402
+from youtube_audio_video_downloader.gui.components.theme import APP_STYLE  # noqa: E402
 from youtube_audio_video_downloader.config.settings import machine_parallel_workers  # noqa: E402
 from youtube_audio_video_downloader.version import application_version  # noqa: E402
-from youtube_audio_video_downloader.services.album_editor import (  # noqa: E402
+from youtube_audio_video_downloader.services.albums.album_editor import (  # noqa: E402
     AlbumFolderMetadata,
 )
 
@@ -47,11 +47,11 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         )
         settings.setValue("defaults/agentic_model", "global-agent:test")
         self.settings_patch = patch(
-            "youtube_audio_video_downloader.gui.main_window.QSettings",
+            "youtube_audio_video_downloader.gui.application.main_window.QSettings",
             return_value=settings,
         )
         self.models_patch = patch(
-            "youtube_audio_video_downloader.gui.main_window.available_ollama_models",
+            "youtube_audio_video_downloader.gui.application.main_window.available_ollama_models",
             return_value=["global-agent:test"],
         )
         self.settings_patch.start()
@@ -263,6 +263,10 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         self.assertFalse(self.window.settings_sections["batch_network"].body.isHidden())
         self.assertTrue(self.window.settings_sections["audio_metadata"].body.isHidden())
         self.assertTrue(self.window.settings_sections["video_playback"].body.isHidden())
+        self.assertIn(
+            "Media Playback",
+            self.window.settings_sections["video_playback"].toggle.text(),
+        )
 
         self.window.settings_sections["audio_metadata"].set_expanded(True)
         self.assertTrue(
@@ -480,6 +484,40 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         self.assertEqual(params["start_timestamp"], "02:00")
         self.assertEqual(params["end_timestamp"], "03:00")
 
+    def test_edit_file_confirms_permanent_video_crop_and_aspect(self) -> None:
+        video = self.data_directory / "movie.mp4"
+        video.write_bytes(b"video")
+        self.window.edit_file_input.set_text(str(video))
+        action_index = self.window.edit_file_action.findData("video_display")
+        self.window.edit_file_action.setCurrentIndex(action_index)
+        self.window.edit_file_crop_ratio.setCurrentText("2.35:1")
+        self.window.edit_file_aspect_ratio.setCurrentText("16:9")
+
+        self.assertTrue(self.window.edit_file_crop_ratio.isEnabled())
+        self.assertTrue(self.window.edit_file_aspect_ratio.isEnabled())
+        self.assertFalse(self.window.edit_file_mode.isEnabled())
+        params = self.window._edit_file_params()
+        self.assertTrue(params["overwrite_source"])
+        self.assertEqual(params["output_path"], "")
+        self.assertEqual(params["crop_ratio"], "2.35:1")
+        self.assertEqual(params["aspect_ratio"], "16:9")
+
+        with (
+            patch.object(
+                QMessageBox,
+                "question",
+                return_value=QMessageBox.StandardButton.Yes,
+            ),
+            patch.object(self.window, "_start_operation") as start_operation,
+        ):
+            self.window._start_edit_file_operation()
+
+        start_operation.assert_called_once()
+        self.assertEqual(start_operation.call_args.args[0], "edit_media")
+        self.assertEqual(
+            start_operation.call_args.args[1]["crop_ratio"], "2.35:1"
+        )
+
     def test_blank_click_clears_highlights_across_the_application(self) -> None:
         library = self.window.media_library
         library.folder_list.addItem("C:/Music")
@@ -592,7 +630,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         self.window.edit_album_artwork.set_text("https://example.test/cover.jpg")
         with (
             patch(
-                "youtube_audio_video_downloader.gui.main_window.inspect_album_folder",
+                "youtube_audio_video_downloader.gui.application.main_window.inspect_album_folder",
                 return_value=summary,
             ),
             patch.object(
@@ -637,7 +675,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
 
         with (
             patch(
-                "youtube_audio_video_downloader.gui.main_window.inspect_album_folder",
+                "youtube_audio_video_downloader.gui.application.main_window.inspect_album_folder",
                 return_value=summary,
             ),
             patch.object(QMessageBox, "warning") as warning,
@@ -713,11 +751,11 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
             ),
             patch.object(QMessageBox, "information"),
             patch(
-                "youtube_audio_video_downloader.gui.main_window.default_data_directory",
+                "youtube_audio_video_downloader.gui.application.main_window.default_data_directory",
                 return_value=reset_data,
             ),
             patch(
-                "youtube_audio_video_downloader.gui.main_window.save_data_directory_choice"
+                "youtube_audio_video_downloader.gui.application.main_window.save_data_directory_choice"
             ),
             patch.object(
                 self.window.media_library, "set_remember_video_display_modes"

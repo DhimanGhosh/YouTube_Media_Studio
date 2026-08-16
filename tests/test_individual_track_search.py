@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from youtube_audio_video_downloader.services.individual_track_search import (
+from youtube_audio_video_downloader.services.downloads.individual_track_search import (
     _variant_compatible,
 )
 

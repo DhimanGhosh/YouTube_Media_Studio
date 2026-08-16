@@ -9,13 +9,13 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from youtube_audio_video_downloader.services.library_recommendations import (
+from youtube_audio_video_downloader.services.ai.library_recommendations import (
     MAX_EVIDENCE_LOOKUPS,
     MAX_SEMANTIC_CANDIDATES,
     playlist_taste_search_query,
     recommend_library_tracks,
 )
-from youtube_audio_video_downloader.services.media_library import LibraryItem
+from youtube_audio_video_downloader.services.media.media_library import LibraryItem
 
 
 def track(
@@ -70,7 +70,7 @@ class LibraryRecommendationsTest(unittest.TestCase):
         seed = track("C:/private/seed.mp3", "Beloved Song", "Liked Artist")
         items = [unrelated, related, seed]
         with patch(
-            "youtube_audio_video_downloader.services.library_recommendations."
+            "youtube_audio_video_downloader.services.ai.library_recommendations."
             "run_structured_agent",
             side_effect=[
                 plan(),
@@ -125,12 +125,12 @@ class LibraryRecommendationsTest(unittest.TestCase):
         unrelated = track("other.mp3", "Quiet Song", "Other Singer")
         with (
             patch(
-                "youtube_audio_video_downloader.services.library_recommendations."
+                "youtube_audio_video_downloader.services.ai.library_recommendations."
                 "_collect_catalog_evidence",
                 return_value={},
             ),
             patch(
-                "youtube_audio_video_downloader.services.library_recommendations."
+                "youtube_audio_video_downloader.services.ai.library_recommendations."
                 "run_structured_agent",
                 side_effect=[
                     plan(
@@ -181,7 +181,7 @@ class LibraryRecommendationsTest(unittest.TestCase):
                 track(str(Path(folder) / "gone.mp3"), "Gone"),
             ]
             with patch(
-                "youtube_audio_video_downloader.services.library_recommendations."
+                "youtube_audio_video_downloader.services.ai.library_recommendations."
                 "run_structured_agent",
                 side_effect=[
                     plan(),
@@ -205,7 +205,7 @@ class LibraryRecommendationsTest(unittest.TestCase):
     def test_request_is_bounded_and_never_contains_local_paths(self) -> None:
         items = [track(f"C:/secret/{index}.mp3", f"Song {index}") for index in range(800)]
         with patch(
-            "youtube_audio_video_downloader.services.library_recommendations."
+            "youtube_audio_video_downloader.services.ai.library_recommendations."
             "run_structured_agent",
             side_effect=[
                 plan(),
@@ -237,7 +237,7 @@ class LibraryRecommendationsTest(unittest.TestCase):
 
     def test_missing_prompt_or_global_model_is_rejected_before_network(self) -> None:
         with patch(
-            "youtube_audio_video_downloader.services.library_recommendations."
+            "youtube_audio_video_downloader.services.ai.library_recommendations."
             "run_structured_agent"
         ) as chat_mock:
             with self.assertRaisesRegex(ValueError, "Describe"):
@@ -268,7 +268,7 @@ class LibraryRecommendationsTest(unittest.TestCase):
         )
         with (
             patch(
-                "youtube_audio_video_downloader.services.library_recommendations."
+                "youtube_audio_video_downloader.services.ai.library_recommendations."
                 "run_structured_agent",
                 side_effect=[
                     plan(
@@ -283,7 +283,7 @@ class LibraryRecommendationsTest(unittest.TestCase):
                 ],
             ) as chat_mock,
             patch(
-                "youtube_audio_video_downloader.services.library_recommendations."
+                "youtube_audio_video_downloader.services.ai.library_recommendations."
                 "_collect_catalog_evidence",
                 return_value={
                     1: {
@@ -315,7 +315,7 @@ class LibraryRecommendationsTest(unittest.TestCase):
         ]
         with (
             patch(
-                "youtube_audio_video_downloader.services.library_recommendations."
+                "youtube_audio_video_downloader.services.ai.library_recommendations."
                 "run_structured_agent",
                 side_effect=[
                     plan(languages=["Bengali"], time_preference="older"),
@@ -341,7 +341,7 @@ class LibraryRecommendationsTest(unittest.TestCase):
                 ],
             ),
             patch(
-                "youtube_audio_video_downloader.services.library_recommendations."
+                "youtube_audio_video_downloader.services.ai.library_recommendations."
                 "_collect_catalog_evidence",
                 return_value={0: {"language": "Bengali"}},
             ),
@@ -370,7 +370,7 @@ class LibraryRecommendationsTest(unittest.TestCase):
         )
         with (
             patch(
-                "youtube_audio_video_downloader.services.library_recommendations."
+                "youtube_audio_video_downloader.services.ai.library_recommendations."
                 "run_structured_agent",
                 side_effect=[
                     plan(languages=["Bengali"], semantic_filters=["slow"]),
@@ -379,7 +379,7 @@ class LibraryRecommendationsTest(unittest.TestCase):
                 ],
             ),
             patch(
-                "youtube_audio_video_downloader.services.library_recommendations."
+                "youtube_audio_video_downloader.services.ai.library_recommendations."
                 "_collect_catalog_evidence",
                 side_effect=lambda candidates, _filters: {
                     index: {
@@ -422,7 +422,7 @@ class LibraryRecommendationsTest(unittest.TestCase):
         )
         with (
             patch(
-                "youtube_audio_video_downloader.services.library_recommendations."
+                "youtube_audio_video_downloader.services.ai.library_recommendations."
                 "run_structured_agent",
                 side_effect=[
                     plan(artists=["Kumar Sanu"]),
@@ -431,7 +431,7 @@ class LibraryRecommendationsTest(unittest.TestCase):
                 ],
             ) as agent_mock,
             patch(
-                "youtube_audio_video_downloader.services.library_recommendations."
+                "youtube_audio_video_downloader.services.ai.library_recommendations."
                 "_collect_catalog_evidence",
                 side_effect=lambda candidates, _filters: {
                     index: {
@@ -507,12 +507,12 @@ class LibraryRecommendationsTest(unittest.TestCase):
 
         with (
             patch(
-                "youtube_audio_video_downloader.services.library_recommendations."
+                "youtube_audio_video_downloader.services.ai.library_recommendations."
                 "run_structured_agent",
                 side_effect=agent_response,
             ) as agent_mock,
             patch(
-                "youtube_audio_video_downloader.services.library_recommendations."
+                "youtube_audio_video_downloader.services.ai.library_recommendations."
                 "_collect_catalog_evidence",
                 side_effect=lambda candidates, _filters: {
                     index: evidence_by_title[item.title]
@@ -539,7 +539,7 @@ class LibraryRecommendationsTest(unittest.TestCase):
         ]
         with (
             patch(
-                "youtube_audio_video_downloader.services.library_recommendations."
+                "youtube_audio_video_downloader.services.ai.library_recommendations."
                 "run_structured_agent",
                 side_effect=[
                     RuntimeError("planner offline"),
@@ -548,7 +548,7 @@ class LibraryRecommendationsTest(unittest.TestCase):
                 ],
             ),
             patch(
-                "youtube_audio_video_downloader.services.library_recommendations."
+                "youtube_audio_video_downloader.services.ai.library_recommendations."
                 "_collect_catalog_evidence",
                 side_effect=lambda candidates, _filters: {
                     index: {"language": "Bengali" if "Bengali" in item.title else "Hindi"}
@@ -567,7 +567,7 @@ class LibraryRecommendationsTest(unittest.TestCase):
         verbose_constraints = " ".join(f"trait{index}" for index in range(20))
         with (
             patch(
-                "youtube_audio_video_downloader.services.library_recommendations."
+                "youtube_audio_video_downloader.services.ai.library_recommendations."
                 "run_structured_agent",
                 side_effect=[
                     plan(artists=["Kumar Sanu"]),
@@ -575,7 +575,7 @@ class LibraryRecommendationsTest(unittest.TestCase):
                 ],
             ) as agent_mock,
             patch(
-                "youtube_audio_video_downloader.services.library_recommendations."
+                "youtube_audio_video_downloader.services.ai.library_recommendations."
                 "_collect_catalog_evidence",
                 return_value={},
             ),
@@ -608,7 +608,7 @@ class LibraryRecommendationsTest(unittest.TestCase):
         )
         with (
             patch(
-                "youtube_audio_video_downloader.services.library_recommendations."
+                "youtube_audio_video_downloader.services.ai.library_recommendations."
                 "run_structured_agent",
                 side_effect=[
                     plan(languages=["Bengali"], semantic_filters=["slow"]),
@@ -617,7 +617,7 @@ class LibraryRecommendationsTest(unittest.TestCase):
                 ],
             ),
             patch(
-                "youtube_audio_video_downloader.services.library_recommendations."
+                "youtube_audio_video_downloader.services.ai.library_recommendations."
                 "_collect_catalog_evidence",
                 side_effect=lambda candidates, _filters: {
                     index: {
@@ -657,7 +657,7 @@ class LibraryRecommendationsTest(unittest.TestCase):
         )
         with (
             patch(
-                "youtube_audio_video_downloader.services.library_recommendations."
+                "youtube_audio_video_downloader.services.ai.library_recommendations."
                 "run_structured_agent",
                 side_effect=[
                     plan(
@@ -681,7 +681,7 @@ class LibraryRecommendationsTest(unittest.TestCase):
                 ],
             ),
             patch(
-                "youtube_audio_video_downloader.services.library_recommendations."
+                "youtube_audio_video_downloader.services.ai.library_recommendations."
                 "_collect_catalog_evidence",
                 return_value={
                     0: {
@@ -716,7 +716,7 @@ class LibraryRecommendationsTest(unittest.TestCase):
         )
         with (
             patch(
-                "youtube_audio_video_downloader.services.library_recommendations."
+                "youtube_audio_video_downloader.services.ai.library_recommendations."
                 "run_structured_agent",
                 side_effect=[
                     plan(
@@ -728,7 +728,7 @@ class LibraryRecommendationsTest(unittest.TestCase):
                 ],
             ),
             patch(
-                "youtube_audio_video_downloader.services.library_recommendations."
+                "youtube_audio_video_downloader.services.ai.library_recommendations."
                 "_collect_catalog_evidence",
                 return_value={
                     0: {
@@ -763,7 +763,7 @@ class LibraryRecommendationsTest(unittest.TestCase):
         )
         with (
             patch(
-                "youtube_audio_video_downloader.services.library_recommendations."
+                "youtube_audio_video_downloader.services.ai.library_recommendations."
                 "run_structured_agent",
                 side_effect=[
                     plan(
@@ -782,7 +782,7 @@ class LibraryRecommendationsTest(unittest.TestCase):
                 ],
             ),
             patch(
-                "youtube_audio_video_downloader.services.library_recommendations."
+                "youtube_audio_video_downloader.services.ai.library_recommendations."
                 "_collect_catalog_evidence",
                 return_value={
                     0: {
@@ -802,7 +802,7 @@ class LibraryRecommendationsTest(unittest.TestCase):
         items = [track("song.mp3", "Bengali Sad Song", "Arijit Singh")]
         with (
             patch(
-                "youtube_audio_video_downloader.services.library_recommendations."
+                "youtube_audio_video_downloader.services.ai.library_recommendations."
                 "run_structured_agent",
                 side_effect=[
                     plan(
@@ -826,7 +826,7 @@ class LibraryRecommendationsTest(unittest.TestCase):
                 ],
             ),
             patch(
-                "youtube_audio_video_downloader.services.library_recommendations."
+                "youtube_audio_video_downloader.services.ai.library_recommendations."
                 "_collect_catalog_evidence",
                 return_value={
                     0: {
@@ -846,7 +846,7 @@ class LibraryRecommendationsTest(unittest.TestCase):
         items = [track("bengali.mp3", "Another Bengali Song", "Singer B")]
         with (
             patch(
-                "youtube_audio_video_downloader.services.library_recommendations."
+                "youtube_audio_video_downloader.services.ai.library_recommendations."
                 "run_structured_agent",
                 side_effect=[
                     plan(languages=["Bengali"], semantic_filters=["slow"]),
@@ -866,7 +866,7 @@ class LibraryRecommendationsTest(unittest.TestCase):
                 ],
             ) as agent_mock,
             patch(
-                "youtube_audio_video_downloader.services.library_recommendations."
+                "youtube_audio_video_downloader.services.ai.library_recommendations."
                 "_collect_catalog_evidence",
                 return_value={0: {"language": "Bengali"}},
             ),
@@ -889,7 +889,7 @@ class LibraryRecommendationsTest(unittest.TestCase):
     def test_mix_continuation_without_a_planned_language_stops_after_planning(self) -> None:
         items = [track("song.mp3", "A Song", "Singer")]
         with patch(
-            "youtube_audio_video_downloader.services.library_recommendations."
+            "youtube_audio_video_downloader.services.ai.library_recommendations."
             "run_structured_agent",
             return_value=plan(semantic_filters=["slow"]),
         ) as agent_mock:
@@ -906,7 +906,7 @@ class LibraryRecommendationsTest(unittest.TestCase):
     def test_requested_artist_with_no_matching_local_track_stops_after_planning(self) -> None:
         items = [track("atif.mp3", "Atif Song", "Atif Aslam")]
         with patch(
-            "youtube_audio_video_downloader.services.library_recommendations."
+            "youtube_audio_video_downloader.services.ai.library_recommendations."
             "run_structured_agent",
             return_value=plan(artists=["KK"]),
         ) as chat_mock:
@@ -918,12 +918,12 @@ class LibraryRecommendationsTest(unittest.TestCase):
         items = [track("one.mp3", "Calm One"), track("two.mp3", "Other")]
         with (
             patch(
-                "youtube_audio_video_downloader.services.library_recommendations."
+                "youtube_audio_video_downloader.services.ai.library_recommendations."
                 "run_structured_agent",
                 side_effect=RuntimeError("offline"),
             ),
             patch(
-                "youtube_audio_video_downloader.services.library_recommendations."
+                "youtube_audio_video_downloader.services.ai.library_recommendations."
                 "_collect_catalog_evidence",
                 return_value={0: {"web_search_excerpts": "A calm track."}},
             ),

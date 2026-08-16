@@ -11,7 +11,7 @@ from enum import StrEnum
 from typing import Any, Mapping
 
 from youtube_audio_video_downloader.core.cancellation import CancellationToken
-from youtube_audio_video_downloader.gui.operations import (
+from youtube_audio_video_downloader.gui.runtime.operations import (
     SUPPORTED_OPERATIONS,
     OperationSummary,
     execute_operation,

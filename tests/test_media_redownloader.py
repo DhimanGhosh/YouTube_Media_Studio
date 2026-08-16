@@ -8,8 +8,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from youtube_audio_video_downloader.core.cancellation import CancellationToken
-from youtube_audio_video_downloader.gui.operations import execute_operation
-from youtube_audio_video_downloader.services.media_redownloader import (
+from youtube_audio_video_downloader.gui.runtime.operations import execute_operation
+from youtube_audio_video_downloader.services.downloads.media_redownloader import (
     _destination_for,
     _media_kind,
 )
@@ -40,7 +40,7 @@ class MediaRedownloaderTest(unittest.TestCase):
             )
             self.assertEqual(destination, Path(directory) / "movie_redownloaded_audio.mp3")
 
-    @patch("youtube_audio_video_downloader.gui.operations.redownload_media")
+    @patch("youtube_audio_video_downloader.gui.runtime.operations.redownload_media")
     def test_gui_operation_returns_created_files(self, redownload_mock) -> None:
         redownload_mock.return_value = [Path("refreshed.mp3")]
         summary = execute_operation(

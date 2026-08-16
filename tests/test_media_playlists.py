@@ -1,6 +1,6 @@
 """Tests for persistent Media Library playlist behavior."""
 
-from youtube_audio_video_downloader.services.media_playlists import (
+from youtube_audio_video_downloader.services.media.media_playlists import (
     add_playlist_paths,
     decode_playlists,
     encode_playlists,

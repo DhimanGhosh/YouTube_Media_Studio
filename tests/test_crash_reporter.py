@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from youtube_audio_video_downloader.gui.crash_reporter import (
+from youtube_audio_video_downloader.gui.runtime.crash_reporter import (
     CrashReporter,
     DisabledCrashReporter,
 )

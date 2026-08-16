@@ -7,10 +7,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from youtube_audio_video_downloader.services.media_library import (
+from youtube_audio_video_downloader.services.media.media_library import (
     LibraryItem, filter_library, scan_library, split_artists, video_thumbnail_bytes,
 )
-from youtube_audio_video_downloader.services.media_metadata import EditableMediaMetadata
+from youtube_audio_video_downloader.services.media.media_metadata import EditableMediaMetadata
 
 
 def item(title: str, artist: str, album: str, year: int | None, media_type: str = "audio") -> LibraryItem:
@@ -44,7 +44,7 @@ class MediaLibraryTest(unittest.TestCase):
             song.write_bytes(b"placeholder")
             (root / "notes.txt").write_text("no", encoding="utf-8")
             metadata = EditableMediaMetadata(title="Title", album="Album", artists="Artist", year="Released 2001")
-            with patch("youtube_audio_video_downloader.services.media_library.read_media_metadata", return_value=metadata), patch("youtube_audio_video_downloader.services.media_library.MutagenFile", return_value=None):
+            with patch("youtube_audio_video_downloader.services.media.media_library.read_media_metadata", return_value=metadata), patch("youtube_audio_video_downloader.services.media.media_library.MutagenFile", return_value=None):
                 result = scan_library([root])
         self.assertEqual(len(result), 1)
         self.assertEqual(
@@ -60,10 +60,10 @@ class MediaLibraryTest(unittest.TestCase):
                 title="Title", album="Album (2001)", artists="Artist", year="2001"
             )
             with patch(
-                "youtube_audio_video_downloader.services.media_library.read_media_metadata",
+                "youtube_audio_video_downloader.services.media.media_library.read_media_metadata",
                 return_value=metadata,
             ), patch(
-                "youtube_audio_video_downloader.services.media_library.MutagenFile",
+                "youtube_audio_video_downloader.services.media.media_library.MutagenFile",
                 return_value=None,
             ):
                 result = scan_library([root])
@@ -72,10 +72,10 @@ class MediaLibraryTest(unittest.TestCase):
 
     def test_video_thumbnail_prefers_embedded_download_artwork(self) -> None:
         with patch(
-            "youtube_audio_video_downloader.services.media_library.artwork_bytes",
+            "youtube_audio_video_downloader.services.media.media_library.artwork_bytes",
             return_value=b"embedded-cover",
         ), patch(
-            "youtube_audio_video_downloader.services.media_library.shutil.which"
+            "youtube_audio_video_downloader.services.media.media_library.shutil.which"
         ) as which:
             result = video_thumbnail_bytes("movie.mp4", 60_000)
 
@@ -88,13 +88,13 @@ class MediaLibraryTest(unittest.TestCase):
             movie.write_bytes(b"video")
             completed = Mock(returncode=0, stdout=b"video-frame")
             with patch(
-                "youtube_audio_video_downloader.services.media_library.artwork_bytes",
+                "youtube_audio_video_downloader.services.media.media_library.artwork_bytes",
                 return_value=b"",
             ), patch(
-                "youtube_audio_video_downloader.services.media_library.shutil.which",
+                "youtube_audio_video_downloader.services.media.media_library.shutil.which",
                 return_value="ffmpeg",
             ), patch(
-                "youtube_audio_video_downloader.services.media_library.subprocess.run",
+                "youtube_audio_video_downloader.services.media.media_library.subprocess.run",
                 return_value=completed,
             ) as run:
                 result = video_thumbnail_bytes(movie, 100_000)

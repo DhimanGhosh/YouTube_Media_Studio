@@ -7,11 +7,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from youtube_audio_video_downloader.services.album_folders import (
+from youtube_audio_video_downloader.services.albums.album_folders import (
     consolidate_audio_in_place,
     find_existing_album_track,
 )
-from youtube_audio_video_downloader.services.media_metadata import EditableMediaMetadata
+from youtube_audio_video_downloader.services.media.media_metadata import EditableMediaMetadata
 
 
 class AlbumFoldersTest(unittest.TestCase):
@@ -29,7 +29,7 @@ class AlbumFoldersTest(unittest.TestCase):
                 year="2008",
             )
             with patch(
-                "youtube_audio_video_downloader.services.album_folders.read_media_metadata",
+                "youtube_audio_video_downloader.services.albums.album_folders.read_media_metadata",
                 return_value=metadata,
             ):
                 found = find_existing_album_track(
@@ -61,13 +61,13 @@ class AlbumFoldersTest(unittest.TestCase):
                 artwork_present=True,
             )
             with patch(
-                "youtube_audio_video_downloader.services.album_folders.read_media_metadata",
+                "youtube_audio_video_downloader.services.albums.album_folders.read_media_metadata",
                 return_value=metadata,
             ), patch(
-                "youtube_audio_video_downloader.services.album_folders._durations_match",
+                "youtube_audio_video_downloader.services.albums.album_folders._durations_match",
                 return_value=True,
             ), patch(
-                "youtube_audio_video_downloader.services.album_folders._quality_score",
+                "youtube_audio_video_downloader.services.albums.album_folders._quality_score",
                 side_effect=lambda path: (320000, 1, path.stat().st_size),
             ):
                 consolidated = consolidate_audio_in_place(root)
@@ -104,7 +104,7 @@ class AlbumFoldersTest(unittest.TestCase):
                 )
 
             with patch(
-                "youtube_audio_video_downloader.services.album_folders.read_media_metadata",
+                "youtube_audio_video_downloader.services.albums.album_folders.read_media_metadata",
                 side_effect=metadata_for,
             ):
                 consolidate_audio_in_place(root, media_paths=[target_source])

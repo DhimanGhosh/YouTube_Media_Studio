@@ -5,7 +5,7 @@ from io import BytesIO
 from urllib.error import HTTPError
 from unittest.mock import patch
 
-from youtube_audio_video_downloader.services.wikipedia_tracks import (
+from youtube_audio_video_downloader.services.albums.wikipedia_tracks import (
     extract_track_artists_from_html,
     extract_tracks_from_html,
     clean_wikipedia_track_title,
@@ -61,7 +61,7 @@ class WikipediaTracksTest(unittest.TestCase):
             "Tu Jo Mila (Dekhna Na Mudke)",
         )
 
-    @patch("youtube_audio_video_downloader.services.wikipedia_tracks._api")
+    @patch("youtube_audio_video_downloader.services.albums.wikipedia_tracks._api")
     def test_song_lookup_requires_an_exact_wikipedia_table_row(self, api_mock) -> None:
         api_mock.side_effect = [
             {"query": {"search": [{"title": "Example Album (soundtrack)"}]}},
@@ -78,7 +78,7 @@ class WikipediaTracksTest(unittest.TestCase):
         self.assertEqual(result["album"], "Example Album")
         self.assertEqual(result["artists"], "Exact Artist")
 
-    @patch("youtube_audio_video_downloader.services.wikipedia_tracks._api")
+    @patch("youtube_audio_video_downloader.services.albums.wikipedia_tracks._api")
     def test_soundtrack_lookup_requires_every_multi_artist_hint(self, api_mock) -> None:
         api_mock.side_effect = [
             {
@@ -116,7 +116,7 @@ class WikipediaTracksTest(unittest.TestCase):
         self.assertEqual(result["album"], "Amanush")
         self.assertEqual(result["artists"], "Kunal Ganjawala, Shreya Ghoshal")
 
-    @patch("youtube_audio_video_downloader.services.wikipedia_tracks._api")
+    @patch("youtube_audio_video_downloader.services.albums.wikipedia_tracks._api")
     def test_song_lookup_reads_exact_discography_row_and_year(self, api_mock) -> None:
         api_mock.side_effect = [
             {"query": {"search": [{"title": "List of songs recorded by Arijit Singh"}]}},
@@ -141,7 +141,7 @@ class WikipediaTracksTest(unittest.TestCase):
         self.assertEqual(result["year"], "2015")
         self.assertEqual(result["artists"], "Arijit Singh, Anweshaa")
 
-    @patch("youtube_audio_video_downloader.services.wikipedia_tracks._api")
+    @patch("youtube_audio_video_downloader.services.albums.wikipedia_tracks._api")
     def test_discography_lookup_requires_every_multi_artist_hint(self, api_mock) -> None:
         api_mock.side_effect = [
             {
@@ -179,7 +179,7 @@ class WikipediaTracksTest(unittest.TestCase):
         self.assertEqual(result["album"], "Amanush")
         self.assertEqual(result["year"], "2010")
 
-    @patch("youtube_audio_video_downloader.services.wikipedia_tracks._api")
+    @patch("youtube_audio_video_downloader.services.albums.wikipedia_tracks._api")
     def test_title_track_label_matches_album_title_soundtrack_row(self, api_mock) -> None:
         api_mock.side_effect = [
             {"query": {"search": [{"title": "Shedin Dekha Hoyechilo"}]}},
@@ -203,7 +203,7 @@ class WikipediaTracksTest(unittest.TestCase):
         self.assertEqual(result["album"], "Shedin Dekha Hoyechilo")
         self.assertEqual(result["title"], "Shedin Dekha Hoyechilo")
 
-    @patch("youtube_audio_video_downloader.services.wikipedia_tracks._api")
+    @patch("youtube_audio_video_downloader.services.albums.wikipedia_tracks._api")
     def test_title_track_label_matches_discography_title_abbreviation(self, api_mock) -> None:
         api_mock.side_effect = [
             {"query": {"search": [{"title": "Kunal Ganjawala"}]}},
@@ -227,7 +227,7 @@ class WikipediaTracksTest(unittest.TestCase):
         self.assertEqual(result["album"], "Le Chakka")
         self.assertEqual(result["year"], "2010")
 
-    @patch("youtube_audio_video_downloader.services.wikipedia_tracks._api")
+    @patch("youtube_audio_video_downloader.services.albums.wikipedia_tracks._api")
     def test_discography_row_preserves_language_identity(self, api_mock) -> None:
         api_mock.side_effect = [
             {"query": {"search": [{"title": "List of songs recorded by Arijit Singh"}]}},
@@ -249,7 +249,7 @@ class WikipediaTracksTest(unittest.TestCase):
         self.assertEqual(result["album"], "Highway")
         self.assertEqual(result["language"], "Bengali")
 
-    @patch("youtube_audio_video_downloader.services.wikipedia_tracks._api")
+    @patch("youtube_audio_video_downloader.services.albums.wikipedia_tracks._api")
     def test_discography_rowspans_preserve_film_and_year(self, api_mock) -> None:
         api_mock.side_effect = [
             {"query": {"search": [{"title": "Sonu Nigam discography"}]}},
@@ -274,7 +274,7 @@ class WikipediaTracksTest(unittest.TestCase):
         self.assertEqual(result["album"], "Hero")
         self.assertEqual(result["year"], "2006")
 
-    @patch("youtube_audio_video_downloader.services.wikipedia_tracks._api")
+    @patch("youtube_audio_video_downloader.services.albums.wikipedia_tracks._api")
     def test_bengali_chh_romanization_variant_matches_exact_row(self, api_mock) -> None:
         api_mock.side_effect = [
             {"query": {"search": []}},
@@ -299,9 +299,9 @@ class WikipediaTracksTest(unittest.TestCase):
         self.assertEqual(result["album"], "Bandhan")
         self.assertEqual(result["year"], "2004")
 
-    @patch("youtube_audio_video_downloader.services.wikipedia_tracks.time.sleep")
-    @patch("youtube_audio_video_downloader.services.wikipedia_tracks._NEXT_API_REQUEST", 0.0)
-    @patch("youtube_audio_video_downloader.services.wikipedia_tracks.urlopen")
+    @patch("youtube_audio_video_downloader.services.albums.wikipedia_tracks.time.sleep")
+    @patch("youtube_audio_video_downloader.services.albums.wikipedia_tracks._NEXT_API_REQUEST", 0.0)
+    @patch("youtube_audio_video_downloader.services.albums.wikipedia_tracks.urlopen")
     def test_wikipedia_api_retries_http_429(self, urlopen_mock, _sleep_mock) -> None:
         urlopen_mock.side_effect = [
             HTTPError("https://en.wikipedia.org", 429, "Too Many Requests", {}, None),

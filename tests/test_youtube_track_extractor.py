@@ -6,7 +6,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from youtube_audio_video_downloader.services.youtube_track_extractor import (
+from youtube_audio_video_downloader.services.downloads.youtube_track_extractor import (
     _single_video_url,
     description_to_timestamp_text,
     extract_tracks_from_youtube,
@@ -176,11 +176,11 @@ Singers - Farhan Saeed & Shreya Ghoshal
         with (
             patch("yt_dlp.YoutubeDL", return_value=downloader),
             patch(
-                "youtube_audio_video_downloader.services.youtube_track_extractor.chat_json",
+                "youtube_audio_video_downloader.services.downloads.youtube_track_extractor.chat_json",
                 side_effect=responses,
             ) as agent,
             patch(
-                "youtube_audio_video_downloader.services.youtube_track_extractor."
+                "youtube_audio_video_downloader.services.downloads.youtube_track_extractor."
                 "_collect_track_search_evidence",
                 return_value={},
             ),
@@ -206,7 +206,7 @@ Singers - Farhan Saeed & Shreya Ghoshal
         with (
             patch("yt_dlp.YoutubeDL", return_value=downloader),
             patch(
-                "youtube_audio_video_downloader.services.youtube_track_extractor.chat_json",
+                "youtube_audio_video_downloader.services.downloads.youtube_track_extractor.chat_json",
                 side_effect=RuntimeError("provider unavailable"),
             ),
         ):
@@ -260,7 +260,7 @@ Singers - Farhan Saeed & Shreya Ghoshal
         with (
             patch("yt_dlp.YoutubeDL", return_value=downloader),
             patch(
-                "youtube_audio_video_downloader.services.youtube_track_extractor.chat_json",
+                "youtube_audio_video_downloader.services.downloads.youtube_track_extractor.chat_json",
                 side_effect=responses,
             ) as agent,
         ):
@@ -285,7 +285,7 @@ Singers - Farhan Saeed & Shreya Ghoshal
         with (
             patch("yt_dlp.YoutubeDL", return_value=downloader),
             patch(
-                "youtube_audio_video_downloader.services.youtube_track_extractor."
+                "youtube_audio_video_downloader.services.downloads.youtube_track_extractor."
                 "find_catalog_song_metadata",
                 return_value={
                     "album": "Verified Album",
@@ -334,7 +334,7 @@ Singers - Farhan Saeed & Shreya Ghoshal
         with (
             patch("yt_dlp.YoutubeDL", return_value=downloader),
             patch(
-                "youtube_audio_video_downloader.services.youtube_track_extractor."
+                "youtube_audio_video_downloader.services.downloads.youtube_track_extractor."
                 "find_catalog_song_metadata",
                 side_effect=catalog_result,
             ),

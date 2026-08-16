@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-from youtube_audio_video_downloader.services.album_splitter import (
+from youtube_audio_video_downloader.services.albums.album_splitter import (
     AlbumSongSpec,
     AlbumSplitJob,
     YouTubeAlbumSplitter,
@@ -33,7 +33,7 @@ class AlbumIndividualTrackRangesTest(unittest.TestCase):
             existing.parent.mkdir()
             existing.write_bytes(b"existing")
             with patch(
-                "youtube_audio_video_downloader.services.album_splitter.find_existing_album_track",
+                "youtube_audio_video_downloader.services.albums.album_splitter.find_existing_album_track",
                 return_value=existing,
             ), patch.object(splitter, "_wait_before_download") as wait_mock:
                 result = splitter._download_individual_album_track(
