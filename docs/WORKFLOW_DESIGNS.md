@@ -271,6 +271,7 @@ sequenceDiagram
     participant Factory as agno_provider
     participant Primary as Selected provider
     participant Ollama as Local Ollama
+    participant BuiltIn as Built-in CPU AI
     participant Static as Deterministic path
 
     Caller->>Factory: Structured request + schema
@@ -283,8 +284,13 @@ sequenceDiagram
         alt Ollama succeeds
             Ollama-->>Caller: Validated structured content
         else Ollama fails
-            Factory-->>Caller: Provider exception
-            Caller->>Static: Evidence and deterministic fallback
+            Factory->>BuiltIn: Lazy install/start and Agent.run
+            alt Built-in succeeds
+                BuiltIn-->>Caller: Validated structured content
+            else Built-in fails
+                Factory-->>Caller: Provider exception
+                Caller->>Static: Evidence and deterministic fallback
+            end
         end
     end
 ```

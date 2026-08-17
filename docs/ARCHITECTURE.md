@@ -12,6 +12,7 @@ release automation fit together.
 | [High-level design](HIGH_LEVEL_DESIGN.md) | System context, containers, deployment, data ownership, external integrations, and quality attributes |
 | [Low-level design](LOW_LEVEL_DESIGN.md) | Python package boundaries, principal classes, operation dispatch, domain models, concurrency, persistence, and extension points |
 | [Workflow designs](WORKFLOW_DESIGNS.md) | Sequence diagrams and flowcharts for downloads, splitting, enrichment, curation, playback, editing, cancellation, and releases |
+| [Built-in CPU AI](BUILT_IN_AI.md) | Managed runtime/model, system requirements, provider order, local preference profile, privacy, and troubleshooting |
 
 ## Project mind map
 
@@ -46,8 +47,10 @@ mindmap
       Consolidator
     AI and evidence
       Agno agents
+      Built-in CPU model
       Hosted providers
       Ollama fallback
+      Per-user preference profile
       Catalog and web evidence
       Deterministic fallback
     Platform services
@@ -82,6 +85,8 @@ mindmap
 7. **File changes are recoverable where practical.** Services use retry-aware access,
    conflict-safe output names, transaction-like replacements, and explicit skip/review
    results instead of silent overwrites.
+8. **Personalization belongs to the current user.** Playlist taste is represented by a
+   local, path-free profile and never trained into release model weights.
 
 ## Reading order
 

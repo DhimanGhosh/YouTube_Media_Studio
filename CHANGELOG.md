@@ -4,6 +4,27 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## Unreleased
+
+### Added
+
+- Add zero-configuration built-in CPU AI using a pinned, checksum-verified
+  Qwen3-0.6B-Q8 model and loopback-only llama.cpp runtime.
+- Add install, repair, status, and removal controls for managed AI assets.
+- Add a versioned, path-free local preference profile derived from each user's own
+  playlist names and member metadata.
+- Add dedicated built-in AI documentation covering minimum/recommended requirements,
+  privacy, provider precedence, first-use download, and troubleshooting.
+
+### Changed
+
+- Make built-in CPU AI the new-install default while preserving explicit Ollama,
+  hosted-provider, custom-endpoint, and AI-off behavior.
+- Fall back from explicit providers to local built-in AI before deterministic handling,
+  with bounded CPU/context use and a retry cooldown after installation failures.
+- Harden compact-model curation by rejecting invented artist/time constraints and
+  normalizing fractional or percentage confidence values.
+
 ## [2.12.0] - 2026-08-17
 
 ### Added

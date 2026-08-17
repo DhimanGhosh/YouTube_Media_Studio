@@ -46,6 +46,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
             QSettings.Format.IniFormat,
         )
         settings.setValue("defaults/agentic_model", "global-agent:test")
+        settings.setValue("defaults/ai_provider", "ollama")
         self.settings_patch = patch(
             "youtube_audio_video_downloader.gui.application.main_window.QSettings",
             return_value=settings,
@@ -195,7 +196,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
                 for index in range(self.window.settings_ai_provider.count())
             },
             {
-                "ollama", "nvidia", "openai", "anthropic", "google", "groq",
+                "builtin", "ollama", "nvidia", "openai", "anthropic", "google", "groq",
                 "huggingface", "openrouter", "opencode", "custom",
             },
         )
@@ -203,6 +204,16 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
             self.window.version_label.text(), f"Version {application_version()}"
         )
         self.assertIn(application_version(), self.window.windowTitle())
+
+    def test_legacy_ollama_choice_is_preserved_but_new_empty_settings_use_builtin(self) -> None:
+        self.window.settings.remove("defaults/ai_provider")
+        self.window.settings.setValue("defaults/agentic_model", "legacy:model")
+        self.window._configure_ai_from_settings()
+        self.assertEqual(os.environ["YOUTUBE_MEDIA_STUDIO_AI_PROVIDER"], "ollama")
+
+        self.window.settings.remove("defaults/agentic_model")
+        self.window._configure_ai_from_settings()
+        self.assertEqual(os.environ["YOUTUBE_MEDIA_STUDIO_AI_PROVIDER"], "builtin")
 
     def test_dashboard_quick_launch_buttons_open_the_named_workspace(self) -> None:
         expected_pages = {
@@ -815,8 +826,8 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
 
         self.assertEqual(self.window.settings_nvidia_api_key.text(), "")
         self.assertEqual(self.window.settings_serpapi_api_key.text(), "")
-        self.assertEqual(self.window.settings_nvidia_model.text(), "")
-        self.assertEqual(self.window.settings_ai_provider.currentData(), "ollama")
+        self.assertEqual(self.window.settings_nvidia_model.text(), "Qwen3-0.6B-Q8_0")
+        self.assertEqual(self.window.settings_ai_provider.currentData(), "builtin")
         self.assertEqual(self.window.settings_agentic_model.currentText(), "")
         self.assertEqual(self.window.settings_workers.value(), machine_parallel_workers())
         self.assertFalse(self.window.settings_remember_video_display_modes.isChecked())
@@ -834,7 +845,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         self.assertEqual(self.window.album_consolidator_source.text(), "")
         self.assertTrue(self.window.album_move_perform_enrichment.isChecked())
         self.assertEqual(self.window.media_library.folder_list.count(), 0)
-        self.assertIn("STATIC FALLBACK", self.window.ai_status_badge.text())
+        self.assertIn("BUILT-IN CPU AI", self.window.ai_status_badge.text())
 
 if __name__ == "__main__":
     unittest.main()

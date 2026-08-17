@@ -13,3 +13,13 @@ the provider SDKs used by its Ollama, OpenAI-compatible, NVIDIA, and Anthropic a
 and **DDGS** for bounded public web evidence used by Smart Library Curator. These
 libraries retain their upstream licenses and notices; their inclusion does not grant
 access to any hosted service or bundle any provider API key.
+
+The optional built-in CPU AI downloads two separately licensed components on first use:
+
+- **llama.cpp `b10453`** is invoked as a loopback-only subprocess and is MIT licensed.
+  Source and license: <https://github.com/ggml-org/llama.cpp>.
+- **Qwen3-0.6B-GGUF / Qwen3-0.6B-Q8_0** is Apache License 2.0. Model card,
+  attribution, and license: <https://huggingface.co/Qwen/Qwen3-0.6B-GGUF>.
+
+The application pins and verifies these downloads. Their licenses remain their own and
+do not change the MIT license of YouTube Media Studio.

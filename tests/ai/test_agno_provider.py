@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 from agno.models.anthropic import Claude
 from agno.models.ollama import Ollama
@@ -92,4 +94,34 @@ def test_hosted_provider_without_key_uses_ollama(monkeypatch) -> None:
     primary, fallbacks = models()
     assert isinstance(primary, Ollama)
     assert primary.id == "qwen:fallback"
+    assert fallbacks == []
+
+
+def test_builtin_is_the_zero_configuration_primary(monkeypatch) -> None:
+    configure_agno_environment(provider="builtin")
+    with patch(
+        "youtube_audio_video_downloader.services.ai.agno_provider.ensure_builtin_server",
+        return_value=("http://127.0.0.1:12345/v1", "Qwen3-0.6B-Q8_0"),
+    ):
+        primary, fallbacks = models()
+    assert isinstance(primary, OpenAIChat)
+    assert primary.id == "Qwen3-0.6B-Q8_0"
+    assert str(primary.base_url).rstrip("/") == "http://127.0.0.1:12345/v1"
+    assert fallbacks == []
+
+
+def test_blank_ollama_selection_falls_back_to_builtin(monkeypatch) -> None:
+    configure_agno_environment(provider="ollama", model="")
+    with patch(
+        "youtube_audio_video_downloader.services.ai.agno_provider.ensure_builtin_server",
+        return_value=("http://127.0.0.1:12345/v1", "Qwen3-0.6B-Q8_0"),
+    ):
+        primary, fallbacks = _configured_models(
+            requested_model="Qwen3-0.6B-Q8_0",
+            timeout=30,
+            temperature=0,
+            max_tokens=100,
+        )
+    assert isinstance(primary, OpenAIChat)
+    assert primary.provider == "Built-in CPU AI"
     assert fallbacks == []

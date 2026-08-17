@@ -12,6 +12,8 @@ from unittest.mock import patch
 from youtube_audio_video_downloader.services.ai.library_recommendations import (
     MAX_EVIDENCE_LOOKUPS,
     MAX_SEMANTIC_CANDIDATES,
+    _QueryPlan,
+    _reject_unrequested_plan_values,
     playlist_taste_search_query,
     recommend_library_tracks,
 )
@@ -64,6 +66,20 @@ def plan(
 
 
 class LibraryRecommendationsTest(unittest.TestCase):
+    def test_compact_model_cannot_invent_artist_or_release_age_constraints(self) -> None:
+        cleaned = _reject_unrequested_plan_values(
+            "Hindi dance songs",
+            _QueryPlan(
+                artists=("Unrequested Artist",),
+                languages=("Hindi",),
+                time_preference="latest",
+            ),
+            (),
+        )
+        self.assertEqual(cleaned.artists, ())
+        self.assertEqual(cleaned.languages, ("Hindi",))
+        self.assertEqual(cleaned.time_preference, "any")
+
     def test_playlist_names_and_tracks_ground_taste_ranking_without_paths(self) -> None:
         unrelated = track("C:/private/unrelated.mp3", "Other", "Other Artist")
         related = track("C:/private/related.mp3", "New Favourite", "Liked Artist")
