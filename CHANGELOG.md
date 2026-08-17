@@ -4,6 +4,11 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [2.12.0] - 2026-08-17
+
+### Added
+
+- feat: add parallel download telemetry and library deletion (`fe02a1c`)
 ## [2.11.5] - 2026-08-17
 
 ### Fixed
