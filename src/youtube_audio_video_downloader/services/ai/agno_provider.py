@@ -15,7 +15,6 @@ from agno.models.openai import OpenAIChat
 from pydantic import BaseModel
 
 from youtube_audio_video_downloader.services.ai.ai_provider import (
-    DEFAULT_OLLAMA_MODEL,
     NVIDIA_API_KEY_ENV,
     NVIDIA_ATTEMPT_TIMEOUT_SECONDS,
     NVIDIA_MODEL_ENV,
@@ -29,6 +28,11 @@ from youtube_audio_video_downloader.services.ai.ai_provider_registry import (
     AI_PROVIDER_MODEL_ENV,
     provider_definition,
     provider_ids,
+)
+from youtube_audio_video_downloader.services.ai.builtin_runtime import (
+    BUILTIN_MODEL_ID,
+    BUILTIN_PROVIDER_LABEL,
+    ensure_builtin_server,
 )
 
 
@@ -44,7 +48,7 @@ def configure_agno_environment(
     """Apply the selected hosted/local provider without exposing its key to jobs."""
 
     selected = provider.strip().casefold()
-    os.environ[AI_PROVIDER_ENV] = selected if selected in provider_ids() else "ollama"
+    os.environ[AI_PROVIDER_ENV] = selected if selected in provider_ids() else "builtin"
     for name, value in (
         (AI_PROVIDER_API_KEY_ENV, api_key.strip()),
         (AI_PROVIDER_MODEL_ENV, model.strip()),
@@ -160,22 +164,35 @@ def _run_with_fallback(
     agent_options: dict[str, Any],
     input_text: str,
 ):
-    """Run Agno's provider chain and guarantee one direct local retry on failure."""
+    """Run configured models, lazily installing the built-in CPU fallback if needed."""
 
     agent = Agent(model=primary, fallback_models=fallbacks, **agent_options)
     try:
         return agent.run(input_text, stream=False)
     except Exception as primary_error:
-        if not fallbacks:
-            raise
-        fallback = fallbacks[0]
+        error: Exception = primary_error
+        for fallback in fallbacks:
+            print(
+                "[AI-PROVIDER-FALLBACK] "
+                f"{primary.provider} unavailable | {type(error).__name__} | "
+                f"trying {fallback.provider}"
+            )
+            try:
+                return Agent(model=fallback, **agent_options).run(input_text, stream=False)
+            except Exception as fallback_error:
+                error = fallback_error
+        if str(primary.provider) == BUILTIN_PROVIDER_LABEL:
+            raise error
         print(
             "[AI-PROVIDER-FALLBACK] "
-            f"{primary.provider} unavailable | {type(primary_error).__name__} | "
-            f"trying {fallback.provider}"
+            f"configured local providers unavailable | trying {BUILTIN_PROVIDER_LABEL}"
         )
-        fallback_agent = Agent(model=fallback, **agent_options)
-        return fallback_agent.run(input_text, stream=False)
+        builtin = _builtin_model(
+            timeout=90,
+            temperature=0,
+            max_tokens=4096,
+        )
+        return Agent(model=builtin, **agent_options).run(input_text, stream=False)
 
 
 def _configured_models(
@@ -190,29 +207,37 @@ def _configured_models(
     configured_provider = os.environ.get(AI_PROVIDER_ENV, "").strip().casefold()
     if not configured_provider:
         configured_provider = (
-            "nvidia" if os.environ.get(NVIDIA_API_KEY_ENV, "").strip() else "ollama"
+            "nvidia" if os.environ.get(NVIDIA_API_KEY_ENV, "").strip() else "builtin"
         )
     definition = provider_definition(configured_provider)
     ollama_id = os.environ.get(OLLAMA_MODEL_ENV, "").strip()
-    if not ollama_id:
+    if not ollama_id and configured_provider == "ollama":
+        requested = requested_model.strip()
         ollama_id = (
-            requested_model.strip()
-            if configured_provider == "ollama"
-            else DEFAULT_OLLAMA_MODEL
+            requested if requested and requested != BUILTIN_MODEL_ID else ""
         )
-    if not ollama_id:
-        raise ValueError("No Ollama model is configured.")
-    ollama = Ollama(
-        id=ollama_id,
-        timeout=max(0.1, timeout),
-        options={
-            "temperature": temperature,
-            "num_predict": max_tokens,
-            "num_ctx": OLLAMA_CONTEXT_WINDOW,
-        },
-        request_params={"think": False},
+    ollama = (
+        Ollama(
+            id=ollama_id,
+            timeout=max(0.1, timeout),
+            options={
+                "temperature": temperature,
+                "num_predict": max_tokens,
+                "num_ctx": OLLAMA_CONTEXT_WINDOW,
+            },
+            request_params={"think": False},
+        )
+        if ollama_id else None
     )
+    if configured_provider == "builtin":
+        return _builtin_model(
+            timeout=timeout, temperature=temperature, max_tokens=max_tokens
+        ), []
     if configured_provider == "ollama":
+        if ollama is None:
+            return _builtin_model(
+                timeout=timeout, temperature=temperature, max_tokens=max_tokens
+            ), []
         return ollama, []
     api_key = (
         os.environ.get(AI_PROVIDER_API_KEY_ENV, "").strip()
@@ -222,11 +247,16 @@ def _configured_models(
         )
     )
     if not api_key and configured_provider != "custom":
+        fallback_name = "Ollama" if ollama is not None else BUILTIN_PROVIDER_LABEL
         print(
             f"[AI-PROVIDER-FALLBACK] {definition.label} unavailable | "
-            "no API key configured | trying Ollama"
+            f"no API key configured | trying {fallback_name}"
         )
-        return ollama, []
+        if ollama is not None:
+            return ollama, []
+        return _builtin_model(
+            timeout=timeout, temperature=temperature, max_tokens=max_tokens
+        ), []
     model_id = (
         os.environ.get(AI_PROVIDER_MODEL_ENV, "").strip()
         or (
@@ -274,4 +304,20 @@ def _configured_models(
             max_retries=0,
             supports_native_structured_outputs=configured_provider == "openai",
         )
-    return primary, [ollama]
+    return primary, [ollama] if ollama is not None else []
+
+
+def _builtin_model(*, timeout: float, temperature: float, max_tokens: int) -> OpenAIChat:
+    base_url, model_id = ensure_builtin_server()
+    return OpenAIChat(
+        id=model_id,
+        name=BUILTIN_PROVIDER_LABEL,
+        provider=BUILTIN_PROVIDER_LABEL,
+        api_key="local",
+        base_url=base_url,
+        timeout=max(0.1, timeout),
+        temperature=temperature,
+        max_tokens=max_tokens,
+        max_retries=0,
+        supports_native_structured_outputs=True,
+    )

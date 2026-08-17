@@ -55,9 +55,10 @@ text remains the authoritative description of what it does.
    worker count, network retry behavior, and playback seek interval.
 3. Decide whether AI should be enabled by default. Ordinary deterministic downloading,
    editing, timestamp parsing, and playback do not require AI.
-4. If AI is needed, choose a provider and model. Hosted providers require the user's own
-   key; local Ollama does not. Optionally add a SerpApi key for additional Google Search
-   and Google Images evidence.
+4. If AI is needed, the default **Built-in CPU AI** requires no setup. Its approximately
+   630 MB verified model/runtime download starts on first AI use. Advanced users can
+   instead choose Ollama or a hosted provider. Optionally add a SerpApi key for
+   additional Google Search and Google Images evidence.
 5. Select **Save and apply defaults**.
 6. Open **Search Song** when only a plain-language description is known. Open a
    downloader or splitter directly when the source URL is already known.
@@ -186,9 +187,9 @@ a media-library deletion command.
 | --- | --- | --- |
 | 1 | Settings actions | Apply the selected provider and credentials. |
 | 2–4 | Other collapsed groups | Processing, audio, and playback defaults remain independent. |
-| 5 | AI providers and online evidence | Choose the default AI policy, primary provider, provider-specific key/model/base URL, local Ollama fallback, and optional SerpApi key. |
+| 5 | AI providers and online evidence | Choose built-in CPU AI, an override provider, optional Ollama fallback, managed model actions, and optional SerpApi. |
 
-Supported primary providers are Ollama, NVIDIA NIM, OpenAI, Anthropic, Google Gemini,
+Supported primary providers are Built-in CPU AI, Ollama, NVIDIA NIM, OpenAI, Anthropic, Google Gemini,
 Groq, Hugging Face Inference, OpenRouter, OpenCode Zen, and a custom
 OpenAI-compatible endpoint. Each provider retains its own draft key, model, and base
 URL when the provider selector changes. Keys are password-masked and never printed in
@@ -196,8 +197,11 @@ operation logs.
 
 - **Provider base URL** is normally filled automatically. Enter it for a custom
   OpenAI-compatible endpoint.
-- **Ollama local / fallback** is the local model used directly when Ollama is primary or
-  after a hosted provider fails.
+- **Built-in AI assets** reports whether the private CPU model is installed. Install or
+  repair runs in the background; Remove model keeps preferences and downloads it again
+  automatically if a later AI request needs it.
+- **Optional Ollama override** is used directly when Ollama is primary or before
+  built-in AI after a hosted provider fails. Leave it blank when Ollama is not installed.
 - **SerpApi key** does not run a language model. It supplies optional Google Search and
   Google Images evidence when built-in catalog sources are insufficient.
 
@@ -220,8 +224,9 @@ AI is optional and never replaces the application's evidence and safety rules.
 
 1. A workspace with **Use AI for this task** enabled may ask the selected provider to
    understand, preflight, extract, rank, or verify information.
-2. A hosted-provider failure falls back to the configured Ollama model when available.
-3. If neither model is usable, the workflow continues with deterministic rules and
+2. A hosted-provider failure falls back to an explicitly configured Ollama model and
+   then the managed built-in CPU model. Ollama itself also falls back to built-in AI.
+3. If no model is usable, the workflow continues with deterministic rules and
    supported internet/catalog evidence where possible.
 4. Ambiguous or conflicting identity evidence leaves a file unchanged for review.
 
@@ -230,13 +235,16 @@ Splitter can still search Wikipedia, catalogs, cover sources, and YouTube when A
 off. The footer and Live Logs identify the effective path:
 
 - `[AI-PROVIDER]` — selected model provider used;
-- `[AI-PROVIDER-FALLBACK]` — hosted provider failed and Ollama was tried;
+- `[AI-PROVIDER-FALLBACK]` — the selected provider failed and a local fallback was tried;
 - `[AI-NOT-USED]` — no model call was necessary;
 - `[AI-STATIC-FALLBACK]` — deterministic processing continued without a model;
 - `[AI-REVIEW]`, `[METADATA-REVIEW]`, or `[AGENT-REVIEW]` — safety rules left the
   item unchanged.
 
 Provider and SerpApi requests may count against the user's own plan or quota.
+Built-in AI uses no provider account or paid quota. See the
+[built-in AI guide](BUILT_IN_AI.md) for exact system requirements, first-use download,
+privacy, preference-profile behavior, and troubleshooting.
 
 ## Use Dashboard
 
@@ -708,8 +716,9 @@ tempo remain evidence gates; unsupported model claims are rejected.
 - **Find in my library** returns exact verified local matches.
 - A number in the request overrides the result-count control.
 - **Start mix** plays exact matches, then adds evidence-verified related local tracks.
-- Saved playlist names and songs act as bounded taste examples for every request; model
-  weights are not retrained.
+- Saved playlist names and songs act as bounded taste examples for every request. A
+  versioned, path-free profile is refreshed locally for whichever user is running the
+  software; release model weights are not retrained and contain no developer taste.
 - **Search YouTube too** is explicit and never automatic. Local file paths are never
   placed in AI or online-search context.
 - With AI off, the action becomes a plain internet search instead of local semantic

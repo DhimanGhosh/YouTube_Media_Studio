@@ -41,6 +41,8 @@ parse arguments and delegate; GUI pages build parameter dictionaries and delegat
 | `services/media/` | Library scanning, playlists, local editing, metadata access, and remote media |
 | `services/metadata/` | Evidence gathering, verification, tracking, release years, and enrichment |
 | `services/ai/` | Provider construction, recommendation, preflight, and adjudication agents |
+| `services/ai/builtin_runtime.py` | Pinned download verification, safe extraction, CPU thread budget, and loopback llama.cpp lifecycle |
+| `services/ai/preference_profile.py` | Versioned path-free playlist taste profile for the current user |
 | `config/app_storage.py` | Resolve/migrate persistent application-data directories |
 | `config/runtime_tools.py` | Find bundled/system tools and hide Windows subprocess consoles |
 | `core/*` | Cancellation, exceptions, file access retries, safe filesystem names |
@@ -362,7 +364,7 @@ destination files and applies the new location on restart.
 - Add a GUI operation by implementing a service, an `_run_*` adapter returning
   `OperationSummary`, and one registry entry.
 - Add an AI provider by extending `ProviderDefinition` and model construction while
-  preserving provider-specific saved drafts and Ollama fallback.
+  preserving provider-specific saved drafts and the lazy built-in CPU fallback.
 - Add a media format by extending library suffix discovery and `media_metadata` read/write
   adapters, then covering artwork and numbering semantics.
 - Add a release target in `tools/release.py` and the GitHub Actions build matrix; artifact

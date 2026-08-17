@@ -1,4 +1,4 @@
-"""Shared hosted-provider, Ollama, and deterministic-fallback AI gateway."""
+"""Shared hosted, Ollama, built-in CPU, and deterministic-fallback AI gateway."""
 
 from __future__ import annotations
 
@@ -17,6 +17,11 @@ from youtube_audio_video_downloader.services.ai.ai_provider_registry import (
     AI_PROVIDER_ENV,
     AI_PROVIDER_MODEL_ENV,
     provider_definition,
+)
+from youtube_audio_video_downloader.services.ai.builtin_runtime import (
+    BUILTIN_MODEL_ID,
+    BUILTIN_PROVIDER_LABEL,
+    ensure_builtin_server,
 )
 
 
@@ -116,7 +121,9 @@ def configured_primary_identity(requested_model: str = "") -> tuple[str, str]:
     """Return the provider label and model that will actually receive the request."""
 
     provider = os.environ.get(AI_PROVIDER_ENV, "").strip().casefold()
-    if provider and provider not in {"ollama", "nvidia"}:
+    if provider == "builtin" or not provider:
+        return BUILTIN_PROVIDER_LABEL, BUILTIN_MODEL_ID
+    if provider not in {"ollama", "nvidia"}:
         provider_key = os.environ.get(AI_PROVIDER_API_KEY_ENV, "").strip()
         if provider_key or provider == "custom":
             model = (
@@ -128,7 +135,7 @@ def configured_primary_identity(requested_model: str = "") -> tuple[str, str]:
         model = os.environ.get(NVIDIA_MODEL_ENV, "").strip() or requested_model.strip()
         return "NVIDIA NIM", model
     model = os.environ.get(OLLAMA_MODEL_ENV, "").strip() or requested_model.strip()
-    return "Ollama", model
+    return ("Ollama", model) if model else (BUILTIN_PROVIDER_LABEL, BUILTIN_MODEL_ID)
 
 
 def chat_json(
@@ -140,10 +147,10 @@ def chat_json(
     temperature: float = 0.0,
     max_tokens: int = 4096,
 ) -> AIResponse:
-    """Use the selected provider, then Ollama, or report deterministic fallback."""
+    """Use the selected provider, then local fallbacks, or report static fallback."""
 
     selected_provider = os.environ.get(AI_PROVIDER_ENV, "").strip().casefold()
-    if selected_provider and selected_provider not in {"ollama", "nvidia"}:
+    if selected_provider and selected_provider not in {"ollama", "nvidia", "builtin"}:
         try:
             from youtube_audio_video_downloader.services.ai.agno_provider import (
                 run_structured_json_agent,
@@ -173,7 +180,11 @@ def chat_json(
             raise AIUnavailableError(f"{selected_provider}: {safe_error}") from exc
 
     errors: list[str] = []
-    api_key = os.environ.get(NVIDIA_API_KEY_ENV, "").strip()
+    api_key = (
+        os.environ.get(NVIDIA_API_KEY_ENV, "").strip()
+        if selected_provider in {"", "nvidia"}
+        else ""
+    )
     if api_key:
         nvidia_model = (
             os.environ.get(NVIDIA_MODEL_ENV, "").strip()
@@ -207,34 +218,92 @@ def chat_json(
     ollama_model = os.environ.get(OLLAMA_MODEL_ENV, "").strip()
     if not ollama_model and not api_key:
         ollama_model = model.strip()
-    if not ollama_model:
-        errors.append("Ollama: no model configured")
-        print(
-            "[AI-STATIC-FALLBACK] No Ollama model configured | "
-            "continuing with deterministic internet evidence"
-        )
-        raise AIUnavailableError("; ".join(errors))
+    if ollama_model == BUILTIN_MODEL_ID:
+        ollama_model = ""
+    if ollama_model:
+        try:
+            data = _call_ollama(
+                messages,
+                schema,
+                model=ollama_model,
+                timeout=min(max(0.1, timeout), OLLAMA_ATTEMPT_TIMEOUT_SECONDS),
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+            print(f"[AI-PROVIDER] Ollama | model={ollama_model}")
+            return AIResponse(data, "Ollama", ollama_model)
+        except Exception as exc:
+            safe_error = _safe_error(exc)
+            errors.append(f"Ollama: {safe_error}")
+            print(f"[AI-PROVIDER-FALLBACK] Ollama unavailable | {safe_error}")
+
     try:
-        data = _call_ollama(
+        base_url, builtin_model = ensure_builtin_server()
+        data = _call_openai_compatible(
             messages,
             schema,
-            model=ollama_model,
-            timeout=min(max(0.1, timeout), OLLAMA_ATTEMPT_TIMEOUT_SECONDS),
+            base_url=base_url,
+            model=builtin_model,
+            timeout=timeout,
             temperature=temperature,
             max_tokens=max_tokens,
         )
-        print(f"[AI-PROVIDER] Ollama | model={ollama_model}")
-        return AIResponse(data, "Ollama", ollama_model)
+        print(f"[AI-PROVIDER] {BUILTIN_PROVIDER_LABEL} | model={builtin_model}")
+        return AIResponse(data, BUILTIN_PROVIDER_LABEL, builtin_model)
     except Exception as exc:
         safe_error = _safe_error(exc)
-        errors.append(f"Ollama: {safe_error}")
-        print(f"[AI-PROVIDER-FALLBACK] Ollama unavailable | {safe_error}")
+        errors.append(f"{BUILTIN_PROVIDER_LABEL}: {safe_error}")
+        print(f"[AI-STATIC-FALLBACK] {BUILTIN_PROVIDER_LABEL} unavailable | {safe_error}")
 
     print(
         "[AI-STATIC-FALLBACK] AI providers unavailable | "
         "continuing with deterministic internet evidence"
     )
     raise AIUnavailableError("; ".join(errors) or "No AI provider is configured")
+
+
+def _call_openai_compatible(
+    messages: Sequence[Mapping[str, str]],
+    schema: Mapping[str, Any],
+    *,
+    base_url: str,
+    model: str,
+    timeout: float,
+    temperature: float,
+    max_tokens: int,
+) -> dict[str, Any]:
+    prepared = [dict(message) for message in messages]
+    prepared.insert(
+        0,
+        {
+            "role": "system",
+            "content": (
+                "Do not reveal reasoning. Return only the requested JSON object. "
+                "It must satisfy this JSON Schema: "
+                + json.dumps(schema, ensure_ascii=False, separators=(",", ":"))
+            ),
+        },
+    )
+    request = Request(
+        f"{base_url.rstrip('/')}/chat/completions",
+        data=json.dumps(
+            {
+                "model": model,
+                "messages": prepared,
+                "temperature": max(0.0, min(float(temperature), 1.0)),
+                "max_tokens": max(1, min(int(max_tokens), 4096)),
+                "stream": False,
+                "response_format": {"type": "json_schema", "json_schema": {"name": "result", "schema": dict(schema), "strict": True}},
+            }
+        ).encode("utf-8"),
+        headers={"Content-Type": "application/json", "Authorization": "Bearer local"},
+        method="POST",
+    )
+    with urlopen(request, timeout=max(0.1, timeout)) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    choices = payload.get("choices", []) if isinstance(payload, dict) else []
+    message = choices[0].get("message", {}) if choices else {}
+    return _parse_json_object(str(message.get("content") or ""))
 
 
 def _call_nvidia(

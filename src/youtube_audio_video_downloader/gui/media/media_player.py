@@ -119,6 +119,9 @@ from youtube_audio_video_downloader.services.ai.library_recommendations import (
     recommend_library_tracks,
 )
 from youtube_audio_video_downloader.services.ai.ai_provider import configured_primary_identity
+from youtube_audio_video_downloader.services.ai.preference_profile import (
+    update_preference_profile,
+)
 
 MEDIA_TYPE_ALL = "all"
 MEDIA_TYPE_AUDIO = "audio"
@@ -2360,7 +2363,19 @@ class MediaLibraryPage(QWidget):
         )
         self.settings.setValue("library/active_playlist", self._active_playlist)
         self.settings.sync()
+        self._update_preference_profile()
         self._remote_state_dirty = True
+
+    def _update_preference_profile(self) -> None:
+        try:
+            profile = update_preference_profile(self.items, self.playlists)
+            log_diagnostic(
+                "AI-PROFILE",
+                f"Local playlist preference profile updated | "
+                f"playlists={len(profile['playlists'])}",
+            )
+        except OSError as exc:
+            log_diagnostic("AI-PROFILE", f"Could not save local preference profile | {exc}")
 
     def _render_playlists(self) -> None:
         self.playlist_list.blockSignals(True)
@@ -3744,6 +3759,7 @@ class MediaLibraryPage(QWidget):
             )
             return
         self.items = scanned_items
+        self._update_preference_profile()
         self._remote_state_dirty = True
         valid_thumbnail_keys = {
             (item.path, item.modified_ns)

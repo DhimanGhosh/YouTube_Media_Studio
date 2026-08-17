@@ -22,6 +22,9 @@ class ProviderDefinition:
 
 
 PROVIDERS: tuple[ProviderDefinition, ...] = (
+    ProviderDefinition(
+        "builtin", "Built-in CPU AI (automatic)", "Qwen3-0.6B-Q8_0"
+    ),
     ProviderDefinition("ollama", "Ollama (local)", ""),
     ProviderDefinition(
         "nvidia", "NVIDIA NIM", "z-ai/glm-5.2",
@@ -61,7 +64,7 @@ _BY_ID = {provider.id: provider for provider in PROVIDERS}
 
 
 def provider_definition(provider_id: str) -> ProviderDefinition:
-    return _BY_ID.get(str(provider_id).strip().casefold(), _BY_ID["ollama"])
+    return _BY_ID.get(str(provider_id).strip().casefold(), _BY_ID["builtin"])
 
 
 def provider_ids() -> set[str]:

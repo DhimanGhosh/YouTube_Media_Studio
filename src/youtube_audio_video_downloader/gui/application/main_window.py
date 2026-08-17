@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
-from PyQt6.QtCore import QSettings, QStandardPaths, Qt, QThread, QTimer, QUrl
+from PyQt6.QtCore import QSettings, QStandardPaths, Qt, QThread, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QCloseEvent, QDesktopServices, QGuiApplication
 from PyQt6.QtWidgets import (
     QAbstractItemView,
@@ -92,7 +92,6 @@ from youtube_audio_video_downloader.services.media.media_metadata import read_me
 from youtube_audio_video_downloader.services.albums.album_folders import resolve_album_folder_successor
 from youtube_audio_video_downloader.services.ai.ai_provider import (
     DEFAULT_NVIDIA_MODEL,
-    DEFAULT_OLLAMA_MODEL,
     NVIDIA_API_KEY_ENV,
     NVIDIA_MODEL_ENV,
     OLLAMA_MODEL_ENV,
@@ -110,6 +109,13 @@ from youtube_audio_video_downloader.services.ai.ai_provider_registry import (
     PROVIDERS,
     provider_definition,
 )
+from youtube_audio_video_downloader.services.ai.builtin_runtime import (
+    BUILTIN_MODEL_ID,
+    BUILTIN_PROVIDER_LABEL,
+    builtin_status,
+    ensure_builtin_server,
+    remove_builtin_assets,
+)
 from youtube_audio_video_downloader.services.downloads.song_search import (
     available_ollama_models,
     routed_result_title,
@@ -125,6 +131,19 @@ from youtube_audio_video_downloader.services.media.video_transformer import (
     VIDEO_EXTENSIONS,
 )
 from youtube_audio_video_downloader.version import application_version
+
+
+class BuiltinAIInstallThread(QThread):
+    """Install and smoke-test managed AI assets without blocking the GUI."""
+
+    completed = pyqtSignal(object, str)
+
+    def run(self) -> None:
+        try:
+            ensure_builtin_server()
+            self.completed.emit(builtin_status(), "")
+        except Exception as exc:
+            self.completed.emit({}, " ".join(str(exc).split())[:500])
 
 
 class MainWindow(QMainWindow):
@@ -190,6 +209,7 @@ class MainWindow(QMainWindow):
         self._tool_ai_checks: dict[str, QCheckBox] = {}
         self._background: LiquidBackground | None = None
         self._resize_idle_timer: QTimer | None = None
+        self._builtin_install_thread: BuiltinAIInstallThread | None = None
 
         self._build_window()
         self._resize_idle_timer = QTimer(self)
@@ -365,13 +385,16 @@ class MainWindow(QMainWindow):
         self.pulse_dot.setVisible(False)
         self.activity_label = QLabel("Idle")
         self.activity_label.setObjectName("mutedLabel")
-        provider_id = os.environ.get(AI_PROVIDER_ENV, "ollama").strip() or "ollama"
+        provider_id = os.environ.get(AI_PROVIDER_ENV, "builtin").strip() or "builtin"
         provider_key = os.environ.get(AI_PROVIDER_API_KEY_ENV, "").strip()
         ollama_model = os.environ.get(OLLAMA_MODEL_ENV, "").strip()
         ready_model = self._agentic_model()
         if not self.settings.value("defaults/ai_enabled", True, type=bool):
             ready_provider = "DISABLED"
             ready_model = "internet/deterministic mode"
+        elif provider_id == "builtin":
+            ready_provider = BUILTIN_PROVIDER_LABEL.upper()
+            ready_model = BUILTIN_MODEL_ID
         elif provider_id == "ollama" and ollama_model:
             ready_provider = "OLLAMA"
             ready_model = ollama_model
@@ -599,15 +622,21 @@ class MainWindow(QMainWindow):
                 "base_url": definition.base_url,
             },
         )
-        is_local = definition.id == "ollama"
+        is_local = definition.id in {"builtin", "ollama"}
         self.settings_ai_api_key.setText(draft["api_key"])
         self.settings_ai_api_key.setPlaceholderText(
-            "Not required for local Ollama" if is_local else definition.key_placeholder
+            "Not required for local AI" if is_local else definition.key_placeholder
         )
         self.settings_ai_api_key.setEnabled(not is_local)
         self.settings_ai_model.setText(draft["model"])
         self.settings_ai_model.setPlaceholderText(
-            "Uses the Ollama model below" if is_local else definition.default_model
+            (
+                "Managed automatically on first AI use"
+                if definition.id == "builtin"
+                else "Uses the Ollama model below"
+            )
+            if is_local
+            else definition.default_model
         )
         self.settings_ai_model.setEnabled(not is_local)
         self.settings_ai_base_url.setText(draft["base_url"])
@@ -620,6 +649,58 @@ class MainWindow(QMainWindow):
         self._capture_ai_provider_draft()
         self._active_ai_provider = str(self.settings_ai_provider.currentData())
         self._show_ai_provider_draft(self._active_ai_provider)
+
+    def _refresh_builtin_ai_status(self) -> None:
+        try:
+            status = builtin_status()
+            ready = bool(status["runtime_ready"] and status["model_ready"])
+            state = "Installed and ready" if ready else "Downloads on first AI use"
+            size_gib = int(status["download_bytes"]) / (1024**3)
+            self.settings_builtin_ai_status.setText(
+                f"{state} · {status['model']} · {size_gib:.1f} GB"
+            )
+            self.settings_builtin_ai_remove.setEnabled(ready)
+        except RuntimeError as exc:
+            self.settings_builtin_ai_status.setText(str(exc))
+            self.settings_builtin_ai_remove.setEnabled(False)
+
+    def _install_builtin_ai(self) -> None:
+        if self._builtin_install_thread is not None:
+            return
+        self.settings_builtin_ai_install.setEnabled(False)
+        self.settings_builtin_ai_status.setText(
+            "Downloading and verifying the private CPU model…"
+        )
+        thread = BuiltinAIInstallThread(self)
+        thread.completed.connect(self._builtin_ai_install_finished)
+        thread.finished.connect(thread.deleteLater)
+        self._builtin_install_thread = thread
+        thread.start()
+
+    def _builtin_ai_install_finished(self, _status: object, error: str) -> None:
+        self._builtin_install_thread = None
+        self.settings_builtin_ai_install.setEnabled(True)
+        self._refresh_builtin_ai_status()
+        if error:
+            QMessageBox.warning(self, "Built-in AI installation", error)
+        else:
+            QMessageBox.information(
+                self,
+                "Built-in AI ready",
+                "The private CPU model is installed and passed its startup check.",
+            )
+
+    def _remove_builtin_ai(self) -> None:
+        answer = QMessageBox.question(
+            self,
+            "Remove built-in AI model",
+            "Remove the managed model and runtime? Your local preference profile is kept. "
+            "The assets can be downloaded again on the next AI request.",
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        remove_builtin_assets()
+        self._refresh_builtin_ai_status()
 
     @staticmethod
     def _spin(minimum: int, maximum: int, value: int, suffix: str = "") -> QSpinBox:
@@ -2346,22 +2427,30 @@ class MainWindow(QMainWindow):
             agent_models = available_ollama_models()
         except (OSError, ValueError, json.JSONDecodeError):
             agent_models = []
-        self.settings_agentic_model.addItems(agent_models or ["qwen2.5:7b"])
+        self.settings_agentic_model.addItems(agent_models)
         saved_ollama_model = self.settings.value("defaults/agentic_model", None)
         self.settings_agentic_model.setCurrentText(
-            DEFAULT_OLLAMA_MODEL
-            if saved_ollama_model is None
-            else str(saved_ollama_model or "").strip()
+            "" if saved_ollama_model is None else str(saved_ollama_model or "").strip()
         )
         self.settings_agentic_model.setToolTip(
-            "Local model used as the primary provider or automatic hosted-provider fallback."
+            "Optional Ollama model used when Ollama is selected or before the built-in "
+            "CPU fallback for hosted providers. Leave blank if Ollama is not installed."
         )
         legacy_nvidia_key = self._saved_secret(
             "defaults/nvidia_api_key", NVIDIA_API_KEY_ENV
         )
         saved_provider = str(self.settings.value("defaults/ai_provider", "") or "").strip()
         if not saved_provider:
-            saved_provider = "nvidia" if legacy_nvidia_key else "ollama"
+            saved_provider = (
+                "nvidia"
+                if legacy_nvidia_key
+                else (
+                    "ollama"
+                    if saved_ollama_model is not None
+                    and str(saved_ollama_model or "").strip()
+                    else "builtin"
+                )
+            )
         self._ai_provider_drafts: dict[str, dict[str, str]] = {}
         for provider in PROVIDERS:
             key = str(
@@ -2538,8 +2627,9 @@ class MainWindow(QMainWindow):
 
         ai_section, _ai_body, ai_form = self._settings_group(
             "AI providers and online evidence",
-            "Choose a local or hosted Agno provider. Hosted providers automatically fall back "
-            "to the selected Ollama model. Credentials remain local and are never logged.",
+            "The built-in CPU model needs no AI setup and downloads verified assets on first "
+            "use. Ollama and hosted providers override it; failures return to local AI. "
+            "Credentials remain local and are never logged.",
             "ai_providers",
             expanded=True,
         )
@@ -2548,8 +2638,22 @@ class MainWindow(QMainWindow):
         ai_form.addRow("Provider API key", self.settings_ai_api_key)
         ai_form.addRow("Provider model", self.settings_ai_model)
         ai_form.addRow("Provider base URL", self.settings_ai_base_url)
-        ai_form.addRow("Ollama local / fallback", self.settings_agentic_model)
+        ai_form.addRow("Optional Ollama override", self.settings_agentic_model)
         ai_form.addRow("SerpApi key", self.settings_serpapi_api_key)
+        builtin_controls = QWidget()
+        builtin_layout = QHBoxLayout(builtin_controls)
+        builtin_layout.setContentsMargins(0, 0, 0, 0)
+        self.settings_builtin_ai_status = QLabel()
+        self.settings_builtin_ai_status.setObjectName("mutedLabel")
+        self.settings_builtin_ai_install = QPushButton("Install / repair")
+        self.settings_builtin_ai_install.clicked.connect(self._install_builtin_ai)
+        self.settings_builtin_ai_remove = QPushButton("Remove model")
+        self.settings_builtin_ai_remove.clicked.connect(self._remove_builtin_ai)
+        builtin_layout.addWidget(self.settings_builtin_ai_status, 1)
+        builtin_layout.addWidget(self.settings_builtin_ai_install)
+        builtin_layout.addWidget(self.settings_builtin_ai_remove)
+        ai_form.addRow("Built-in AI assets", builtin_controls)
+        self._refresh_builtin_ai_status()
         self.settings_sections["ai_providers"] = ai_section
         layout.addWidget(ai_section)
 
@@ -3471,9 +3575,7 @@ class MainWindow(QMainWindow):
 
         saved_model = self.settings.value("defaults/agentic_model", None)
         return configured_primary_model(
-            DEFAULT_OLLAMA_MODEL
-            if saved_model is None
-            else str(saved_model or "").strip()
+            "" if saved_model is None else str(saved_model or "").strip()
         )
 
     def _active_ai_identity(self) -> tuple[str, str]:
@@ -3482,9 +3584,7 @@ class MainWindow(QMainWindow):
         self._configure_ai_from_settings()
         saved_model = self.settings.value("defaults/agentic_model", None)
         return configured_primary_identity(
-            DEFAULT_OLLAMA_MODEL
-            if saved_model is None
-            else str(saved_model or "").strip()
+            "" if saved_model is None else str(saved_model or "").strip()
         )
 
     def _configure_ai_from_settings(self) -> None:
@@ -3496,7 +3596,16 @@ class MainWindow(QMainWindow):
         )
         provider_id = str(self.settings.value("defaults/ai_provider", "") or "").strip()
         if not provider_id:
-            provider_id = "nvidia" if legacy_nvidia_key else "ollama"
+            provider_id = (
+                "nvidia"
+                if legacy_nvidia_key
+                else (
+                    "ollama"
+                    if saved_ollama_model is not None
+                    and str(saved_ollama_model or "").strip()
+                    else "builtin"
+                )
+            )
         definition = provider_definition(provider_id)
         api_key = str(
             self.settings.value(
@@ -3528,9 +3637,7 @@ class MainWindow(QMainWindow):
             or ""
         ).strip()
         ollama_model = (
-            DEFAULT_OLLAMA_MODEL
-            if saved_ollama_model is None
-            else str(saved_ollama_model or "").strip()
+            "" if saved_ollama_model is None else str(saved_ollama_model or "").strip()
         )
         configure_ai_environment(
             nvidia_api_key=api_key if definition.id == "nvidia" else "",
@@ -3618,7 +3725,7 @@ class MainWindow(QMainWindow):
             "sample_rate": "44100",
             "wikipedia_track_order": True,
             "ai_enabled": True,
-            "ai_provider": "ollama",
+            "ai_provider": "builtin",
             "crash_reports_enabled": False,
             "agentic_model": "",
             "nvidia_api_key": "",
@@ -3733,11 +3840,11 @@ class MainWindow(QMainWindow):
         }
         provider_signals = self.settings_ai_provider.blockSignals(True)
         self.settings_ai_provider.setCurrentIndex(
-            self.settings_ai_provider.findData("ollama")
+            self.settings_ai_provider.findData("builtin")
         )
         self.settings_ai_provider.blockSignals(provider_signals)
-        self._active_ai_provider = "ollama"
-        self._show_ai_provider_draft("ollama")
+        self._active_ai_provider = "builtin"
+        self._show_ai_provider_draft("builtin")
         self.settings_serpapi_api_key.clear()
         self.settings_agentic_model.setCurrentText("")
         self.settings_search_suggestions.setValue(int(values["search_suggestions"]))
@@ -3752,9 +3859,11 @@ class MainWindow(QMainWindow):
         self.settings_persist_state.blockSignals(persist_signals)
 
         configure_ai_environment(nvidia_api_key="", nvidia_model="", ollama_model="")
-        configure_agno_environment(provider="ollama", api_key="", model="", base_url="")
+        configure_agno_environment(provider="builtin", api_key="", model="", base_url="")
         configure_serpapi_environment("")
-        self.ai_status_badge.setText("AI READY · STATIC FALLBACK · no model configured")
+        self.ai_status_badge.setText(
+            f"AI READY · {BUILTIN_PROVIDER_LABEL.upper()} · {BUILTIN_MODEL_ID}"
+        )
         self.workers_metric.set_value(values["workers"])
         self._apply_crystalness(int(values["crystalness"]), persist=True)
         self.media_library.set_suggestion_limit(int(values["search_suggestions"]))
@@ -3901,6 +4010,9 @@ class MainWindow(QMainWindow):
         if not bool(values["ai_enabled"]):
             provider = "DISABLED"
             ready_model = "internet/deterministic mode"
+        elif provider_id == "builtin":
+            provider = BUILTIN_PROVIDER_LABEL.upper()
+            ready_model = BUILTIN_MODEL_ID
         elif provider_id == "ollama" and str(values["agentic_model"]):
             provider = "OLLAMA"
             ready_model = str(values["agentic_model"])
@@ -4247,7 +4359,15 @@ class MainWindow(QMainWindow):
     def request_graceful_shutdown(self) -> None:
         """Close immediately on a console interrupt or shutdown request."""
 
-        if self._active_worker is not None or self._parallel_jobs:
+        builtin_install_running = bool(
+            self._builtin_install_thread is not None
+            and self._builtin_install_thread.isRunning()
+        )
+        if (
+            self._active_worker is not None
+            or self._parallel_jobs
+            or builtin_install_running
+        ):
             self.close()
             return
         self._append_log("[SHUTDOWN] Console interrupt received; closing application.")
@@ -4263,7 +4383,15 @@ class MainWindow(QMainWindow):
             f"parallel_jobs={len(self._parallel_jobs)}",
         )
         self.media_library.shutdown()
-        if self._active_worker is not None or self._parallel_jobs:
+        builtin_install_running = bool(
+            self._builtin_install_thread is not None
+            and self._builtin_install_thread.isRunning()
+        )
+        if (
+            self._active_worker is not None
+            or self._parallel_jobs
+            or builtin_install_running
+        ):
             self.settings.setValue("window/geometry", self.saveGeometry())
             self._save_workspace_state()
             if self._active_worker is not None:
@@ -4276,7 +4404,8 @@ class MainWindow(QMainWindow):
             self.hide()
             log_diagnostic(
                 "SHUTDOWN",
-                "Intentional forced exit while an operation worker was active",
+                "Intentional forced exit while an operation or AI installation "
+                "worker was active",
             )
             os._exit(0)
         background_threads = []

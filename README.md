@@ -26,9 +26,10 @@ PyQt6 desktop application with a scriptable command line to download permitted m
 write metadata and artwork, split albums and jukeboxes, edit files,
 and manage a local playback library.
 
-> **Everything required by the desktop app travels with the installer.** Python,
-> FFmpeg, FFprobe, Deno, yt-dlp, and application dependencies are bundled—no developer
-> environment and no administrator access are required.
+> **The desktop runtime travels with the installer.** Python, FFmpeg, FFprobe, Deno,
+> yt-dlp, and application dependencies are bundled—no developer environment or
+> administrator access is required. The optional built-in AI model is securely
+> downloaded and verified on first AI use so ordinary upgrades stay smaller.
 
 ## See it running
 
@@ -96,6 +97,15 @@ Get the newest tested build from **[GitHub Releases](https://github.com/DhimanGh
 | **Raspberry Pi OS 64-bit** | `youtube-media-tools-*-raspi-cli.tar.gz` | CLI only | Extract and run `install.sh` |
 
 Checksums for every artifact are published as `SHA256SUMS.txt` in the same release.
+
+### System requirements
+
+The desktop app requires a supported 64-bit operating system. Built-in CPU AI requires
+no GPU or CUDA. Plan for at least a 2-core 64-bit CPU, 8 GB RAM, and 2 GB free space;
+4+ modern cores, 16 GB RAM, an SSD, and 4 GB free space are recommended. The first
+built-in-AI request downloads and verifies approximately 630 MB of managed assets.
+
+**[Open the complete built-in AI, privacy, and system requirements guide →](docs/BUILT_IN_AI.md)**
 
 <details>
 <summary><b>Windows installation</b></summary>
@@ -271,8 +281,9 @@ splitting, playback, and deterministic catalog matching continue to work with AI
 
 | Mode | Setup | What happens |
 | --- | --- | --- |
-| **Local AI with Ollama** | Install and run Ollama separately, download a compatible model, then select **Ollama (local)** and the model under **Global Settings → AI providers and online evidence**. No API key is required. | Prompts and model responses stay on the user's computer. Internet evidence is still contacted when the selected workflow requires it. |
-| **Hosted AI with an API key** | Select NVIDIA NIM, OpenAI, Anthropic, Google Gemini, Groq, Hugging Face Inference, OpenRouter, or OpenCode Zen; then save that provider's key and model. | The selected provider runs through Agno. Its password-masked key/model draft is retained independently, and Ollama is the local fallback. |
+| **Built-in CPU AI (default)** | No AI setup. On first AI use the app downloads and verifies its pinned Qwen3-0.6B model and llama.cpp runtime. No GPU, CUDA, API key, or coding knowledge is required. | Prompts and responses remain on the device. The managed model can be installed, repaired, or removed from Global Settings. |
+| **Local AI with Ollama** | Install and run Ollama separately, download a compatible model, then select **Ollama (local)** and the model under **Global Settings → AI providers and online evidence**. No API key is required. | Ollama overrides the built-in model. If unavailable, the task falls back to built-in CPU AI. |
+| **Hosted AI with an API key** | Select NVIDIA NIM, OpenAI, Anthropic, Google Gemini, Groq, Hugging Face Inference, OpenRouter, or OpenCode Zen; then save that provider's key and model. | The selected provider runs through Agno. Its password-masked draft is retained independently; explicit Ollama and then built-in CPU AI are local fallbacks. |
 | **Compatible endpoint** | Select **Custom OpenAI-compatible**, enter its `/v1` base URL and model, and add a key only if the endpoint requires one. | Self-hosted and other compatible services can participate without provider-specific application code. |
 | **No AI** | Leave **Use AI for this task** off. | Wikipedia, catalog, web evidence, SerpApi (when separately configured), and deterministic rules perform the work without model calls. |
 
@@ -294,12 +305,16 @@ there is no fixed synonym mapping, so a model can connect differently worded con
 as a playlist's tempo/theme and the requested listening activity. Relevant playlist members
 may be included as personal taste matches, and a concise version of the same context is used
 when **Search YouTube too** is selected. This is request-time contextual personalization,
-not permanent model-weight training; media paths and files are not sent.
+not permanent model-weight training. The profile belongs to whichever user is running the
+software—not to the developer—and is refreshed locally when that user's playlists change.
+Media paths and files are not stored in the profile or sent to the model.
 
 Provider keys are stored separately: switching providers does not copy one provider's
 credential into another, and clearing a key remains cleared after **Save and apply
 defaults** and restart. See the [desktop user guide](docs/USER_GUIDE.md#how-ai-and-internet-evidence-work)
 for configuration, fallback order, privacy notes, and log meanings.
+The [built-in AI guide](docs/BUILT_IN_AI.md) documents its pinned runtime/model,
+system requirements, local preference profile, first-use download, and troubleshooting.
 
 Album Enricher uses Wikipedia and Apple's public catalog by default. Users may add
 their own optional [SerpApi](https://serpapi.com/) key under **Global Settings** to use

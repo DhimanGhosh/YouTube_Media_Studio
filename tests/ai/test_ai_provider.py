@@ -39,6 +39,7 @@ def reset_provider_circuit() -> None:
 
 
 def configure(monkeypatch, *, key: str = "") -> None:
+    monkeypatch.setenv(ai_provider.AI_PROVIDER_ENV, "nvidia" if key else "ollama")
     monkeypatch.setenv(ai_provider.NVIDIA_API_KEY_ENV, key)
     monkeypatch.setenv(ai_provider.NVIDIA_MODEL_ENV, "z-ai/glm-5.2")
     monkeypatch.setenv(ai_provider.OLLAMA_MODEL_ENV, "qwen:test")
@@ -174,6 +175,28 @@ def test_no_key_uses_ollama_directly(monkeypatch) -> None:
     assert result.provider == "Ollama"
 
 
+def test_builtin_cpu_provider_works_without_ollama_or_api_key(monkeypatch) -> None:
+    monkeypatch.setenv(ai_provider.AI_PROVIDER_ENV, "builtin")
+    monkeypatch.delenv(ai_provider.OLLAMA_MODEL_ENV, raising=False)
+    response = Response(
+        {"choices": [{"message": {"content": '{"answer":"private"}'}}]}
+    )
+    with (
+        patch.object(
+            ai_provider,
+            "ensure_builtin_server",
+            return_value=("http://127.0.0.1:12345/v1", "Qwen3-0.6B-Q8_0"),
+        ),
+        patch.object(ai_provider, "urlopen", return_value=response) as open_mock,
+    ):
+        result = ai_provider.chat_json(MESSAGES, SCHEMA)
+
+    assert open_mock.call_args.args[0].full_url.endswith("/v1/chat/completions")
+    assert result.provider == "Built-in CPU AI"
+    assert result.model == "Qwen3-0.6B-Q8_0"
+    assert result.data == {"answer": "private"}
+
+
 def test_selected_generic_provider_routes_legacy_structured_calls_through_agno(
     monkeypatch,
 ) -> None:
@@ -205,7 +228,7 @@ def test_all_provider_failures_raise_for_static_caller_fallback(monkeypatch) -> 
     assert "nvapi-do-not-log" not in str(error.value)
 
 
-def test_clearing_every_model_uses_static_fallback_without_network(monkeypatch) -> None:
+def test_clearing_external_models_tries_built_in_before_static_fallback(monkeypatch) -> None:
     monkeypatch.delenv(ai_provider.NVIDIA_API_KEY_ENV, raising=False)
     monkeypatch.delenv(ai_provider.NVIDIA_MODEL_ENV, raising=False)
     monkeypatch.delenv(ai_provider.OLLAMA_MODEL_ENV, raising=False)
@@ -217,8 +240,14 @@ def test_clearing_every_model_uses_static_fallback_without_network(monkeypatch) 
 
     with (
         patch.object(ai_provider, "urlopen") as open_mock,
-        pytest.raises(ai_provider.AIUnavailableError, match="no model configured"),
+        patch.object(
+            ai_provider,
+            "ensure_builtin_server",
+            side_effect=RuntimeError("built-in unavailable"),
+        ) as ensure_builtin,
+        pytest.raises(ai_provider.AIUnavailableError, match="built-in unavailable"),
     ):
         ai_provider.chat_json(MESSAGES, SCHEMA)
 
     open_mock.assert_not_called()
+    ensure_builtin.assert_called_once_with()

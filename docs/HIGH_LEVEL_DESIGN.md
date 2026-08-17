@@ -181,11 +181,13 @@ flowchart LR
     Request["Operation or curator request"] --> Planner["Structured Agno agent"]
     Planner --> Primary{"Configured provider available?"}
     Primary -->|Yes| Hosted["Selected hosted/local model"]
-    Primary -->|No| Fallback["Configured Ollama model"]
-    Fallback -->|Unavailable| Static["Deterministic fallback"]
+    Primary -->|No| Fallback["Explicit Ollama model"]
+    Fallback -->|Unavailable| BuiltIn["Managed CPU model"]
+    BuiltIn -->|Unavailable| Static["Deterministic fallback"]
 
     Hosted --> Proposed["Structured proposal"]
     Fallback --> Proposed
+    BuiltIn --> Proposed
     Proposed --> Evidence["Catalog and bounded web evidence"]
     Static --> Evidence
     Evidence --> Gate{"Identity and semantic gates pass?"}
@@ -193,10 +195,10 @@ flowchart LR
     Gate -->|No| Review["Reject, skip, or request review"]
 ```
 
-Provider definitions are centralized. Ollama, NVIDIA NIM, OpenAI, Anthropic, Google
+Provider definitions are centralized. Built-in CPU AI, Ollama, NVIDIA NIM, OpenAI, Anthropic, Google
 Gemini, Groq, Hugging Face Inference, OpenRouter, OpenCode Zen, and custom
 OpenAI-compatible endpoints resolve into Agno model objects. Hosted failure triggers one
-direct local retry. Constrained curator filters fail closed when neither model nor
+direct local retry and then a lazy managed-CPU retry. Constrained curator filters fail closed when neither model nor
 independent evidence can safely establish the requested property.
 
 ## 8. Security, privacy, and safety boundaries
@@ -204,7 +206,11 @@ independent evidence can safely establish the requested property.
 - API keys are password-masked, stored per provider in local settings, omitted from logs,
   and removable by saving an explicitly blank value.
 - The curator sends bounded metadata/evidence, not media file contents, to model APIs.
-- Local Ollama inference stays local, while evidence lookups may still use the internet.
+- Built-in and Ollama inference stay local, while evidence lookups may still use the internet.
+- Playlist personalization is stored as a versioned path-free profile for the current
+  user; no user's preferences are distributed in model weights.
+- Managed model/runtime downloads are pinned, checksum-verified, atomically installed,
+  and served on loopback only.
 - File mutation services validate paths and formats, use collision-safe names, preserve
   tags where appropriate, and surface file locks rather than forcibly overwriting files.
 - Cancellation tokens coordinate worker pools and subprocess termination.

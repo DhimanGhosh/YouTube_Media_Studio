@@ -11,6 +11,9 @@ from typing import Iterable, Literal, Mapping, TypedDict
 from pydantic import BaseModel, ConfigDict, Field
 
 from youtube_audio_video_downloader.services.ai.agno_provider import run_structured_agent
+from youtube_audio_video_downloader.services.ai.preference_profile import (
+    update_preference_profile,
+)
 from youtube_audio_video_downloader.services.albums.album_art_finder import find_catalog_song_metadata
 from youtube_audio_video_downloader.services.media.media_library import LibraryItem, split_artists
 from youtube_audio_video_downloader.services.metadata.music_web_evidence import (
@@ -89,7 +92,7 @@ class _SemanticMatch(BaseModel):
 
     id: int
     matches: bool
-    confidence: float = Field(ge=0, le=1)
+    confidence: float = Field(ge=0, le=100)
     matched_filters: list[str] = Field(max_length=MAX_MATCHED_FILTERS)
     evidence_support: list["_FilterEvidence"] = Field(
         default_factory=list, max_length=MAX_MATCHED_FILTERS
@@ -116,7 +119,7 @@ class _TastePlaylistMatch(BaseModel):
 
     id: int
     relevant: bool
-    confidence: float = Field(ge=0, le=1)
+    confidence: float = Field(ge=0, le=100)
     matched_filters: list[str] = Field(max_length=MAX_MATCHED_FILTERS)
 
 
@@ -131,7 +134,7 @@ class _EvidenceJudgment(BaseModel):
 
     id: int
     supports: bool
-    confidence: float = Field(ge=0, le=1)
+    confidence: float = Field(ge=0, le=100)
 
 
 class _EvidenceJudgmentOutput(BaseModel):
@@ -168,13 +171,19 @@ def recommend_library_tracks(
     all_items = list(items)
     if not all_items:
         raise ValueError("The indexed library has no tracks to recommend.")
-    taste_profile = _playlist_taste_profile(all_items, playlists or {})
+    saved_profile = update_preference_profile(all_items, playlists or {})
+    taste_profile = saved_profile["playlists"][:MAX_TASTE_PLAYLISTS]
+    taste_profile = [
+        {"name": playlist["name"], "tracks": playlist["tracks"][:MAX_TASTE_TRACKS_PER_PLAYLIST]}
+        for playlist in taste_profile
+    ][:MAX_TASTE_PLAYLISTS]
 
     literal_artists = _requested_artists(request_text, all_items)
     plan = _plan_request(
         request_text, all_items, literal_artists=literal_artists,
         taste_profile=taste_profile, model=selected_model, timeout=timeout,
     )
+    plan = _reject_unrequested_plan_values(request_text, plan, literal_artists)
     plan = _recover_omitted_constraints(request_text, plan)
     if language_continuation:
         plan = _QueryPlan(
@@ -379,6 +388,36 @@ def _recover_omitted_constraints(request_text: str, plan: _QueryPlan) -> _QueryP
     )
 
 
+def _reject_unrequested_plan_values(
+    request_text: str,
+    plan: _QueryPlan,
+    literal_artists: tuple[str, ...],
+) -> _QueryPlan:
+    """Keep a compact model from adding artist or release-age constraints."""
+
+    query_key = _text_key(request_text)
+    artists = tuple(
+        artist
+        for artist in plan.artists
+        if artist in literal_artists or _text_key(artist) in query_key
+    )
+    requested_time = next(
+        (
+            preference
+            for preference, tokens in _TIME_PREFERENCE_TOKENS.items()
+            if any(token in query_key.split() for token in tokens)
+        ),
+        "any",
+    )
+    return _QueryPlan(
+        artists=artists or literal_artists,
+        languages=plan.languages,
+        semantic_filters=plan.semantic_filters,
+        time_preference=requested_time,
+        use_web_evidence=plan.use_web_evidence,
+    )
+
+
 def _promote_evidence_languages(
     plan: _QueryPlan, evidence: dict[int, dict[str, str]]
 ) -> _QueryPlan:
@@ -462,7 +501,7 @@ def _verify_playlist_taste(
         if (
             not 0 <= row.id < len(taste_profile)
             or not row.relevant
-            or row.confidence < 0.65
+            or _normalized_confidence(row.confidence) < 0.65
         ):
             continue
         matched = _clean_strings(row.matched_filters)
@@ -554,7 +593,7 @@ def _verify_semantics(
     seen: set[int] = set()
     for row in payload.matches:
         candidate_id = row.id
-        confidence = row.confidence
+        confidence = _normalized_confidence(row.confidence)
         if (
             candidate_id in seen
             or not 0 <= candidate_id < len(candidates)
@@ -1063,7 +1102,11 @@ def _adjudicate_semantic_evidence(
     approved: dict[int, set[str]] = {}
     for judgment in payload.judgments:
         target = claim_targets.get(judgment.id)
-        if target is None or not judgment.supports or judgment.confidence < 0.7:
+        if (
+            target is None
+            or not judgment.supports
+            or _normalized_confidence(judgment.confidence) < 0.7
+        ):
             continue
         candidate_id, key = target
         approved.setdefault(candidate_id, set()).add(key)
@@ -1126,6 +1169,13 @@ def _clean_strings(value: object) -> tuple[str, ...]:
     return tuple(dict.fromkeys(
         text for item in value if (text := str(item or "").strip())
     ))
+
+
+def _normalized_confidence(value: float) -> float:
+    """Accept either a 0..1 fraction or a compact model's 0..100 percentage."""
+
+    bounded = max(0.0, min(float(value), 100.0))
+    return bounded / 100 if bounded > 1 else bounded
 
 
 def _text_key(value: str) -> str:
