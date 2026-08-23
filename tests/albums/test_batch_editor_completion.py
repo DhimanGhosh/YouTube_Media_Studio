@@ -188,6 +188,31 @@ class BatchEditorCompletionTest(unittest.TestCase):
         self.assertEqual(editor.entries, [added])
         self.assertNotIn(placeholder, editor.entries)
 
+    def test_album_accepts_legacy_local_source_alias_as_first_class_source(self) -> None:
+        editor = JsonBatchEditor("album")
+
+        entry = editor.add_entry("Local album", {"source_file": "C:/Media/album.mp4"})
+        fields = entry["fields"]
+
+        self.assertEqual(fields["ytb_link"].text(), "C:/Media/album.mp4")
+        self.assertEqual(fields["__source_mode__"].currentData(), "local")
+        self.assertFalse(fields["__extract_button__"].isEnabled())
+        self.assertIn("original source file is preserved", fields["__extract_button__"].toolTip())
+        self.assertEqual(editor.data()["Local album"]["ytb_link"], "C:/Media/album.mp4")
+
+    def test_jukebox_source_mode_switches_between_browse_and_youtube_search(self) -> None:
+        editor = JsonBatchEditor("jukebox")
+        entry = editor.add_entry("Compilation", {"ytb_link": "https://youtu.be/abcdefghijk"})
+        fields = entry["fields"]
+        source_mode = fields["__source_mode__"]
+
+        self.assertEqual(source_mode.currentData(), "youtube")
+        self.assertFalse(fields["__source_search__"].isHidden())
+        source_mode.setCurrentIndex(source_mode.findData("local"))
+
+        self.assertTrue(fields["__source_search__"].isHidden())
+        self.assertFalse(fields["__extract_button__"].isEnabled())
+
     def test_populated_entry_keeps_existing_nonblank_entries(self) -> None:
         editor = JsonBatchEditor("jukebox")
         first = editor.add_entry("First", {"ytb_link": "https://youtu.be/abcdefghijk"})
