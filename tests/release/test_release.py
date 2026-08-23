@@ -196,7 +196,14 @@ def test_nsis_installer_renames_internal_gui_executable() -> None:
         encoding="utf-8"
     )
 
-    assert 'Rename "$INSTDIR\\${GUI_BUNDLE_EXE}" "$INSTDIR\\${APP_EXE}"' in script
+    unpack = 'File /r "${GUI_PAYLOAD_DIR}\\*"'
+    stage = 'Rename "$INSTDIR\\${APP_EXE}" "$INSTDIR\\${APP_EXE}.previous"'
+    rename = 'Rename "$INSTDIR\\${GUI_BUNDLE_EXE}" "$INSTDIR\\${APP_EXE}"'
+    restore = 'Rename "$INSTDIR\\${APP_EXE}.previous" "$INSTDIR\\${APP_EXE}"'
+
+    assert -1 < script.index(unpack) < script.index(stage) < script.index(rename)
+    assert script.index(rename) < script.index(restore)
+    assert 'Abort "Could not replace ${APP_EXE}' in script
 
 
 def test_clean_removes_only_generated_paths(monkeypatch, tmp_path) -> None:

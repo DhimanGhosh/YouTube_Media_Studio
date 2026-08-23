@@ -91,7 +91,24 @@ Section "${APP_NAME} (required)" SecMain
   nsExec::ExecToLog 'powershell.exe -NoProfile -NonInteractive -Command "Get-CimInstance Win32_Process | Where-Object { $$_.ExecutablePath -and [StringComparer]::OrdinalIgnoreCase.Equals($$_.ExecutablePath, $$env:YMS_UPGRADE_TARGET) } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force }"'
   System::Call 'Kernel32::SetEnvironmentVariable(t, i)i("YMS_UPGRADE_TARGET", 0)'
   File /r "${GUI_PAYLOAD_DIR}\*"
+  ; A 2.15.0 onefile upgrade leaves this public-name executable behind. Stage
+  ; it only after unpacking succeeds, then restore it if the new verified
+  ; onedir launcher cannot be installed. This makes the replacement atomic.
+  Delete "$INSTDIR\${APP_EXE}.previous"
+  IfFileExists "$INSTDIR\${APP_EXE}" 0 legacy_launcher_staged
+    ClearErrors
+    Rename "$INSTDIR\${APP_EXE}" "$INSTDIR\${APP_EXE}.previous"
+    IfErrors 0 legacy_launcher_staged
+      Abort "Could not prepare ${APP_EXE} for upgrade. Close the application and run Setup again."
+  legacy_launcher_staged:
+  ClearErrors
   Rename "$INSTDIR\${GUI_BUNDLE_EXE}" "$INSTDIR\${APP_EXE}"
+  IfErrors 0 gui_executable_ready
+    ClearErrors
+    Rename "$INSTDIR\${APP_EXE}.previous" "$INSTDIR\${APP_EXE}"
+    Abort "Could not replace ${APP_EXE}. Close the application and run Setup again."
+  gui_executable_ready:
+  Delete "$INSTDIR\${APP_EXE}.previous"
   WriteUninstaller "$INSTDIR\${UNINSTALL_EXE}"
 
   WriteRegStr HKCU "${APP_REG_KEY}" "InstallDir" "$INSTDIR"
