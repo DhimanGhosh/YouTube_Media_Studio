@@ -4,6 +4,32 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [2.13.0] - 2026-08-23
+
+### Added
+
+- feat: ship resilient downloads and stable update channel (`b473a74`)
+
+### Fixed
+
+- fix: pin Windows FFmpeg release runtime (`f6c648d`)
+- fix: clean every failed runtime download (`ea40e3c`)
+- fix: clean failed runtime staging and reject ARM (`355da98`)
+- fix: pin static Linux FFmpeg runtime (`f051899`)
+- fix: use system FFmpeg for Linux releases (`bbc3908`)
+- fix: enforce stable channel and queue position (`97b8fea`)
+- fix: retry tagging and sync update channel status (`8aee164`)
+- fix: open complete albums from player links (`eabc74a`)
+- fix: retain prepared download paths (`07d1228`)
+- fix: address release review edge cases (`6463ddb`)
+
+### Changed
+
+- Merge pull request #43 from DhimanGhosh/codex/windows-release-runtime-fix (`c7284f2`)
+- Merge pull request #42 from DhimanGhosh/codex/linux-release-runtime-fix (`38405fb`)
+- test: exercise staged FFmpeg media pipeline (`c178517`)
+- Merge pull request #41 from DhimanGhosh/codex/download-recovery-v2.13.0 (`994fc40`)
+- style: normalize new file endings (`17b748e`)
 ## [2.12.0] - 2026-08-17
 
 ### Added
