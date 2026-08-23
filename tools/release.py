@@ -787,6 +787,11 @@ def prepare_runtime_tools(target: str) -> list[Path]:
 def _download_pinned_linux_ffmpeg(staging: Path) -> tuple[Path, Path]:
     """Download and safely extract the checksum-pinned static Linux runtimes."""
 
+    machine = platform.machine().casefold()
+    if machine not in {"amd64", "x86_64"}:
+        raise RuntimeError(
+            f"The pinned Linux FFmpeg runtime supports x86_64 only, not {machine or 'unknown'}"
+        )
     archive = staging / "ffmpeg-6.0.1-amd64-static.tar.xz"
     request = Request(
         LINUX_FFMPEG_ARCHIVE_URL,
@@ -802,27 +807,33 @@ def _download_pinned_linux_ffmpeg(staging: Path) -> tuple[Path, Path]:
         raise RuntimeError("Pinned Linux FFmpeg archive failed SHA-256 verification")
 
     extracted: list[Path] = []
-    with tarfile.open(archive, "r:xz") as bundle:
-        for name in ("ffmpeg", "ffprobe"):
-            member = next(
-                (
-                    candidate
-                    for candidate in bundle.getmembers()
-                    if candidate.isfile() and Path(candidate.name).name == name
-                ),
-                None,
-            )
-            if member is None:
-                raise RuntimeError(f"Pinned Linux FFmpeg archive is missing {name}")
-            source = bundle.extractfile(member)
-            if source is None:
-                raise RuntimeError(f"Could not read {name} from Linux FFmpeg archive")
-            destination = staging / name
-            with source, destination.open("wb") as output:
-                shutil.copyfileobj(source, output)
-            destination.chmod(destination.stat().st_mode | 0o111)
-            extracted.append(destination)
-    archive.unlink()
+    try:
+        with tarfile.open(archive, "r:xz") as bundle:
+            for name in ("ffmpeg", "ffprobe"):
+                member = next(
+                    (
+                        candidate
+                        for candidate in bundle.getmembers()
+                        if candidate.isfile() and Path(candidate.name).name == name
+                    ),
+                    None,
+                )
+                if member is None:
+                    raise RuntimeError(f"Pinned Linux FFmpeg archive is missing {name}")
+                source = bundle.extractfile(member)
+                if source is None:
+                    raise RuntimeError(f"Could not read {name} from Linux FFmpeg archive")
+                destination = staging / name
+                with source, destination.open("wb") as output:
+                    shutil.copyfileobj(source, output)
+                destination.chmod(destination.stat().st_mode | 0o111)
+                extracted.append(destination)
+    except Exception:
+        for destination in extracted:
+            destination.unlink(missing_ok=True)
+        raise
+    finally:
+        archive.unlink(missing_ok=True)
     return extracted[0], extracted[1]
 
 

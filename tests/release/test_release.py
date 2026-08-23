@@ -86,6 +86,39 @@ def test_pinned_linux_ffmpeg_archive_is_verified_and_safely_extracted(
     assert not (tmp_path / "ffmpeg-6.0.1-amd64-static.tar.xz").exists()
 
 
+def test_pinned_linux_ffmpeg_rejects_non_x64_hosts(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(release_tool.platform, "machine", lambda: "aarch64")
+
+    with pytest.raises(RuntimeError, match="supports x86_64 only"):
+        release_tool._download_pinned_linux_ffmpeg(tmp_path)
+
+
+def test_failed_linux_ffmpeg_extraction_removes_archive_and_partial_files(
+    monkeypatch, tmp_path
+) -> None:
+    archive = io.BytesIO()
+    with tarfile.open(fileobj=archive, mode="w:xz") as bundle:
+        member = tarfile.TarInfo("ffmpeg-static/ffmpeg")
+        member.size = 6
+        bundle.addfile(member, io.BytesIO(b"binary"))
+    payload = archive.getvalue()
+    monkeypatch.setattr(
+        release_tool,
+        "LINUX_FFMPEG_ARCHIVE_SHA256",
+        hashlib.sha256(payload).hexdigest(),
+    )
+    monkeypatch.setattr(
+        release_tool,
+        "urlopen",
+        lambda _request, timeout: io.BytesIO(payload),
+    )
+
+    with pytest.raises(RuntimeError, match="missing ffprobe"):
+        release_tool._download_pinned_linux_ffmpeg(tmp_path)
+
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_macos_desktop_build_rejects_intel_hosts(monkeypatch) -> None:
     monkeypatch.setattr(release_tool.platform, "system", lambda: "Darwin")
     monkeypatch.setattr(release_tool.platform, "machine", lambda: "x86_64")
