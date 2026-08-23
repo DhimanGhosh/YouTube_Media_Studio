@@ -91,3 +91,34 @@ def test_metadata_extraction_does_not_emit_download_lifecycle(monkeypatch) -> No
 
     assert result["download"] is False
     assert lifecycle_events == []
+
+
+def test_download_result_includes_prepared_filename(monkeypatch, tmp_path) -> None:
+    expected_path = tmp_path / "source.webm"
+
+    class FakeDownloader:
+        def __init__(self, _options):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def extract_info(self, _url, *, download):
+            assert download is True
+            return {"id": "source", "ext": "webm"}
+
+        def prepare_filename(self, _info):
+            return str(expected_path)
+
+    monkeypatch.setattr("yt_dlp.YoutubeDL", FakeDownloader)
+
+    result = download_with_fallback(
+        "https://example.test/video",
+        {"outtmpl": str(tmp_path / "%(id)s.%(ext)s")},
+        label="Source",
+    )
+
+    assert result["_filename"] == str(expected_path)

@@ -216,6 +216,13 @@ def download_with_fallback(
                     _emit_download_lifecycle(label, options, "downloading", 0.0)
                 with yt_dlp.YoutubeDL(options) as downloader:
                     result = downloader.extract_info(url, download=download)
+                    if download and isinstance(result, dict) and not result.get("_filename"):
+                        try:
+                            result["_filename"] = downloader.prepare_filename(result)
+                        except (AttributeError, KeyError, TypeError, ValueError):
+                            # Some extractors do not return enough fields to prepare a
+                            # filename. Callers can still inspect their output template.
+                            pass
                     if download:
                         _emit_download_lifecycle(label, options, "finished", 100.0)
                     return result if isinstance(result, dict) else {}
