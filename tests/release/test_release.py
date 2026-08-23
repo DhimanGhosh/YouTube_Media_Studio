@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
+import io
 import json
 import os
 import sys
@@ -51,6 +53,91 @@ def test_every_desktop_target_has_a_native_icon() -> None:
     assert release_tool.desktop_icon_for_target("windows").suffix == ".ico"
     assert release_tool.desktop_icon_for_target("macos").suffix == ".icns"
     assert release_tool.desktop_icon_for_target("linux").suffix == ".png"
+
+
+def test_pinned_linux_ffmpeg_archive_is_verified_and_safely_extracted(
+    monkeypatch, tmp_path
+) -> None:
+    archive = io.BytesIO()
+    with tarfile.open(fileobj=archive, mode="w:xz") as bundle:
+        for name, payload in (("ffmpeg", b"static ffmpeg"), ("ffprobe", b"static ffprobe")):
+            member = tarfile.TarInfo(f"ffmpeg-static/{name}")
+            member.size = len(payload)
+            bundle.addfile(member, io.BytesIO(payload))
+    payload = archive.getvalue()
+    monkeypatch.setattr(
+        release_tool,
+        "LINUX_FFMPEG_ARCHIVE_SHA256",
+        hashlib.sha256(payload).hexdigest(),
+    )
+    monkeypatch.setattr(
+        release_tool,
+        "urlopen",
+        lambda _request, timeout: io.BytesIO(payload),
+    )
+
+    ffmpeg, ffprobe = release_tool._download_pinned_linux_ffmpeg(tmp_path)
+
+    assert ffmpeg.read_bytes() == b"static ffmpeg"
+    assert ffprobe.read_bytes() == b"static ffprobe"
+    if os.name != "nt":
+        assert ffmpeg.stat().st_mode & 0o111
+        assert ffprobe.stat().st_mode & 0o111
+    assert not (tmp_path / "ffmpeg-6.0.1-amd64-static.tar.xz").exists()
+
+
+def test_pinned_linux_ffmpeg_rejects_non_x64_hosts(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(release_tool.platform, "machine", lambda: "aarch64")
+
+    with pytest.raises(RuntimeError, match="supports x86_64 only"):
+        release_tool._download_pinned_linux_ffmpeg(tmp_path)
+
+
+def test_failed_linux_ffmpeg_extraction_removes_archive_and_partial_files(
+    monkeypatch, tmp_path
+) -> None:
+    archive = io.BytesIO()
+    with tarfile.open(fileobj=archive, mode="w:xz") as bundle:
+        member = tarfile.TarInfo("ffmpeg-static/ffmpeg")
+        member.size = 6
+        bundle.addfile(member, io.BytesIO(b"binary"))
+    payload = archive.getvalue()
+    monkeypatch.setattr(
+        release_tool,
+        "LINUX_FFMPEG_ARCHIVE_SHA256",
+        hashlib.sha256(payload).hexdigest(),
+    )
+    monkeypatch.setattr(
+        release_tool,
+        "urlopen",
+        lambda _request, timeout: io.BytesIO(payload),
+    )
+
+    with pytest.raises(RuntimeError, match="missing ffprobe"):
+        release_tool._download_pinned_linux_ffmpeg(tmp_path)
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_failed_linux_ffmpeg_download_removes_partial_archive(
+    monkeypatch, tmp_path
+) -> None:
+    class BrokenResponse(io.BytesIO):
+        def read(self, size=-1):
+            if self.tell():
+                raise OSError("connection interrupted")
+            return super().read(4 if size != 0 else size)
+
+    monkeypatch.setattr(
+        release_tool,
+        "urlopen",
+        lambda _request, timeout: BrokenResponse(b"partial archive"),
+    )
+
+    with pytest.raises(OSError, match="connection interrupted"):
+        release_tool._download_pinned_linux_ffmpeg(tmp_path)
+
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_macos_desktop_build_rejects_intel_hosts(monkeypatch) -> None:

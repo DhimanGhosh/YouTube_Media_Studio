@@ -16,6 +16,7 @@ import time
 import tomllib
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from urllib.request import Request, urlopen
 
 from youtube_audio_video_downloader.config.app_identity import (
     APP_DISPLAY_NAME,
@@ -30,6 +31,13 @@ from youtube_audio_video_downloader.config.app_identity import (
 ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / "dist"
 ASSETS = ROOT / "assets"
+LINUX_FFMPEG_ARCHIVE_URL = (
+    "https://johnvansickle.com/ffmpeg/old-releases/"
+    "ffmpeg-6.0.1-amd64-static.tar.xz"
+)
+LINUX_FFMPEG_ARCHIVE_SHA256 = (
+    "28268bf402f1083833ea269331587f60a242848880073be8016501d864bd07a5"
+)
 
 
 @dataclass(frozen=True)
@@ -700,15 +708,25 @@ def prepare_runtime_tools(target: str) -> list[Path]:
     if staging.exists():
         shutil.rmtree(staging)
     staging.mkdir(parents=True)
-    script = (
-        "import json\n"
-        "import deno\n"
-        "from portable_ffmpeg import FFmpegVersions, get_ffmpeg\n"
-        "ffmpeg, ffprobe = get_ffmpeg(FFmpegVersions.V7)\n"
-        "print('RUNTIME_TOOLS_JSON=' + json.dumps({"
-        "'ffmpeg': str(ffmpeg), 'ffprobe': str(ffprobe), "
-        "'deno': str(deno.find_deno_bin())}))\n"
-    )
+    if target == "linux":
+        ffmpeg, ffprobe = _download_pinned_linux_ffmpeg(staging)
+        script = (
+            "import json\n"
+            "import deno\n"
+            "print('RUNTIME_TOOLS_JSON=' + json.dumps({"
+            f"'ffmpeg': {str(ffmpeg)!r}, 'ffprobe': {str(ffprobe)!r}, "
+            "'deno': str(deno.find_deno_bin())}))\n"
+        )
+    else:
+        script = (
+            "import json\n"
+            "import deno\n"
+            "from portable_ffmpeg import FFmpegVersions, get_ffmpeg\n"
+            "ffmpeg, ffprobe = get_ffmpeg(FFmpegVersions.V7)\n"
+            "print('RUNTIME_TOOLS_JSON=' + json.dumps({"
+            "'ffmpeg': str(ffmpeg), 'ffprobe': str(ffprobe), "
+            "'deno': str(deno.find_deno_bin())}))\n"
+        )
     command = [
         "uv",
         "run",
@@ -758,11 +776,62 @@ def prepare_runtime_tools(target: str) -> list[Path]:
         if not source.is_file():
             raise RuntimeError(f"Required packaging tool was not found: {source}")
         destination = staging / output_name
-        shutil.copy2(source, destination)
+        if source.resolve() != destination.resolve():
+            shutil.copy2(source, destination)
         destination.chmod(destination.stat().st_mode | 0o111)
         packaged.append(destination)
     _verify_runtime_tools(packaged)
     return packaged
+
+
+def _download_pinned_linux_ffmpeg(staging: Path) -> tuple[Path, Path]:
+    """Download and safely extract the checksum-pinned static Linux runtimes."""
+
+    machine = platform.machine().casefold()
+    if machine not in {"amd64", "x86_64"}:
+        raise RuntimeError(
+            f"The pinned Linux FFmpeg runtime supports x86_64 only, not {machine or 'unknown'}"
+        )
+    archive = staging / "ffmpeg-6.0.1-amd64-static.tar.xz"
+    request = Request(
+        LINUX_FFMPEG_ARCHIVE_URL,
+        headers={"User-Agent": "YouTube-Media-Studio release builder"},
+    )
+    destinations = (staging / "ffmpeg", staging / "ffprobe")
+    try:
+        digest = hashlib.sha256()
+        with urlopen(request, timeout=120) as response, archive.open("wb") as output:
+            while chunk := response.read(1024 * 1024):
+                output.write(chunk)
+                digest.update(chunk)
+        if digest.hexdigest() != LINUX_FFMPEG_ARCHIVE_SHA256:
+            raise RuntimeError("Pinned Linux FFmpeg archive failed SHA-256 verification")
+
+        with tarfile.open(archive, "r:xz") as bundle:
+            for name, destination in zip(("ffmpeg", "ffprobe"), destinations):
+                member = next(
+                    (
+                        candidate
+                        for candidate in bundle.getmembers()
+                        if candidate.isfile() and Path(candidate.name).name == name
+                    ),
+                    None,
+                )
+                if member is None:
+                    raise RuntimeError(f"Pinned Linux FFmpeg archive is missing {name}")
+                source = bundle.extractfile(member)
+                if source is None:
+                    raise RuntimeError(f"Could not read {name} from Linux FFmpeg archive")
+                with source, destination.open("wb") as output:
+                    shutil.copyfileobj(source, output)
+                destination.chmod(destination.stat().st_mode | 0o111)
+    except Exception:
+        for destination in destinations:
+            destination.unlink(missing_ok=True)
+        raise
+    finally:
+        archive.unlink(missing_ok=True)
+    return destinations
 
 
 def _verify_runtime_tools(tools: list[Path]) -> None:
@@ -780,6 +849,51 @@ def _verify_runtime_tools(tools: list[Path]) -> None:
                 f"Bundled runtime check failed for {binary.name}: "
                 f"{completed.stderr or completed.stdout}"
             )
+
+    ffmpeg = next(binary for binary in tools if binary.stem == "ffmpeg")
+    ffprobe = next(binary for binary in tools if binary.stem == "ffprobe")
+    with tempfile.TemporaryDirectory() as temporary:
+        sample = Path(temporary) / "runtime-smoke.wav"
+        render = subprocess.run(
+            [
+                str(ffmpeg),
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "anullsrc=r=8000:cl=mono",
+                "-t",
+                "0.05",
+                "-c:a",
+                "pcm_s16le",
+                str(sample),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        probe = subprocess.run(
+            [
+                str(ffprobe),
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                str(sample),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if render.returncode != 0 or probe.returncode != 0 or not probe.stdout.strip():
+            detail = render.stderr or probe.stderr or "no duration returned"
+            raise RuntimeError(f"Bundled FFmpeg media smoke check failed: {detail}")
 
 
 def verify_packaged_application(executable: Path) -> None:
