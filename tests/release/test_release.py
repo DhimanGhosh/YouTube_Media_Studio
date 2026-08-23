@@ -176,6 +176,29 @@ def test_macos_desktop_build_rejects_intel_hosts(monkeypatch) -> None:
         release_tool.build_desktop("macos")
 
 
+def test_windows_gui_bundle_requires_embedded_python_and_vc_runtimes(tmp_path) -> None:
+    bundle = tmp_path / release_tool.EXECUTABLE_BASENAME
+    internal = bundle / "_internal"
+    internal.mkdir(parents=True)
+    (bundle / f"{release_tool.EXECUTABLE_BASENAME}.exe").write_bytes(b"MZ")
+    (internal / "python311.dll").write_bytes(b"python")
+    (internal / "VCRUNTIME140.dll").write_bytes(b"runtime")
+
+    release_tool.verify_windows_gui_bundle(bundle)
+
+    (internal / "python311.dll").unlink()
+    with pytest.raises(RuntimeError, match="Python runtime DLL"):
+        release_tool.verify_windows_gui_bundle(bundle)
+
+
+def test_nsis_installer_renames_internal_gui_executable() -> None:
+    script = (release_tool.ROOT / "installers" / "windows" / "installer.nsi").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'Rename "$INSTDIR\\${GUI_BUNDLE_EXE}" "$INSTDIR\\${APP_EXE}"' in script
+
+
 def test_clean_removes_only_generated_paths(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(release_tool, "ROOT", tmp_path)
     generated = [
