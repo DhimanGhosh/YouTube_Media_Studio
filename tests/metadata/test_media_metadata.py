@@ -95,7 +95,7 @@ class MediaMetadataTest(unittest.TestCase):
     def test_background_operation_rejects_video_playback_profile_edit(
         self, edit_mock
     ) -> None:
-        with self.assertRaisesRegex(ValueError, "Media Library playback profile"):
+        with self.assertRaisesRegex(ValueError, "Media Player playback profile"):
             execute_operation(
                 "edit_media",
                 {
