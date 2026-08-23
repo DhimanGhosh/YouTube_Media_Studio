@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtCore import QSettings, Qt, QUrl  # noqa: E402
+from PyQt6.QtCore import QSettings, Qt, QTimer, QUrl  # noqa: E402
 from PyQt6.QtGui import QDesktopServices, QKeySequence  # noqa: E402
 from PyQt6.QtTest import QTest  # noqa: E402
 from PyQt6.QtWidgets import (  # noqa: E402
@@ -144,6 +144,40 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         self.assertTrue(self.window._update_dialog.isVisible())
         self.assertIn("2.16.2", self.window.update_status.text())
         self.window._update_dialog.close()
+
+    def test_normal_launch_schedules_background_update_check(self) -> None:
+        settings = QSettings(
+            str(self.data_directory / "startup-settings.ini"),
+            QSettings.Format.IniFormat,
+        )
+        with (
+            patch.dict(os.environ) as environment,
+            patch(
+                "youtube_audio_video_downloader.gui.application.main_window.QSettings",
+                return_value=settings,
+            ),
+            patch(
+                "youtube_audio_video_downloader.gui.application.main_window.available_ollama_models",
+                return_value=["global-agent:test"],
+            ),
+            patch.object(MainWindow, "_check_for_updates") as check_updates,
+            patch.object(QTimer, "singleShot") as single_shot,
+        ):
+            environment.pop("PYTEST_CURRENT_TEST", None)
+            launched_window = MainWindow(data_directory=self.data_directory)
+            startup_callbacks = [
+                call.args[1]
+                for call in single_shot.call_args_list
+                if len(call.args) >= 2 and call.args[0] == 2500
+            ]
+            self.assertTrue(startup_callbacks)
+            for callback in startup_callbacks:
+                callback()
+            check_updates.assert_called_once_with(interactive=False)
+        launched_window.media_library.shutdown()
+        launched_window.close()
+        launched_window.deleteLater()
+        self.app.processEvents()
 
     def test_beta_update_toggle_immediately_updates_channel_status(self) -> None:
         self.assertEqual(self.window.update_status.text(), "Stable 2.x channel")
@@ -524,6 +558,26 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         self.assertEqual(params["min_silence_duration"], 2.25)
         self.assertEqual(params["min_track_duration"], 72.0)
         self.assertEqual(params["trim_silence_padding"], 0.4)
+
+    def test_cloud_restore_refreshes_album_detection_settings_widgets(self) -> None:
+        profile = {
+            "schema_version": 1,
+            "settings": {
+                "defaults/album_silence_threshold_db": -48.0,
+                "defaults/album_min_silence_duration": 3.0,
+                "defaults/album_min_track_duration": 80.0,
+                "defaults/album_trim_silence_padding": 0.6,
+            },
+            "playlists": {},
+        }
+
+        with patch.object(QMessageBox, "information"):
+            self.window._google_cloud_finished("restore", profile, "")
+
+        self.assertEqual(self.window.settings_album_silence_threshold.value(), -48.0)
+        self.assertEqual(self.window.settings_album_min_silence.value(), 3.0)
+        self.assertEqual(self.window.settings_album_min_track.value(), 80.0)
+        self.assertEqual(self.window.settings_album_trim_padding.value(), 0.6)
 
     def test_serpapi_key_is_saved_and_applied_without_operation_parameters(self) -> None:
         self.window.settings_serpapi_api_key.setText("serpapi-secret")

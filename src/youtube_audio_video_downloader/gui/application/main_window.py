@@ -3992,6 +3992,7 @@ class MainWindow(QMainWindow):
             finally:
                 self._applying_cloud_profile = False
             self.settings.sync()
+            self._refresh_album_detection_settings_widgets()
             QMessageBox.information(
                 self,
                 "Cloud profile restored",
@@ -4423,6 +4424,22 @@ class MainWindow(QMainWindow):
             return float(self.settings.value(f"defaults/{key}", fallback))
         except (TypeError, ValueError):
             return fallback
+
+    def _refresh_album_detection_settings_widgets(self) -> None:
+        """Reflect restored portable album defaults in the open Settings window."""
+
+        self.settings_album_silence_threshold.setValue(
+            self._default_float_value("album_silence_threshold_db", -35.0)
+        )
+        self.settings_album_min_silence.setValue(
+            self._default_float_value("album_min_silence_duration", 1.5)
+        )
+        self.settings_album_min_track.setValue(
+            self._default_float_value("album_min_track_duration", 45.0)
+        )
+        self.settings_album_trim_padding.setValue(
+            self._default_float_value("album_trim_silence_padding", 0.25)
+        )
 
     def _setting_bool(self, key: str, fallback: bool) -> bool:
         value = self.settings.value(key, fallback)
