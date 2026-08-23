@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import tarfile
+import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -138,6 +139,33 @@ def test_failed_linux_ffmpeg_download_removes_partial_archive(
         release_tool._download_pinned_linux_ffmpeg(tmp_path)
 
     assert list(tmp_path.iterdir()) == []
+
+
+def test_pinned_windows_ffmpeg_archive_is_verified_and_safely_extracted(
+    monkeypatch, tmp_path
+) -> None:
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, mode="w") as bundle:
+        bundle.writestr("ffmpeg-8.1.1/bin/ffmpeg.exe", b"windows ffmpeg")
+        bundle.writestr("ffmpeg-8.1.1/bin/ffprobe.exe", b"windows ffprobe")
+    payload = archive.getvalue()
+    monkeypatch.setattr(release_tool.platform, "machine", lambda: "AMD64")
+    monkeypatch.setattr(
+        release_tool,
+        "WINDOWS_FFMPEG_ARCHIVE_SHA256",
+        hashlib.sha256(payload).hexdigest(),
+    )
+    monkeypatch.setattr(
+        release_tool,
+        "urlopen",
+        lambda _request, timeout: io.BytesIO(payload),
+    )
+
+    ffmpeg, ffprobe = release_tool._download_pinned_windows_ffmpeg(tmp_path)
+
+    assert ffmpeg.read_bytes() == b"windows ffmpeg"
+    assert ffprobe.read_bytes() == b"windows ffprobe"
+    assert not (tmp_path / "ffmpeg-8.1.1-essentials_build.zip").exists()
 
 
 def test_macos_desktop_build_rejects_intel_hosts(monkeypatch) -> None:
