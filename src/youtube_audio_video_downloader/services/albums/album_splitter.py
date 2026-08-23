@@ -869,7 +869,7 @@ class YouTubeAlbumSplitter:
         job: AlbumSplitJob,
         temp_dir: Path,
     ) -> tuple[Path, dict[str, Any]]:
-        """Download the best available source audio with yt-dlp."""
+        """Return a local source file or download the best remote audio with yt-dlp."""
 
         local_source = Path(job.ytb_link).expanduser()
         if local_source.is_file():

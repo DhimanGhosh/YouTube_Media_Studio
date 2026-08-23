@@ -4462,7 +4462,15 @@ class MediaLibraryPage(QWidget):
             return
         value = unquote(encoded_value).strip()
         if kind == "album":
-            self._open_album_by_name(value)
+            # An album metadata link means the complete album, even when the
+            # browser currently has a narrower search, artist, type, or year view.
+            self.search.clear()
+            self.year_from.setValue(0)
+            self.year_to.setValue(0)
+            self.facets.clearSelection()
+            self.media_type_filter.setCurrentIndex(0)
+            self.apply_filters()
+            self._open_album_by_name(value, self.filtered)
             return
         if kind == "artist":
             self.search.clear()

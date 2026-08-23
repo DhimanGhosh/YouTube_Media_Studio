@@ -176,9 +176,22 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.page.items.append(collaboration)
         self.page.apply_filters()
 
+        self.page.search.setText("Short")
+        self.page.year_from.setValue(2005)
+        self.page.year_to.setValue(2005)
+        self.page.media_type_filter.setCurrentIndex(
+            self.page.media_type_filter.findData("video")
+        )
+        self.page.apply_filters()
+        self.assertEqual(self.page.filtered, [])
+
         self.page._now_playing_link_activated("album:Test%20Album")
         self.assertEqual(self.page._open_album_name, "Test Album")
         self.assertEqual(len(self.page._open_album_items), 2)
+        self.assertEqual(self.page.search.text(), "")
+        self.assertEqual(self.page.year_from.value(), 0)
+        self.assertEqual(self.page.year_to.value(), 0)
+        self.assertEqual(self.page.media_type_filter.currentIndex(), 0)
 
         self.page._now_playing_link_activated("artist:Test%20Artist")
         self.assertEqual(len(self.page.filtered), 3)
