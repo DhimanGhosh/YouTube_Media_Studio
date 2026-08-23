@@ -1,7 +1,7 @@
 # YouTube Media Studio user guide
 
 This is the complete desktop-application guide for a first-time user. It covers every
-sidebar workspace, the controls inside each workspace, automatic internet and AI
+menu-accessible workspace, the controls inside each workspace, automatic internet and AI
 assistance, the local Media Library, phone access, playback, and the checks to perform
 before changing files. No Python or command-line knowledge is required.
 
@@ -59,10 +59,11 @@ text remains the authoritative description of what it does.
    key; local Ollama does not. Optionally add a SerpApi key for additional Google Search
    and Google Images evidence.
 5. Select **Save and apply defaults**.
-6. Open **Search Song** when only a plain-language description is known. Open a
-   downloader or splitter directly when the source URL is already known.
-7. Watch **Dashboard** for overall progress and **Live Logs** for the result of each
-   individual item.
+6. Choose **Download → Search Song** when only a plain-language description is known.
+   Open a downloader or splitter directly from **Download** or **Organize** when the
+   source URL is already known.
+7. Use **View → Dashboard** for overall progress and **View → Live Logs** for the result
+   of each individual item.
 
 The installer bundles the desktop runtime and required media tools. Normal desktop use
 does not require a separate Python, FFmpeg, FFprobe, Deno, or yt-dlp installation.
@@ -92,9 +93,13 @@ open /Applications/YouTubeMediaStudio.app
 
 ## How the interface works
 
-The sidebar selects one of 13 workspaces. A selected workspace remains available while
-other jobs run in the background. The application disables only the run button for a
-workspace that already has a job, preventing that same task from being started twice.
+The standard top menu bar opens every workspace. **Download** contains search and
+download tools; **Organize** contains splitters, reorder, consolidation, and utilities;
+**Edit** contains file and album editors; and **View** contains Dashboard, Media Library,
+and Live Logs. Menu icons mirror each tool, and logical separators divide related
+commands. A selected workspace remains available while other jobs run in the background.
+The application disables only the run button for a workspace that already has a job,
+preventing that same task from being started twice.
 
 - **Browse** selects a local file or folder without typing its path.
 - **Use AI for this task** is saved separately for each supported workspace.
@@ -103,14 +108,14 @@ workspace that already has a job, preventing that same task from being started t
 - **Open output** opens the latest completed output folder.
 - The bottom **Stop** button requests cancellation of every active workspace job. Wait
   for the cancellation result in Live Logs before changing or deleting involved files.
-- **Version x.y.z** under the sidebar is the installed application version. Include it
-  in a bug report.
+- **Version x.y.z** below the compact visualizer in the bottom status area is the
+  installed application version. Include it in a bug report.
 - Form state, output folders, statuses, and history are restored after restart when
   workspace persistence is enabled in **File → Settings…**.
 
 ## Screen reference
 
-| Sidebar page | Primary purpose | Detailed section |
+| Menu workspace | Primary purpose | Detailed section |
 | --- | --- | --- |
 | **Dashboard** | Monitor session activity and open common workspaces. | [Use Dashboard](#use-dashboard) |
 | **Search Song** | Turn a plain-language request into previewable YouTube matches. | [Find and download a song](#find-and-download-a-song) |
@@ -136,9 +141,30 @@ saved provider credentials/models, saved state, and restored defaults; it does n
 a media-library deletion command. Saved playlists and media files are preserved even
 when configured library folders are cleared.
 
-The category list contains Software updates, Batch processing and network, Audio and
-metadata, Media playback, AI providers and online evidence, Application behavior and
-privacy, and Storage and appearance.
+The category list contains Software updates, Connected services, Batch processing and
+network, Audio and metadata, Media playback, AI providers and online evidence,
+Application behavior and privacy, and Storage and appearance.
+
+### Google Cloud Profile
+
+Google sign-in is optional and is not used for application updates. Under **Connected
+services**, select the Google OAuth desktop-client JSON supplied for the application,
+then choose **Connect Google account**. Authorization opens in the system browser; the
+refresh token is kept in the operating-system credential vault.
+
+- **Back up now** writes portable settings and playlist identities to the application's
+  private Google Drive app-data area.
+- **Restore** applies those settings and matches playlist identities against media
+  indexed on this machine. Restart to apply every restored preference.
+- **Automatically back up** syncs later playlist and saved-setting changes.
+- **Import YouTube playlist** lists the signed-in user's playlists and imports locally
+  matched songs into the player.
+- **Disconnect** revokes the account token and removes it from this device.
+
+The backup never contains media files, local paths, API/provider keys, OAuth tokens, or
+crash reports. Tracks unavailable in the current machine's library are reported and are
+not downloaded automatically. Consequently, users may use the same Google account on
+multiple machines while keeping each machine's media storage independent.
 
 ### Batch processing and network
 

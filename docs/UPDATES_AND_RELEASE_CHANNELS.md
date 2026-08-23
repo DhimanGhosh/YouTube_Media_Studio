@@ -31,7 +31,7 @@ The existing OTA updater therefore remains account-free:
 5. The app asks again before launching the verified installer and closing itself. It
    never performs a silent install.
 
-Google sign-in could be useful in a separate, optional **Connected services** feature
+Google sign-in is implemented as a separate, optional **Connected services** feature
 for:
 
 - importing private YouTube playlists, subscriptions, or the signed-in channel's own
@@ -42,30 +42,33 @@ for:
 - exporting/importing a user-selected library or playlist file through the narrow
   `drive.file` scope.
 
-### Recommended desktop OAuth design
+### Google Cloud Profile implementation
 
-1. Create a Google Cloud project, configure the OAuth consent screen, enable only the
-   APIs used by an implemented feature, and register a desktop OAuth client.
-2. Start authorization only when the user chooses **Connect Google account** or invokes
-   a feature that needs private data. Open the system browser and use the authorization
-   code flow with PKCE and a loopback redirect.
-3. Request permissions incrementally. Suitable starting scopes are
-   `youtube.readonly` for private read-only YouTube data, `drive.appdata` for an app-only
-   backup area, or `drive.file` for files the user explicitly shares with the app.
-   Broader YouTube write or Drive-wide scopes should be added only for a concrete
-   user-requested action.
-4. Store refresh tokens in the operating system credential vault, never in
-   `settings.ini`, logs, crash reports, or the repository. Keep account identity,
-   connection status, last synchronization time, and **Disconnect/Revoke** controls in
-   a dedicated Settings category.
-5. Keep downloading, local playback, metadata tools, and OTA updates fully functional
-   when the user declines sign-in or authorization expires.
+1. The release publisher creates a Google Cloud desktop OAuth client, enables Google
+   Drive and YouTube Data API v3, and supplies its downloaded desktop-client JSON. A
+   source or development build can select that file under **File → Settings… →
+   Connected services**.
+2. **Connect Google account** opens the system browser and uses Authorization Code with
+   PKCE, a random state value, and a temporary loopback redirect.
+3. The app requests `openid`, `email`, `drive.appdata`, and `youtube.readonly`. It cannot
+   browse the user's normal Drive or modify YouTube data.
+4. The refresh token is stored in the operating-system credential vault, never in
+   `settings.ini`, logs, crash reports, a cloud profile, or the repository.
+5. The versioned cloud profile contains an allow-listed set of portable preferences and
+   playlist track identities (title, artist, album, and year). It deliberately excludes
+   local file/folder paths, media files, API keys, OAuth credentials, and crash reports.
+6. After connection, an existing profile is restored. Playlist identities are matched
+   to the local library on that machine; missing media is reported and is not downloaded.
+   With automatic sync enabled, later playlist changes are backed up after a short
+   debounce. Manual **Back up now** and **Restore** remain available.
+7. **Import YouTube playlist** reads the signed-in user's private playlists and adds
+   tracks already found in the local library. It does not download absent tracks.
+8. **Disconnect** revokes and removes the stored token. Downloading, local playback,
+   metadata tools, and OTA updates remain functional without a Google account.
 
-Google recommends PKCE for desktop OAuth clients and incremental authorization so an
-app asks only for scopes needed by the feature being used. The YouTube Data API requires
-OAuth for private user data and write operations, while public GitHub API data can be
-read anonymously. Drive's narrow `drive.file` and `drive.appdata` scopes avoid granting
-unnecessary access to the user's entire Drive.
+Google recommends PKCE for desktop OAuth clients. The YouTube Data API requires OAuth
+for private user data, while public GitHub API data can be read anonymously. Drive's
+narrow `drive.appdata` scope avoids granting access to the user's normal Drive files.
 
 References: [Google YouTube OAuth](https://developers.google.com/youtube/v3/guides/authentication),
 [Google OAuth security practices](https://developers.google.com/identity/protocols/oauth2/resources/best-practices),

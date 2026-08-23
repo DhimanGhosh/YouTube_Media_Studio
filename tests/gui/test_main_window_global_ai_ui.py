@@ -97,9 +97,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         self.window.settings_beta_updates.setChecked(True)
 
         self.assertEqual(self.window.update_status.text(), "3.x beta channel")
-        self.assertTrue(
-            self.window.settings.value("updates/include_betas", False, type=bool)
-        )
+        self.assertTrue(self.window.settings.value("updates/include_betas", False, type=bool))
 
         self.window.settings_beta_updates.setChecked(False)
         self.assertEqual(self.window.update_status.text(), "Stable 2.x channel")
@@ -110,7 +108,31 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
             for action in self.window.menuBar().actions()
         }
 
-        self.assertEqual(set(menus), {"File", "View", "Help"})
+        self.assertEqual(set(menus), {"File", "Download", "Organize", "Edit", "View", "Help"})
+        self.assertNotIn("&", "".join(action.text() for action in self.window.menuBar().actions()))
+        workspace_labels = {
+            "Search Song",
+            "Audio Downloader",
+            "Video Downloader",
+            "Album Splitter",
+            "Jukebox Splitter",
+            "Track Reorder",
+            "Album Consolidator",
+            "Utilities",
+            "Edit File",
+            "Edit Album",
+            "Dashboard",
+            "Media Library",
+            "Live Logs",
+        }
+        workspace_actions = {
+            action.text(): action
+            for menu_name in ("Download", "Organize", "Edit", "View")
+            for action in menus[menu_name].actions()
+            if not action.isSeparator()
+        }
+        self.assertEqual(set(workspace_actions), workspace_labels)
+        self.assertTrue(all(not action.icon().isNull() for action in workspace_actions.values()))
         self.assertIn(
             "Check for Updates…",
             [action.text() for action in menus["Help"].actions()],
@@ -134,34 +156,32 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         )
         settings_action.trigger()
         self.assertTrue(self.window._settings_dialog.isVisible())
-        self.assertEqual(
-            self.window.settings_categories.currentItem().text(), "Software updates"
-        )
-        self.assertNotIn(
-            "Global Settings",
-            [button.text() for button in self.window._nav_buttons],
-        )
+        self.assertEqual(self.window.settings_categories.currentItem().text(), "Software updates")
+        self.assertIsNone(self.window.findChild(QWidget, "sidebar"))
+        self.assertFalse(self.window.player_status.isHidden())
+        self.assertTrue(self.window.settings_sections["software_updates"].isVisible())
         self.assertTrue(
-            self.window.settings_sections["software_updates"].toggle.isChecked()
-        )
-        self.assertTrue(
-            self.window.settings_sections["software_updates"]
-            .toggle.text()
-            .endswith("Software updates")
+            self.window.settings_sections["software_updates"].toggle.text(),
+            "Software updates",
         )
         self.assertNotIn(
             "updates",
             self.window.settings_sections["behavior_privacy"].toggle.text().casefold(),
         )
         self.assertFalse(self.window._settings_dialog.isModal())
-        self.assertEqual(self.window.settings_categories.count(), 7)
-        self.window.settings_categories.setCurrentRow(5)
-        self.assertTrue(
-            self.window.settings_sections["behavior_privacy"].toggle.isChecked()
+        self.assertEqual(self.window.settings_categories.count(), 8)
+        self.window.settings_categories.setCurrentRow(6)
+        self.assertTrue(self.window.settings_sections["behavior_privacy"].isVisible())
+        self.assertTrue(self.window.settings_sections["software_updates"].isHidden())
+
+        about_action = next(
+            action
+            for action in menus["Help"].actions()
+            if action.text() == "About YouTube Media Studio"
         )
-        self.assertFalse(
-            self.window.settings_sections["software_updates"].toggle.isChecked()
-        )
+        with patch.object(QMessageBox, "about") as about:
+            about_action.trigger()
+        self.assertIn("Dhiman Ghosh", about.call_args.args[2])
 
     def test_different_workspaces_remain_available_while_jobs_run(self) -> None:
         self.window._active_thread = object()
@@ -268,13 +288,19 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
                 for index in range(self.window.settings_ai_provider.count())
             },
             {
-                "ollama", "nvidia", "openai", "anthropic", "google", "groq",
-                "huggingface", "openrouter", "opencode", "custom",
+                "ollama",
+                "nvidia",
+                "openai",
+                "anthropic",
+                "google",
+                "groq",
+                "huggingface",
+                "openrouter",
+                "opencode",
+                "custom",
             },
         )
-        self.assertEqual(
-            self.window.version_label.text(), f"Version {application_version()}"
-        )
+        self.assertEqual(self.window.version_label.text(), f"Version {application_version()}")
         self.assertEqual(self.window.windowTitle(), APP_DISPLAY_NAME)
         self.assertNotIn(application_version(), self.window.windowTitle())
 
@@ -325,9 +351,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         checkbox.setChecked(False)
 
         self.assertFalse(self.window._ai_enabled_for("jukebox"))
-        self.assertFalse(
-            self.window.settings.value("ai/tools/jukebox", True, type=bool)
-        )
+        self.assertFalse(self.window.settings.value("ai/tools/jukebox", True, type=bool))
 
     def test_global_settings_displays_application_data_directory(self) -> None:
         self.assertEqual(
@@ -339,11 +363,33 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
             self.data_directory / "album_enrichment_tracker.json",
         )
 
-    def test_global_settings_are_grouped_into_persistent_collapsible_sections(self) -> None:
+    def test_connected_services_exposes_google_cloud_profile_actions(self) -> None:
+        section = self.window.settings_sections["connected_services"]
+        labels = {button.text() for button in section.findChildren(QPushButton)}
+        self.assertTrue(
+            {
+                "Connect Google account",
+                "Back up now",
+                "Restore",
+                "Import YouTube playlist",
+                "Disconnect",
+            }.issubset(labels),
+        )
+        self.assertEqual(self.window.google_account_status.text(), "Not connected")
+        with patch.object(self.window, "_start_google_cloud_action") as start:
+            next(
+                button
+                for button in section.findChildren(QPushButton)
+                if button.text() == "Connect Google account"
+            ).click()
+        start.assert_called_once_with("connect")
+
+    def test_settings_categories_show_only_the_selected_right_hand_page(self) -> None:
         self.assertEqual(
             set(self.window.settings_sections),
             {
                 "software_updates",
+                "connected_services",
                 "batch_network",
                 "audio_metadata",
                 "video_playback",
@@ -352,23 +398,19 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
                 "storage_appearance",
             },
         )
-        self.assertFalse(
-            self.window.settings_sections["software_updates"].body.isHidden()
-        )
-        self.assertTrue(self.window.settings_sections["batch_network"].body.isHidden())
-        self.assertTrue(self.window.settings_sections["audio_metadata"].body.isHidden())
-        self.assertTrue(self.window.settings_sections["video_playback"].body.isHidden())
+        self.assertFalse(self.window.settings_sections["software_updates"].body.isHidden())
+        self.assertTrue(self.window.settings_sections["batch_network"].isHidden())
+        self.assertTrue(self.window.settings_sections["audio_metadata"].isHidden())
+        self.assertTrue(self.window.settings_sections["video_playback"].isHidden())
         self.assertIn(
             "Media Playback",
             self.window.settings_sections["video_playback"].toggle.text(),
         )
 
-        self.window.settings_sections["audio_metadata"].set_expanded(True)
-        self.assertTrue(
-            self.window.settings.value(
-                "ui/settings_sections/audio_metadata", False, type=bool
-            )
-        )
+        self.window.settings_categories.setCurrentRow(3)
+        self.assertFalse(self.window.settings_sections["audio_metadata"].isHidden())
+        self.assertTrue(self.window.settings_sections["software_updates"].isHidden())
+        self.assertFalse(self.window.settings_sections["audio_metadata"].body.isHidden())
 
     def test_video_playback_settings_are_saved_and_applied_to_the_player(self) -> None:
         self.window.settings_video_seek_seconds.setValue(7)
@@ -377,22 +419,16 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         with (
             patch.object(self.window, "_save_data_directory", return_value=False),
             patch.object(QMessageBox, "information"),
-            patch.object(
-                self.window.media_library, "set_video_seek_seconds"
-            ) as apply_seek,
+            patch.object(self.window.media_library, "set_video_seek_seconds") as apply_seek,
             patch.object(
                 self.window.media_library, "set_remember_video_display_modes"
             ) as apply_mode_memory,
         ):
             self.window._save_defaults()
 
-        self.assertEqual(
-            int(self.window.settings.value("defaults/video_seek_seconds")), 7
-        )
+        self.assertEqual(int(self.window.settings.value("defaults/video_seek_seconds")), 7)
         self.assertTrue(
-            self.window.settings.value(
-                "defaults/remember_video_display_modes", type=bool
-            )
+            self.window.settings.value("defaults/remember_video_display_modes", type=bool)
         )
         apply_seek.assert_called_once_with(7)
         apply_mode_memory.assert_called_once_with(True)
@@ -471,9 +507,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
             self.window.settings.value("defaults/ai_providers/huggingface/api_key"),
             "hf-secret",
         )
-        self.assertEqual(
-            os.environ.get("YOUTUBE_MEDIA_STUDIO_AI_PROVIDER"), "huggingface"
-        )
+        self.assertEqual(os.environ.get("YOUTUBE_MEDIA_STUDIO_AI_PROVIDER"), "huggingface")
         self.assertEqual(os.environ.get("YOUTUBE_MEDIA_STUDIO_AI_API_KEY"), "hf-secret")
 
         os.environ["NVIDIA_API_KEY"] = "nvapi-restored-by-launch-environment"
@@ -482,12 +516,8 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
 
     def test_active_ai_identity_refreshes_saved_groq_settings(self) -> None:
         self.window.settings.setValue("defaults/ai_provider", "groq")
-        self.window.settings.setValue(
-            "defaults/ai_providers/groq/api_key", "groq-secret"
-        )
-        self.window.settings.setValue(
-            "defaults/ai_providers/groq/model", "openai/gpt-oss-120b"
-        )
+        self.window.settings.setValue("defaults/ai_providers/groq/api_key", "groq-secret")
+        self.window.settings.setValue("defaults/ai_providers/groq/model", "openai/gpt-oss-120b")
 
         self.assertEqual(
             self.window._active_ai_identity(),
@@ -507,9 +537,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
 
     def test_restore_silently_discards_missing_track_reorder_folder(self) -> None:
         missing = self.data_directory / "album_tracks" / "Removed Album (2026)"
-        self.window.settings.setValue(
-            "workspace/track_reorder_folder", str(missing)
-        )
+        self.window.settings.setValue("workspace/track_reorder_folder", str(missing))
         self.window.track_reorder_folder.set_text("")
         self.window._track_folder_load_timer.stop()
 
@@ -518,9 +546,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
             self.window._track_folder_load_timer.stop()
 
         self.assertEqual(self.window.track_reorder_folder.text(), "")
-        self.assertIsNone(
-            self.window.settings.value("workspace/track_reorder_folder")
-        )
+        self.assertIsNone(self.window.settings.value("workspace/track_reorder_folder"))
         self.assertFalse(
             any(
                 "Could not load album folder" in str(call.args[0])
@@ -529,9 +555,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         )
 
     def test_window_uses_one_native_frame_and_throttles_resize_animation(self) -> None:
-        self.assertFalse(
-            bool(self.window.windowFlags() & Qt.WindowType.FramelessWindowHint)
-        )
+        self.assertFalse(bool(self.window.windowFlags() & Qt.WindowType.FramelessWindowHint))
         self.assertIsNone(self.window.findChild(QWidget, "titleBar"))
         self.assertEqual(self.window.centralWidget().layout().contentsMargins().left(), 0)
         self.window.show()
@@ -603,34 +627,24 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
                 "question",
                 return_value=QMessageBox.StandardButton.Yes,
             ),
-            patch.object(
-                self.window.media_library, "set_video_display_profile"
-            ) as save_profile,
+            patch.object(self.window.media_library, "set_video_display_profile") as save_profile,
             patch.object(self.window, "_start_operation") as start_operation,
         ):
             self.window._start_edit_file_operation()
 
         start_operation.assert_not_called()
-        save_profile.assert_called_once_with(
-            video, "2.35:1", "16:9"
-        )
+        save_profile.assert_called_once_with(video, "2.35:1", "16:9")
         self.assertIn("media file unchanged", self.window.log_view.toPlainText())
 
     def test_library_display_editor_uses_active_player_modes(self) -> None:
         video = self.data_directory / "movie.mp4"
         video.write_bytes(b"video")
 
-        self.window._edit_library_video_display(
-            str(video), "16:10", "2.39:1"
-        )
+        self.window._edit_library_video_display(str(video), "16:10", "2.39:1")
 
-        self.assertEqual(
-            self.window.edit_file_action.currentData(), "video_display"
-        )
+        self.assertEqual(self.window.edit_file_action.currentData(), "video_display")
         self.assertEqual(self.window.edit_file_crop_ratio.currentText(), "16:10")
-        self.assertEqual(
-            self.window.edit_file_aspect_ratio.currentText(), "2.39:1"
-        )
+        self.assertEqual(self.window.edit_file_aspect_ratio.currentText(), "2.39:1")
 
     def test_result_reports_are_disabled_by_default_everywhere(self) -> None:
         report_controls = (
@@ -723,9 +737,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
 
         self.assertEqual(self.window.pages.currentIndex(), 9)
         self.assertEqual(self.window.album_consolidator_source.text(), str(album))
-        self.assertEqual(
-            self.window.album_consolidator_destination.text(), "D:/Do not change"
-        )
+        self.assertEqual(self.window.album_consolidator_destination.text(), "D:/Do not change")
 
         self.window._open_library_track_reorder(str(album))
         self.assertEqual(self.window.pages.currentIndex(), 6)
@@ -817,21 +829,13 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
             self.window._start_edit_album()
 
         warning.assert_not_called()
-        self.assertIn(
-            "preserve each file's existing artist(s)", question.call_args.args[2]
-        )
+        self.assertIn("preserve each file's existing artist(s)", question.call_args.args[2])
         start.assert_called_once()
         self.assertEqual(start.call_args.args[1]["metadata"]["artists"], "")
 
     def test_album_enricher_name_is_used_in_the_workspace(self) -> None:
-        labels = {
-            widget.text()
-            for widget in self.window.findChildren(QLabel)
-        }
-        buttons = {
-            button.text()
-            for button in self.window.findChildren(QPushButton)
-        }
+        labels = {widget.text() for widget in self.window.findChildren(QLabel)}
+        buttons = {button.text() for button in self.window.findChildren(QPushButton)}
         self.assertIn("1. Album enricher", labels)
         self.assertIn("Run album enricher", buttons)
 
@@ -847,9 +851,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
 
         self.window._save_workspace_state()
         self.assertFalse(
-            self.window.settings.value(
-                "workspace/album_move_perform_enrichment", type=bool
-            )
+            self.window.settings.value("workspace/album_move_perform_enrichment", type=bool)
         )
 
     def test_reset_restores_move_enrichment_default(self) -> None:
@@ -870,9 +872,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         self.window.edit_file_input.set_text("C:/Music/song.mp3")
         self.window.album_consolidator_source.set_text("C:/Music/Source")
         self.window.media_library.folder_list.addItem("C:/Music")
-        self.window.media_library.playlists = {
-            "Saved forever": ["C:/Music/song.mp3"]
-        }
+        self.window.media_library.playlists = {"Saved forever": ["C:/Music/song.mp3"]}
         self.window.media_library._active_playlist = "Saved forever"
         self.window.media_library._save_playlists()
 
@@ -904,9 +904,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         self.assertEqual(self.window.settings_workers.value(), machine_parallel_workers())
         self.assertFalse(self.window.settings_remember_video_display_modes.isChecked())
         self.assertFalse(
-            self.window.settings.value(
-                "defaults/remember_video_display_modes", type=bool
-            )
+            self.window.settings.value("defaults/remember_video_display_modes", type=bool)
         )
         apply_mode_memory.assert_called_once_with(False)
         self.assertEqual(self.window.settings_data_directory.text(), str(reset_data))
@@ -923,6 +921,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         )
         self.assertTrue(self.window.settings.value("library/playlists"))
         self.assertIn("STATIC FALLBACK", self.window.ai_status_badge.text())
+
 
 if __name__ == "__main__":
     unittest.main()

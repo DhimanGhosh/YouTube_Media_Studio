@@ -227,7 +227,7 @@ edit, consolidate, inspect logs, configure defaults, and play the finished libra
 
 | I want to… | Instructions |
 | --- | --- |
-| Understand every sidebar screen | [Screen reference](docs/USER_GUIDE.md#screen-reference) |
+| Understand every menu workspace | [Screen reference](docs/USER_GUIDE.md#screen-reference) |
 | Find and download a song | [Song workflow](docs/USER_GUIDE.md#find-and-download-a-song) |
 | Split an album or jukebox | [Splitter workflow](docs/USER_GUIDE.md#split-an-album-or-jukebox) |
 | Repair or trim a local file | [Edit File guide](docs/USER_GUIDE.md#edit-a-local-media-file) |
@@ -253,12 +253,18 @@ edit, consolidate, inspect logs, configure defaults, and play the finished libra
 | **Metadata tools** | Inspect, repair, reorder, retag, trim, rename, and consolidate local media |
 | **Edit Album** | Change album name, year, track artist(s), and optional album artwork across every supported file in a folder |
 | **Media Library** | Browse dynamically sized track tables, filter, create persistent ordered playlists, play, queue, permanently delete confirmed files/albums, semantically curate local media, and control it from a phone on the same Wi-Fi |
+| **Google Cloud Profile** | Optionally use one Google account to synchronize portable settings and playlist identities between machines and import private YouTube playlists already present in the local library |
 | **Utilities** | Normalize artist names and convert timestamps to splitter-ready JSON |
 | **Live Logs** | Follow background operations and diagnose failures without leaving the app |
 | **Automation** | Run the same core workflows through stable CLI commands and JSON job files |
 
 The application stores settings and working data in a writable per-user directory,
 and the GUI can persist a custom location.
+
+Google sign-in is optional and is not required for OTA updates. **File → Settings… →
+Connected services** provides cloud backup/restore and read-only YouTube playlist import.
+The profile uses Google Drive's private app-data area and excludes media files, local
+paths, API keys, OAuth tokens, and crash reports. See the [Google Cloud Profile guide](docs/USER_GUIDE.md#google-cloud-profile).
 
 ## How AI helps
 
