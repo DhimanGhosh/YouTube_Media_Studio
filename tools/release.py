@@ -14,6 +14,7 @@ import tarfile
 import tempfile
 import time
 import tomllib
+import zipfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from urllib.request import Request, urlopen
@@ -37,6 +38,13 @@ LINUX_FFMPEG_ARCHIVE_URL = (
 )
 LINUX_FFMPEG_ARCHIVE_SHA256 = (
     "28268bf402f1083833ea269331587f60a242848880073be8016501d864bd07a5"
+)
+WINDOWS_FFMPEG_ARCHIVE_URL = (
+    "https://github.com/GyanD/codexffmpeg/releases/download/8.1.1/"
+    "ffmpeg-8.1.1-essentials_build.zip"
+)
+WINDOWS_FFMPEG_ARCHIVE_SHA256 = (
+    "6f58ce889f59c311410f7d2b18895b33c03456463486f3b1ebc93d97a0f54541"
 )
 
 
@@ -717,6 +725,15 @@ def prepare_runtime_tools(target: str) -> list[Path]:
             f"'ffmpeg': {str(ffmpeg)!r}, 'ffprobe': {str(ffprobe)!r}, "
             "'deno': str(deno.find_deno_bin())}))\n"
         )
+    elif target == "windows":
+        ffmpeg, ffprobe = _download_pinned_windows_ffmpeg(staging)
+        script = (
+            "import json\n"
+            "import deno\n"
+            "print('RUNTIME_TOOLS_JSON=' + json.dumps({"
+            f"'ffmpeg': {str(ffmpeg)!r}, 'ffprobe': {str(ffprobe)!r}, "
+            "'deno': str(deno.find_deno_bin())}))\n"
+        )
     else:
         script = (
             "import json\n"
@@ -823,6 +840,51 @@ def _download_pinned_linux_ffmpeg(staging: Path) -> tuple[Path, Path]:
                 if source is None:
                     raise RuntimeError(f"Could not read {name} from Linux FFmpeg archive")
                 with source, destination.open("wb") as output:
+                    shutil.copyfileobj(source, output)
+                destination.chmod(destination.stat().st_mode | 0o111)
+    except Exception:
+        for destination in destinations:
+            destination.unlink(missing_ok=True)
+        raise
+    finally:
+        archive.unlink(missing_ok=True)
+    return destinations
+
+
+def _download_pinned_windows_ffmpeg(staging: Path) -> tuple[Path, Path]:
+    """Download and safely extract checksum-pinned Windows media runtimes."""
+
+    machine = platform.machine().casefold()
+    if machine not in {"amd64", "x86_64"}:
+        raise RuntimeError(
+            "The pinned Windows FFmpeg runtime supports x86_64 only, "
+            f"not {machine or 'unknown'}"
+        )
+    archive = staging / "ffmpeg-8.1.1-essentials_build.zip"
+    request = Request(
+        WINDOWS_FFMPEG_ARCHIVE_URL,
+        headers={"User-Agent": "YouTube-Media-Studio release builder"},
+    )
+    destinations = (staging / "ffmpeg.exe", staging / "ffprobe.exe")
+    try:
+        digest = hashlib.sha256()
+        with urlopen(request, timeout=120) as response, archive.open("wb") as output:
+            while chunk := response.read(1024 * 1024):
+                output.write(chunk)
+                digest.update(chunk)
+        if digest.hexdigest() != WINDOWS_FFMPEG_ARCHIVE_SHA256:
+            raise RuntimeError("Pinned Windows FFmpeg archive failed SHA-256 verification")
+
+        with zipfile.ZipFile(archive) as bundle:
+            members = bundle.namelist()
+            for name, destination in zip(("ffmpeg.exe", "ffprobe.exe"), destinations):
+                member = next(
+                    (candidate for candidate in members if Path(candidate).name == name),
+                    None,
+                )
+                if member is None:
+                    raise RuntimeError(f"Pinned Windows FFmpeg archive is missing {name}")
+                with bundle.open(member) as source, destination.open("wb") as output:
                     shutil.copyfileobj(source, output)
                 destination.chmod(destination.stat().st_mode | 0o111)
     except Exception:
