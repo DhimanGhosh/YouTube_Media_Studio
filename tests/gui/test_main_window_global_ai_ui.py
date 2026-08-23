@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (  # noqa: E402
 
 from youtube_audio_video_downloader.gui.application.main_window import MainWindow  # noqa: E402
 from youtube_audio_video_downloader.gui.components.theme import APP_STYLE  # noqa: E402
+from youtube_audio_video_downloader.config.app_identity import APP_DISPLAY_NAME  # noqa: E402
 from youtube_audio_video_downloader.config.settings import machine_parallel_workers  # noqa: E402
 from youtube_audio_video_downloader.version import application_version  # noqa: E402
 from youtube_audio_video_downloader.services.albums.album_editor import (  # noqa: E402
@@ -102,6 +103,65 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
 
         self.window.settings_beta_updates.setChecked(False)
         self.assertEqual(self.window.update_status.text(), "Stable 2.x channel")
+
+    def test_updates_have_a_dedicated_section_and_standard_menu_command(self) -> None:
+        menus = {
+            action.text().replace("&", ""): action.menu()
+            for action in self.window.menuBar().actions()
+        }
+
+        self.assertEqual(set(menus), {"File", "View", "Help"})
+        self.assertIn(
+            "Check for Updates…",
+            [action.text() for action in menus["Help"].actions()],
+        )
+        self.assertIn(
+            "Open Last Output Folder",
+            [action.text() for action in menus["File"].actions()],
+        )
+        self.assertIn(
+            "Settings…",
+            [action.text().replace("&", "") for action in menus["File"].actions()],
+        )
+        with patch.object(self.window, "_check_for_updates") as check_updates:
+            self.window.check_for_updates_action.trigger()
+        check_updates.assert_called_once_with(interactive=True)
+
+        settings_action = next(
+            action
+            for action in menus["File"].actions()
+            if action.text().replace("&", "") == "Settings…"
+        )
+        settings_action.trigger()
+        self.assertTrue(self.window._settings_dialog.isVisible())
+        self.assertEqual(
+            self.window.settings_categories.currentItem().text(), "Software updates"
+        )
+        self.assertNotIn(
+            "Global Settings",
+            [button.text() for button in self.window._nav_buttons],
+        )
+        self.assertTrue(
+            self.window.settings_sections["software_updates"].toggle.isChecked()
+        )
+        self.assertTrue(
+            self.window.settings_sections["software_updates"]
+            .toggle.text()
+            .endswith("Software updates")
+        )
+        self.assertNotIn(
+            "updates",
+            self.window.settings_sections["behavior_privacy"].toggle.text().casefold(),
+        )
+        self.assertFalse(self.window._settings_dialog.isModal())
+        self.assertEqual(self.window.settings_categories.count(), 7)
+        self.window.settings_categories.setCurrentRow(5)
+        self.assertTrue(
+            self.window.settings_sections["behavior_privacy"].toggle.isChecked()
+        )
+        self.assertFalse(
+            self.window.settings_sections["software_updates"].toggle.isChecked()
+        )
 
     def test_different_workspaces_remain_available_while_jobs_run(self) -> None:
         self.window._active_thread = object()
@@ -215,7 +275,8 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         self.assertEqual(
             self.window.version_label.text(), f"Version {application_version()}"
         )
-        self.assertIn(application_version(), self.window.windowTitle())
+        self.assertEqual(self.window.windowTitle(), APP_DISPLAY_NAME)
+        self.assertNotIn(application_version(), self.window.windowTitle())
 
     def test_dashboard_quick_launch_buttons_open_the_named_workspace(self) -> None:
         expected_pages = {
@@ -282,6 +343,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         self.assertEqual(
             set(self.window.settings_sections),
             {
+                "software_updates",
                 "batch_network",
                 "audio_metadata",
                 "video_playback",
@@ -290,7 +352,10 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
                 "storage_appearance",
             },
         )
-        self.assertFalse(self.window.settings_sections["batch_network"].body.isHidden())
+        self.assertFalse(
+            self.window.settings_sections["software_updates"].body.isHidden()
+        )
+        self.assertTrue(self.window.settings_sections["batch_network"].body.isHidden())
         self.assertTrue(self.window.settings_sections["audio_metadata"].body.isHidden())
         self.assertTrue(self.window.settings_sections["video_playback"].body.isHidden())
         self.assertIn(

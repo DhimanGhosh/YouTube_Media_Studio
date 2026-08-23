@@ -188,6 +188,45 @@ class MediaPlayerPageTest(unittest.TestCase):
             ["Short", "Third", "Long"],
         )
 
+    def test_song_context_menu_queues_one_or_multiple_tracks(self) -> None:
+        first, second = self.page.items
+        current = media("Current", 2024, 180_000)
+        self.page.queue = [current]
+        self.page._queue_source = [current]
+        self.page.queue_index = 0
+
+        with patch.object(QMenu, "exec"):
+            single_menu = self.page._show_song_context_menu([first], QPoint())
+        self.assertIsNotNone(single_menu)
+        self.assertEqual(
+            [action.text() for action in single_menu.actions()[:2]],
+            ["Play next", "Queue"],
+        )
+        single_menu.actions()[1].trigger()
+        self.assertEqual([item.title for item in self.page.queue], ["Current", "Short"])
+
+        with patch.object(QMenu, "exec"):
+            multiple_menu = self.page._show_song_context_menu([second, first], QPoint())
+        self.assertIsNotNone(multiple_menu)
+        self.assertEqual(
+            [action.text() for action in multiple_menu.actions()[:2]],
+            ["Play selected next", "Queue selected"],
+        )
+        multiple_menu.actions()[0].trigger()
+        self.assertEqual(
+            [item.title for item in self.page.queue],
+            ["Current", "Long", "Short"],
+        )
+
+    def test_selected_track_play_next_buttons_are_available(self) -> None:
+        labels = {
+            button.text()
+            for button in self.page.findChildren(type(self.page.queue_toggle_button))
+        }
+
+        self.assertIn("Play selected next", labels)
+        self.assertIn("Play next", labels)
+
     def test_now_playing_links_open_album_artist_and_exact_year(self) -> None:
         collaboration = LibraryItem(
             path="C:/collab.mp3",
@@ -823,6 +862,33 @@ class MediaPlayerPageTest(unittest.TestCase):
                 ]
             ),
             2,
+        )
+
+    def test_album_play_selected_next_preserves_selected_row_order(self) -> None:
+        current = media("Already Playing", 2024, 180_000)
+        self.page.queue = [current]
+        self.page._queue_source = [current]
+        self.page.queue_index = 0
+        self.page.open_album(self.page.albums.item(0))
+        selection = self.page.album_tracks.selectionModel()
+        flags = (
+            QItemSelectionModel.SelectionFlag.Select
+            | QItemSelectionModel.SelectionFlag.Rows
+        )
+        selection.select(self.page.album_tracks.model().index(1, 0), flags)
+        selection.select(self.page.album_tracks.model().index(0, 0), flags)
+        selected_titles = [
+            item.title
+            for item in self.page._selected_items(
+                self.page.album_tracks, self.page._open_album_items
+            )
+        ]
+
+        self.page.play_album_tracks("next", selected_only=True)
+
+        self.assertEqual(
+            [item.title for item in self.page.queue],
+            ["Already Playing", *selected_titles],
         )
 
     def test_queue_drawer_reorders_tracks_and_preserves_current_identity(self) -> None:

@@ -157,7 +157,7 @@ flowchart LR
     Services --> Media["Media files and tags"]
     Services --> Reports["JSON result reports and logs"]
 
-    SettingsUI["Global Settings and workspace"] --> Ini["settings.ini via QSettings"]
+    SettingsUI["Settings window and workspace state"] --> Ini["settings.ini via QSettings"]
     Enrichment["Metadata verifier"] --> Tracker["album_enrichment_tracker.json"]
     Crash["Crash reporter"] --> Diagnostics["crash_reports/"]
     Pointer["Storage location pointer"] --> AppData["Selected application-data folder"]

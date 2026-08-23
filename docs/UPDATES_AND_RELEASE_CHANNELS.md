@@ -2,11 +2,12 @@
 
 ## Release policy
 
-- `release/2.x` contains normal product work and integrations with user-configured external AI providers. Its GitHub releases are stable `2.x.x` releases.
-- `main` contains experimental built-in-AI work. Every `3.x.x` GitHub release is published as a prerelease/beta.
-- A feature must not be copied between these lines merely to make a combined release. Shared bug fixes should be deliberately applied to each affected line.
+- `main` contains the code and documentation for the latest public release. Beta-only code is never merged into it.
+- `release/2.x` is the maintained stable 2.x release line. Its GitHub releases are public, non-prerelease `2.x.x` versions.
+- `release/3.x` contains experimental built-in-AI work. Every release from this branch uses an explicit beta version such as `3.0.0-beta.1` and is published as a GitHub prerelease.
+- Shared fixes are deliberately forward-ported between maintained release lines. When a 3.x beta becomes public, that public code and its documentation are merged into `main`.
 
-The desktop updater follows the stable channel by default. Stable users do not see `3.x` prereleases. A user can explicitly enable **Include 3.x beta releases** in Global Settings. Turning that option off immediately returns update selection to the newest non-prerelease release.
+The desktop updater follows the stable channel by default. Stable users do not see `3.x` prereleases. A user can explicitly enable **Include 3.x beta releases** in **File → Settings… → Software updates**. Turning that option off immediately returns update selection to the newest non-prerelease release. **Help → Check for Updates…** provides the same check directly from the application menu bar.
 
 ## OTA update design
 
