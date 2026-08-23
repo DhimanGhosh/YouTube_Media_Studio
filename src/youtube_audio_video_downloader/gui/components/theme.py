@@ -13,6 +13,27 @@ QMainWindow, QWidget#rootWindow {
     background: transparent;
 }
 
+QToolButton#mediaPlayerMenuButton {
+    background: rgba(90, 116, 225, 35);
+    border: 1px solid rgba(156, 178, 255, 70);
+    border-radius: 7px;
+    padding: 3px 12px;
+    margin: 1px 8px 1px 4px;
+    color: #f7f9ff;
+    font-weight: 650;
+}
+
+QToolButton#mediaPlayerMenuButton:hover {
+    background: rgba(104, 133, 255, 75);
+    border-color: rgba(184, 199, 255, 130);
+}
+
+QToolButton#mediaPlayerMenuButton:checked {
+    background: rgba(101, 128, 255, 135);
+    border-color: rgba(203, 214, 255, 175);
+    color: #ffffff;
+}
+
 QWidget#windowShell {
     background: rgba(9, 14, 29, 218);
     border: none;

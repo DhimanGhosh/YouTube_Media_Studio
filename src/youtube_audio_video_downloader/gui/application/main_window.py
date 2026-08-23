@@ -23,7 +23,7 @@ from PyQt6.QtCore import (
     QUrl,
     pyqtSignal,
 )
-from PyQt6.QtGui import QCloseEvent, QDesktopServices, QGuiApplication, QKeySequence
+from PyQt6.QtGui import QAction, QCloseEvent, QDesktopServices, QGuiApplication, QKeySequence
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -58,6 +58,7 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem,
     QTextBrowser,
     QTextEdit,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -614,15 +615,6 @@ class MainWindow(QMainWindow):
             "Ctrl+Shift+L",
         )
 
-        self.media_player_action = menu_bar.addAction("Media Player")
-        self.media_player_action.setIcon(
-            self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
-        )
-        self.media_player_action.setShortcut(QKeySequence("Ctrl+L"))
-        self.media_player_action.setToolTip("Open the Media Player (Ctrl+L)")
-        self.media_player_action.setCheckable(True)
-        self.media_player_action.triggered.connect(lambda: self._set_page(13))
-
         help_menu = menu_bar.addMenu("Help")
         self.check_for_updates_action = help_menu.addAction(
             self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload),
@@ -642,6 +634,30 @@ class MainWindow(QMainWindow):
             f"About {APP_DISPLAY_NAME}",
         )
         about_action.triggered.connect(self._show_about)
+
+        self.media_player_action = QAction(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay),
+            "Media Player",
+            self,
+        )
+        self.media_player_action.setShortcut(QKeySequence("Ctrl+L"))
+        self.media_player_action.setToolTip("Open the Media Player (Ctrl+L)")
+        self.media_player_action.setCheckable(True)
+        self.media_player_action.triggered.connect(lambda: self._set_page(13))
+        self.addAction(self.media_player_action)
+
+        self.media_player_menu_button = QToolButton(menu_bar)
+        self.media_player_menu_button.setObjectName("mediaPlayerMenuButton")
+        self.media_player_menu_button.setDefaultAction(self.media_player_action)
+        self.media_player_menu_button.setToolButtonStyle(
+            Qt.ToolButtonStyle.ToolButtonTextBesideIcon
+        )
+        self.media_player_menu_button.setMinimumWidth(132)
+        self.media_player_menu_button.setToolTip("Open the Media Player (Ctrl+L)")
+        menu_bar.setCornerWidget(
+            self.media_player_menu_button,
+            Qt.Corner.TopRightCorner,
+        )
         self._build_settings_dialog()
 
     def _add_workspace_action(
