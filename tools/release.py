@@ -700,15 +700,28 @@ def prepare_runtime_tools(target: str) -> list[Path]:
     if staging.exists():
         shutil.rmtree(staging)
     staging.mkdir(parents=True)
-    script = (
-        "import json\n"
-        "import deno\n"
-        "from portable_ffmpeg import FFmpegVersions, get_ffmpeg\n"
-        "ffmpeg, ffprobe = get_ffmpeg(FFmpegVersions.V7)\n"
-        "print('RUNTIME_TOOLS_JSON=' + json.dumps({"
-        "'ffmpeg': str(ffmpeg), 'ffprobe': str(ffprobe), "
-        "'deno': str(deno.find_deno_bin())}))\n"
-    )
+    if target == "linux":
+        # portable-ffmpeg's upstream Linux archive can disappear independently
+        # of this project. The release runner installs distro FFmpeg explicitly.
+        script = (
+            "import json, shutil\n"
+            "import deno\n"
+            "ffmpeg, ffprobe = shutil.which('ffmpeg'), shutil.which('ffprobe')\n"
+            "assert ffmpeg and ffprobe, 'system FFmpeg/FFprobe were not found'\n"
+            "print('RUNTIME_TOOLS_JSON=' + json.dumps({"
+            "'ffmpeg': ffmpeg, 'ffprobe': ffprobe, "
+            "'deno': str(deno.find_deno_bin())}))\n"
+        )
+    else:
+        script = (
+            "import json\n"
+            "import deno\n"
+            "from portable_ffmpeg import FFmpegVersions, get_ffmpeg\n"
+            "ffmpeg, ffprobe = get_ffmpeg(FFmpegVersions.V7)\n"
+            "print('RUNTIME_TOOLS_JSON=' + json.dumps({"
+            "'ffmpeg': str(ffmpeg), 'ffprobe': str(ffprobe), "
+            "'deno': str(deno.find_deno_bin())}))\n"
+        )
     command = [
         "uv",
         "run",
