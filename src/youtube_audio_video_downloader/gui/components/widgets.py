@@ -1977,6 +1977,12 @@ class JsonBatchEditor(QWidget):
 
         source_mode.currentIndexChanged.connect(apply_mode)
         fields["__apply_source_mode__"] = apply_mode  # type: ignore[assignment]
+        link_edit.textChanged.connect(
+            lambda text: source_mode.setCurrentIndex(source_mode.findData("youtube"))
+            if text.strip().casefold().startswith(("http://", "https://"))
+            and source_mode.currentData() != "youtube"
+            else None
+        )
         existing = link_edit.text().strip()
         is_url = existing.casefold().startswith(("http://", "https://"))
         if existing and not is_url:

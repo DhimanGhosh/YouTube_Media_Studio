@@ -213,6 +213,25 @@ class BatchEditorCompletionTest(unittest.TestCase):
         self.assertTrue(fields["__source_search__"].isHidden())
         self.assertFalse(fields["__extract_button__"].isEnabled())
 
+    def test_album_auto_fill_switches_a_local_source_back_to_youtube_mode(self) -> None:
+        editor = JsonBatchEditor("album")
+        entry = editor.add_entry("Album", {"local_file": "C:/Media/album.mp4"})
+        fields = entry["fields"]
+
+        with patch.object(editor, "_extract_youtube_tracks"):
+            editor._apply_album_auto_fill_result(
+                "Album",
+                {"youtube": {"url": "https://youtu.be/abcdefghijk"}},
+                fields,
+                entry["section"],
+                QPushButton(),
+            )
+            self.app.processEvents()
+
+        self.assertEqual(fields["__source_mode__"].currentData(), "youtube")
+        self.assertTrue(fields["__extract_button__"].isEnabled())
+        self.assertEqual(fields["ytb_link"].text(), "https://youtu.be/abcdefghijk")
+
     def test_populated_entry_keeps_existing_nonblank_entries(self) -> None:
         editor = JsonBatchEditor("jukebox")
         first = editor.add_entry("First", {"ytb_link": "https://youtu.be/abcdefghijk"})
