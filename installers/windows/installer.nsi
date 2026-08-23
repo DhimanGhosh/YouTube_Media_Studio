@@ -124,14 +124,25 @@ Section "${APP_NAME} (required)" SecMain
   ClearErrors
   Rename "$INSTDIR\.update\${GUI_BUNDLE_EXE}" "$INSTDIR\${APP_EXE}"
   IfErrors 0 gui_executable_ready
-    RMDir /r "$INSTDIR\_internal"
+    ; Preserve the failed new runtime for diagnosis instead of deleting a
+    ; potentially locked tree. Every rollback step is checked explicitly.
+    RMDir /r "$INSTDIR\_internal.failed"
+    ClearErrors
+    Rename "$INSTDIR\_internal" "$INSTDIR\_internal.failed"
+    IfErrors rollback_failed
     ClearErrors
     Rename "$INSTDIR\_internal.previous" "$INSTDIR\_internal"
+    IfErrors rollback_failed
+    ClearErrors
     Rename "$INSTDIR\${APP_EXE}.previous" "$INSTDIR\${APP_EXE}"
+    IfErrors rollback_failed
     Abort "Could not replace ${APP_EXE}. Close the application and run Setup again."
+  rollback_failed:
+    Abort "Windows blocked both the upgrade and automatic rollback. Setup preserved the staged and previous files in $INSTDIR. Restart Windows, then run Setup again to repair the installation."
   gui_executable_ready:
   Delete "$INSTDIR\${APP_EXE}.previous"
   RMDir /r "$INSTDIR\_internal.previous"
+  RMDir /r "$INSTDIR\_internal.failed"
   RMDir /r "$INSTDIR\.update"
   WriteUninstaller "$INSTDIR\${UNINSTALL_EXE}"
 

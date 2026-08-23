@@ -207,6 +207,9 @@ def test_nsis_installer_renames_internal_gui_executable() -> None:
     assert script.index(runtime_stage) < script.index(runtime_swap) < script.index(rename)
     assert script.index(rename) < script.index(restore, script.index(rename))
     assert 'RMDir /r "$INSTDIR\\_internal.previous"' in script
+    assert 'Rename "$INSTDIR\\_internal" "$INSTDIR\\_internal.failed"' in script
+    assert "IfErrors rollback_failed" in script
+    assert "automatic rollback" in script
     assert 'Abort "Could not replace ${APP_EXE}' in script
 
 
