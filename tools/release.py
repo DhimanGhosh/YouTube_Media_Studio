@@ -797,19 +797,18 @@ def _download_pinned_linux_ffmpeg(staging: Path) -> tuple[Path, Path]:
         LINUX_FFMPEG_ARCHIVE_URL,
         headers={"User-Agent": "YouTube-Media-Studio release builder"},
     )
-    digest = hashlib.sha256()
-    with urlopen(request, timeout=120) as response, archive.open("wb") as output:
-        while chunk := response.read(1024 * 1024):
-            output.write(chunk)
-            digest.update(chunk)
-    if digest.hexdigest() != LINUX_FFMPEG_ARCHIVE_SHA256:
-        archive.unlink(missing_ok=True)
-        raise RuntimeError("Pinned Linux FFmpeg archive failed SHA-256 verification")
-
-    extracted: list[Path] = []
+    destinations = (staging / "ffmpeg", staging / "ffprobe")
     try:
+        digest = hashlib.sha256()
+        with urlopen(request, timeout=120) as response, archive.open("wb") as output:
+            while chunk := response.read(1024 * 1024):
+                output.write(chunk)
+                digest.update(chunk)
+        if digest.hexdigest() != LINUX_FFMPEG_ARCHIVE_SHA256:
+            raise RuntimeError("Pinned Linux FFmpeg archive failed SHA-256 verification")
+
         with tarfile.open(archive, "r:xz") as bundle:
-            for name in ("ffmpeg", "ffprobe"):
+            for name, destination in zip(("ffmpeg", "ffprobe"), destinations):
                 member = next(
                     (
                         candidate
@@ -823,18 +822,16 @@ def _download_pinned_linux_ffmpeg(staging: Path) -> tuple[Path, Path]:
                 source = bundle.extractfile(member)
                 if source is None:
                     raise RuntimeError(f"Could not read {name} from Linux FFmpeg archive")
-                destination = staging / name
                 with source, destination.open("wb") as output:
                     shutil.copyfileobj(source, output)
                 destination.chmod(destination.stat().st_mode | 0o111)
-                extracted.append(destination)
     except Exception:
-        for destination in extracted:
+        for destination in destinations:
             destination.unlink(missing_ok=True)
         raise
     finally:
         archive.unlink(missing_ok=True)
-    return extracted[0], extracted[1]
+    return destinations
 
 
 def _verify_runtime_tools(tools: list[Path]) -> None:

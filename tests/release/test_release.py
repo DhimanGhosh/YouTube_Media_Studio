@@ -119,6 +119,27 @@ def test_failed_linux_ffmpeg_extraction_removes_archive_and_partial_files(
     assert list(tmp_path.iterdir()) == []
 
 
+def test_failed_linux_ffmpeg_download_removes_partial_archive(
+    monkeypatch, tmp_path
+) -> None:
+    class BrokenResponse(io.BytesIO):
+        def read(self, size=-1):
+            if self.tell():
+                raise OSError("connection interrupted")
+            return super().read(4 if size != 0 else size)
+
+    monkeypatch.setattr(
+        release_tool,
+        "urlopen",
+        lambda _request, timeout: BrokenResponse(b"partial archive"),
+    )
+
+    with pytest.raises(OSError, match="connection interrupted"):
+        release_tool._download_pinned_linux_ffmpeg(tmp_path)
+
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_macos_desktop_build_rejects_intel_hosts(monkeypatch) -> None:
     monkeypatch.setattr(release_tool.platform, "system", lambda: "Darwin")
     monkeypatch.setattr(release_tool.platform, "machine", lambda: "x86_64")
