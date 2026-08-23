@@ -23,21 +23,24 @@ Unicode true
 !endif
 
 !define APP_NAME "YouTube Media Studio"
-!define APP_EXE "YouTube Media Studio.exe"
+!define APP_EXE "${APP_NAME}.exe"
 !define CLI_EXE "youtube-media-studio.exe"
 !define COMPANY "Dhiman Ghosh"
-!define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\YouTubeMediaStudio"
+!define PRODUCT_ID "YouTubeMediaStudio"
+!define APP_REG_KEY "Software\${PRODUCT_ID}"
+!define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_ID}"
+!define UNINSTALL_EXE "Uninstall.exe"
 
 Name "${APP_NAME}"
 Caption "${APP_NAME} ${VERSION} Setup"
 OutFile "${OUTPUT_FILE}"
 InstallDir "$LOCALAPPDATA\Programs\${APP_NAME}"
-InstallDirRegKey HKCU "Software\YouTubeMediaStudio" "InstallDir"
+InstallDirRegKey HKCU "${APP_REG_KEY}" "InstallDir"
 RequestExecutionLevel user
 SetCompressor /SOLID lzma
 ShowInstDetails show
 ShowUninstDetails show
-BrandingText "YouTube Media Studio · Dhiman Ghosh"
+BrandingText "${APP_NAME}"
 
 VIProductVersion "${VERSION}.0"
 VIAddVersionKey "ProductName" "${APP_NAME}"
@@ -85,16 +88,16 @@ Section "${APP_NAME} (required)" SecMain
   nsExec::ExecToLog 'powershell.exe -NoProfile -NonInteractive -Command "Get-CimInstance Win32_Process | Where-Object { $$_.ExecutablePath -and [StringComparer]::OrdinalIgnoreCase.Equals($$_.ExecutablePath, $$env:YMS_UPGRADE_TARGET) } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force }"'
   System::Call 'Kernel32::SetEnvironmentVariable(t, i)i("YMS_UPGRADE_TARGET", 0)'
   File "/oname=${APP_EXE}" "${GUI_PAYLOAD}"
-  WriteUninstaller "$INSTDIR\Uninstall.exe"
+  WriteUninstaller "$INSTDIR\${UNINSTALL_EXE}"
 
-  WriteRegStr HKCU "Software\YouTubeMediaStudio" "InstallDir" "$INSTDIR"
+  WriteRegStr HKCU "${APP_REG_KEY}" "InstallDir" "$INSTDIR"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayName" "${APP_NAME}"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayVersion" "${VERSION}"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "Publisher" "${COMPANY}"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayIcon" "$INSTDIR\${APP_EXE}"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "InstallLocation" "$INSTDIR"
-  WriteRegStr HKCU "${UNINSTALL_KEY}" "UninstallString" '"$INSTDIR\Uninstall.exe"'
-  WriteRegStr HKCU "${UNINSTALL_KEY}" "QuietUninstallString" '"$INSTDIR\Uninstall.exe" /S'
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "UninstallString" '"$INSTDIR\${UNINSTALL_EXE}"'
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "QuietUninstallString" '"$INSTDIR\${UNINSTALL_EXE}" /S'
   WriteRegDWORD HKCU "${UNINSTALL_KEY}" "NoModify" 1
   WriteRegDWORD HKCU "${UNINSTALL_KEY}" "NoRepair" 1
 
@@ -103,7 +106,7 @@ Section "${APP_NAME} (required)" SecMain
 
   CreateDirectory "$SMPROGRAMS\${APP_NAME}"
   CreateShortcut "$SMPROGRAMS\${APP_NAME}\${APP_NAME}.lnk" "$INSTDIR\${APP_EXE}"
-  CreateShortcut "$SMPROGRAMS\${APP_NAME}\Uninstall.lnk" "$INSTDIR\Uninstall.exe"
+  CreateShortcut "$SMPROGRAMS\${APP_NAME}\Uninstall.lnk" "$INSTDIR\${UNINSTALL_EXE}"
 SectionEnd
 
 Section /o "Command-line tools" SecCli
@@ -117,7 +120,7 @@ Section /o "Desktop shortcut" SecDesktop
 SectionEnd
 
 LangString DESC_SecMain ${LANG_ENGLISH} "Install the desktop application and Start menu shortcuts."
-LangString DESC_SecCli ${LANG_ENGLISH} "Install the optional youtube-media-studio command-line executable."
+LangString DESC_SecCli ${LANG_ENGLISH} "Install the optional ${CLI_EXE} command-line executable."
 LangString DESC_SecDesktop ${LANG_ENGLISH} "Create a shortcut on your desktop."
 
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
@@ -134,7 +137,7 @@ Section "Uninstall"
   Delete "$DESKTOP\${APP_NAME}.lnk"
   RMDir /r "$SMPROGRAMS\${APP_NAME}"
   DeleteRegKey HKCU "${UNINSTALL_KEY}"
-  DeleteRegKey HKCU "Software\YouTubeMediaStudio"
+  DeleteRegKey HKCU "${APP_REG_KEY}"
   RMDir /r "$INSTDIR"
   ; User playlists, settings, and media remain in application data by design.
 SectionEnd

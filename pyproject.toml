@@ -21,6 +21,7 @@ dependencies = [
     "openai>=2.53,<3",
     "ddgs>=9.11,<10",
     "anthropic>=0.75,<1",
+    "keyring>=25.6,<26",
 ]
 
 [project.urls]

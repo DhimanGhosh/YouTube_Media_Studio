@@ -56,11 +56,21 @@ from youtube_audio_video_downloader.services.albums.album_art_finder import find
 from youtube_audio_video_downloader.services.albums.album_art_finder import (
     find_catalog_song_metadata,
 )
-from youtube_audio_video_downloader.services.downloads.video_downloader import YouTubeVideoDownloader
-from youtube_audio_video_downloader.services.downloads.youtube_search import find_album_jukebox_video
-from youtube_audio_video_downloader.services.downloads.youtube_track_extractor import extract_tracks_from_youtube
-from youtube_audio_video_downloader.services.metadata.release_year_finder import find_album_release_year
-from youtube_audio_video_downloader.services.downloads.individual_track_search import find_individual_album_tracks
+from youtube_audio_video_downloader.services.downloads.video_downloader import (
+    YouTubeVideoDownloader,
+)
+from youtube_audio_video_downloader.services.downloads.youtube_search import (
+    find_album_jukebox_video,
+)
+from youtube_audio_video_downloader.services.downloads.youtube_track_extractor import (
+    extract_tracks_from_youtube,
+)
+from youtube_audio_video_downloader.services.metadata.release_year_finder import (
+    find_album_release_year,
+)
+from youtube_audio_video_downloader.services.downloads.individual_track_search import (
+    find_individual_album_tracks,
+)
 
 
 def _qt_alive(*objects: object) -> bool:
@@ -109,9 +119,7 @@ class DownloadProgressPanel(QFrame):
         configured = max(1, int(event.get("connections_configured") or 1))
         used = max(1, int(event.get("connections_used") or 1))
         self.title.setText(label)
-        self.status.setText(
-            "Complete" if event.get("status") == "finished" else "Downloading"
-        )
+        self.status.setText("Complete" if event.get("status") == "finished" else "Downloading")
         total = int(event.get("total") or 0)
         if total:
             self.overall.setRange(0, 1000)
@@ -199,9 +207,7 @@ class BlankClickSelectionFilter(QObject):
 
         clicked_view = self._item_view_ancestor(watched)
         if clicked_view is not None:
-            viewport_position = clicked_view.viewport().mapFrom(
-                watched, event.position().toPoint()
-            )
+            viewport_position = clicked_view.viewport().mapFrom(watched, event.position().toPoint())
             clicked_index = clicked_view.indexAt(viewport_position)
             if clicked_index.isValid():
                 self.clear_selections(except_view=clicked_view)
@@ -213,9 +219,7 @@ class BlankClickSelectionFilter(QObject):
             self.clear_selections()
         return False
 
-    def clear_selections(
-        self, *, except_view: QAbstractItemView | None = None
-    ) -> None:
+    def clear_selections(self, *, except_view: QAbstractItemView | None = None) -> None:
         for view in self.root.findChildren(QAbstractItemView):
             if view is except_view or bool(view.property("persistentFilterSelection")):
                 continue
@@ -246,9 +250,7 @@ class BlankClickSelectionFilter(QObject):
 class RetryingThread(QThread):
     """QThread with the shared bounded retry behavior used by inline lookups."""
 
-    def __init__(
-        self, parent: QWidget | None = None, *, retry_attempts: int = 3
-    ) -> None:
+    def __init__(self, parent: QWidget | None = None, *, retry_attempts: int = 3) -> None:
         super().__init__(parent)
         self.retry_attempts = max(1, int(retry_attempts))
 
@@ -271,18 +273,16 @@ class VideoQualityScanner(RetryingThread):
     scanned = pyqtSignal(str, object)
     failed = pyqtSignal(str, str)
 
-    def __init__(
-        self, url: str, parent: QWidget | None = None, *, retry_attempts: int = 3
-    ) -> None:
+    def __init__(self, url: str, parent: QWidget | None = None, *, retry_attempts: int = 3) -> None:
         super().__init__(parent, retry_attempts=retry_attempts)
         self.url = url
 
     def run(self) -> None:
         try:
             result = self.retry_call(
-                lambda: YouTubeVideoDownloader(
-                    interactive_prompts=False
-                ).scan_available_qualities(self.url)
+                lambda: YouTubeVideoDownloader(interactive_prompts=False).scan_available_qualities(
+                    self.url
+                )
             )
             self.scanned.emit(self.url, result)
         except Exception as exc:  # yt-dlp/network errors are displayed inline.
@@ -312,9 +312,7 @@ class AlbumArtSearcher(RetryingThread):
             self.found.emit(
                 self.album_name,
                 self.retry_call(
-                    lambda: find_album_art(
-                        self.album_name, exclude_url=self.exclude_url
-                    )
+                    lambda: find_album_art(self.album_name, exclude_url=self.exclude_url)
                 ),
             )
         except Exception as exc:  # Network/search errors are displayed inline.
@@ -327,14 +325,13 @@ class CoverImageLoader(RetryingThread):
     loaded = pyqtSignal(str, object)
     failed = pyqtSignal(str, str)
 
-    def __init__(
-        self, url: str, parent: QWidget | None = None, *, retry_attempts: int = 3
-    ) -> None:
+    def __init__(self, url: str, parent: QWidget | None = None, *, retry_attempts: int = 3) -> None:
         super().__init__(parent, retry_attempts=retry_attempts)
         self.url = url
 
     def run(self) -> None:
         try:
+
             def load() -> bytes:
                 request = Request(self.url, headers={"User-Agent": "Mozilla/5.0"})
                 with urlopen(request, timeout=15) as response:  # noqa: S310
@@ -355,8 +352,13 @@ class YouTubeAlbumSearcher(RetryingThread):
     failed = pyqtSignal(str, str)
 
     def __init__(
-        self, album_name: str, release_year: str = "", parent: QWidget | None = None,
-        *, retry_attempts: int = 3, exclude_url: str = ""
+        self,
+        album_name: str,
+        release_year: str = "",
+        parent: QWidget | None = None,
+        *,
+        retry_attempts: int = 3,
+        exclude_url: str = "",
     ) -> None:
         super().__init__(parent, retry_attempts=retry_attempts)
         self.album_name = album_name
@@ -447,9 +449,7 @@ class ReleaseYearSearcher(RetryingThread):
             self.found.emit(
                 self.album_name,
                 self.retry_call(
-                    lambda: find_album_release_year(
-                        self.album_name, exclude_year=self.exclude_year
-                    )
+                    lambda: find_album_release_year(self.album_name, exclude_year=self.exclude_year)
                 ),
             )
         except Exception as exc:
@@ -503,15 +503,19 @@ class AlbumMetadataAutoFiller(RetryingThread):
     completed = pyqtSignal(str, object)
 
     def __init__(
-        self, album_name: str, release_year: str = "", parent: QWidget | None = None,
-        *, retry_attempts: int = 3
+        self,
+        album_name: str,
+        release_year: str = "",
+        parent: QWidget | None = None,
+        *,
+        retry_attempts: int = 3,
     ) -> None:
         super().__init__(parent, retry_attempts=retry_attempts)
         self.album_name = album_name
         explicit_match = re.search(r"\b(19\d{2}|20\d{2})\b", album_name)
         # A year deliberately included in the album name is the strongest signal,
         # even if a previous failed lookup left a different value in the year field.
-        self.release_year = (explicit_match.group(1) if explicit_match else release_year.strip())
+        self.release_year = explicit_match.group(1) if explicit_match else release_year.strip()
         self.lookup_name = re.sub(
             r"\s*[\[(]?\b(?:19\d{2}|20\d{2})\b[\])]?[\s]*$", "", album_name
         ).strip()
@@ -524,9 +528,7 @@ class AlbumMetadataAutoFiller(RetryingThread):
             result["year"] = self.release_year
         else:
             try:
-                year_result = self.retry_call(
-                    lambda: find_album_release_year(self.lookup_name)
-                )
+                year_result = self.retry_call(lambda: find_album_release_year(self.lookup_name))
                 result.update(year_result)
             except Exception as exc:
                 result["errors"].append(f"year: {exc}")  # type: ignore[union-attr]
@@ -543,9 +545,7 @@ class AlbumMetadataAutoFiller(RetryingThread):
             return
         try:
             result["youtube"] = self.retry_call(
-                lambda: find_album_jukebox_video(
-                    self.lookup_name, str(result.get("year") or "")
-                )
+                lambda: find_album_jukebox_video(self.lookup_name, str(result.get("year") or ""))
             )
         except Exception as exc:
             try:
@@ -671,11 +671,15 @@ class LiquidBackground(QWidget):
             radius = min(self.width(), self.height()) * radius_ratio
             gradient = QRadialGradient(center_x, center_y, radius)
             gradient.setColorAt(0.0, color)
-            gradient.setColorAt(0.45, QColor(color.red(), color.green(), color.blue(), color.alpha() // 2))
+            gradient.setColorAt(
+                0.45, QColor(color.red(), color.green(), color.blue(), color.alpha() // 2)
+            )
             gradient.setColorAt(1.0, QColor(color.red(), color.green(), color.blue(), 0))
             painter.setBrush(gradient)
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawEllipse(QRectF(center_x - radius, center_y - radius, radius * 2, radius * 2))
+            painter.drawEllipse(
+                QRectF(center_x - radius, center_y - radius, radius * 2, radius * 2)
+            )
 
 
 class GlassCard(QFrame):
@@ -689,14 +693,24 @@ class GlassCard(QFrame):
 class CollapsibleSection(QFrame):
     """Compact, removable editor section whose body can be collapsed."""
 
-    def __init__(self, title: str, *, removable: bool = True, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        title: str,
+        *,
+        removable: bool = True,
+        collapsible: bool = True,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self.setObjectName("glassCard")
-        self.toggle = QPushButton(f"▾  {title}")
+        self._title = title
+        self._collapsible = collapsible
+        self.toggle = QPushButton(f"▾  {title}" if collapsible else title)
         self.toggle.setObjectName("secondaryButton")
-        self.toggle.setCheckable(True)
-        self.toggle.setChecked(True)
-        self.toggle.clicked.connect(self._toggle_body)
+        self.toggle.setCheckable(collapsible)
+        if collapsible:
+            self.toggle.setChecked(True)
+            self.toggle.clicked.connect(self._toggle_body)
         self.remove_button = QPushButton("Remove")
         self.remove_button.setObjectName("dangerButton")
         self.remove_button.setVisible(removable)
@@ -715,8 +729,12 @@ class CollapsibleSection(QFrame):
         layout.addWidget(self.body)
 
     def set_title(self, title: str) -> None:
-        arrow = "▾" if self.toggle.isChecked() else "▸"
-        self.toggle.setText(f"{arrow}  {title}")
+        self._title = title
+        if self._collapsible:
+            arrow = "▾" if self.toggle.isChecked() else "▸"
+            self.toggle.setText(f"{arrow}  {title}")
+        else:
+            self.toggle.setText(title)
 
     def set_status(self, status: str) -> None:
         self.status_label.setText(status.upper())
@@ -724,6 +742,9 @@ class CollapsibleSection(QFrame):
 
     def set_expanded(self, expanded: bool) -> None:
         """Expand or collapse the section while keeping its toggle in sync."""
+        if not self._collapsible:
+            self.body.setVisible(True)
+            return
         self.toggle.setChecked(expanded)
         self._toggle_body(expanded)
 
@@ -761,7 +782,9 @@ class TimestampImportDialog(QDialog):
         preview_label.setObjectName("sectionTitle")
         self.preview_output = QPlainTextEdit()
         self.preview_output.setReadOnly(True)
-        self.preview_output.setPlaceholderText("Select Preview JSON to verify the generated tracks.")
+        self.preview_output.setPlaceholderText(
+            "Select Preview JSON to verify the generated tracks."
+        )
 
         options = QFormLayout()
         options.addRow("Unknown artist", self.unknown_artists)
@@ -804,7 +827,9 @@ class TimestampImportDialog(QDialog):
 
     def _validate_and_accept(self) -> None:
         if self._parsed_tracks is None:
-            QMessageBox.information(self, "Preview required", "Preview the JSON before adding tracks.")
+            QMessageBox.information(
+                self, "Preview required", "Preview the JSON before adding tracks."
+            )
             return
         self.accept()
 
@@ -855,8 +880,15 @@ class JsonBatchEditor(QWidget):
 
     FLAT_FIELDS = {
         "audio": [
-            "ytb_link", "mp3_file_path", "title", "album", "artists",
-            "album_art", "release_year", "track_number", "start_timestamp",
+            "ytb_link",
+            "mp3_file_path",
+            "title",
+            "album",
+            "artists",
+            "album_art",
+            "release_year",
+            "track_number",
+            "start_timestamp",
             "end_timestamp",
         ],
         "video": ["ytb_link", "start_timestamp", "end_timestamp"],
@@ -913,7 +945,9 @@ class JsonBatchEditor(QWidget):
         self.add_entry()
 
     def _entry_label(self) -> str:
-        return {"audio": "song", "video": "video", "album": "album", "jukebox": "jukebox"}[self.kind]
+        return {"audio": "song", "video": "video", "album": "album", "jukebox": "jukebox"}[
+            self.kind
+        ]
 
     def background_threads(self) -> list[QThread]:
         """Return live helper threads owned by this editor."""
@@ -1019,9 +1053,7 @@ class JsonBatchEditor(QWidget):
                 widget.setPlaceholderText(
                     "00:00" if field == "start_timestamp" else "Optional — download to the end"
                 )
-                widget.setToolTip(
-                    "Accepted formats: SS, MM:SS, or HH:MM:SS (decimals allowed)"
-                )
+                widget.setToolTip("Accepted formats: SS, MM:SS, or HH:MM:SS (decimals allowed)")
             if field == "album_art":
                 album_name_edit = name_edit if self.kind == "album" else fields.get("album")
                 form.addRow(
@@ -1097,8 +1129,13 @@ class JsonBatchEditor(QWidget):
             )
             extract_tracks.clicked.connect(
                 lambda checked=False: self._extract_youtube_tracks(
-                    fields["ytb_link"], name_edit, fields.get("release_year"),
-                    tracks_layout, tracks, extract_tracks, section
+                    fields["ytb_link"],
+                    name_edit,
+                    fields.get("release_year"),
+                    tracks_layout,
+                    tracks,
+                    extract_tracks,
+                    section,
                 )
             )
             actions_layout.addWidget(extract_tracks)
@@ -1114,7 +1151,9 @@ class JsonBatchEditor(QWidget):
         record = {"section": section, "fields": fields, "form": form}
         self.entries.append(record)
         section.remove_button.clicked.connect(lambda: self._remove_entry(record))
-        name_edit.textChanged.connect(lambda text: section.set_title(text.strip() or f"New {self._entry_label()}"))
+        name_edit.textChanged.connect(
+            lambda text: section.set_title(text.strip() or f"New {self._entry_label()}")
+        )
         if self.kind == "audio":
             title_edit = fields["title"]
             if isinstance(title_edit, QLineEdit):
@@ -1144,10 +1183,7 @@ class JsonBatchEditor(QWidget):
         fields = record.get("fields", {})
         if self._field_value(fields.get("__name__")):
             return False
-        if any(
-            self._field_value(fields.get(field))
-            for field in self.FLAT_FIELDS[self.kind]
-        ):
+        if any(self._field_value(fields.get(field)) for field in self.FLAT_FIELDS[self.kind]):
             return False
         return not fields.get("__tracks__")
 
@@ -1215,9 +1251,7 @@ class JsonBatchEditor(QWidget):
         button.setEnabled(False)
         button.setText("Auto filling…")
         section.set_status("Finding metadata")
-        self.log_requested.emit(
-            f'[ALBUM-AUTO-FILL] Searching metadata for "{album_name}".'
-        )
+        self.log_requested.emit(f'[ALBUM-AUTO-FILL] Searching metadata for "{album_name}".')
         year_edit = fields.get("release_year")
         supplied_year = self._field_value(year_edit) if year_edit is not None else ""
         filler = AlbumMetadataAutoFiller(
@@ -1262,9 +1296,7 @@ class JsonBatchEditor(QWidget):
                 and year_edit.text().strip() != str(result["year"]).strip()
             ):
                 year_edit.setText(str(result["year"]))
-                year_edit.setToolTip(
-                    f"Found on Wikipedia: {result.get('page_title', '')}"
-                )
+                year_edit.setToolTip(f"Found on Wikipedia: {result.get('page_title', '')}")
                 changed.append("release year")
             if (
                 isinstance(art_edit, QLineEdit)
@@ -1283,9 +1315,7 @@ class JsonBatchEditor(QWidget):
                 if link_edit.text().strip() != youtube_url:
                     link_edit.setText(youtube_url)
                     changed.append("YouTube link")
-                link_edit.setToolTip(
-                    str(youtube.get("title") or "YouTube jukebox found")
-                )
+                link_edit.setToolTip(str(youtube.get("title") or "YouTube jukebox found"))
                 tracks_layout = fields.get("__tracks_layout__")
                 tracks = fields.get("__tracks__")
                 extract_button = fields.get("__extract_button__")
@@ -1357,9 +1387,7 @@ class JsonBatchEditor(QWidget):
             if changed:
                 section.set_status("Partially filled" if errors else "Metadata found")
                 self.log_requested.emit(
-                    f'[ALBUM-AUTO-FILL] Updated "{searched_name}": '
-                    + ", ".join(changed)
-                    + "."
+                    f'[ALBUM-AUTO-FILL] Updated "{searched_name}": ' + ", ".join(changed) + "."
                 )
             else:
                 section.set_status("No new data")
@@ -1370,8 +1398,7 @@ class JsonBatchEditor(QWidget):
                 message = "\n".join(str(error) for error in errors)
                 button.setToolTip(message)
                 self.log_requested.emit(
-                    "[ALBUM-AUTO-FILL] Lookup warnings for "
-                    f'"{searched_name}": {message}'
+                    f'[ALBUM-AUTO-FILL] Lookup warnings for "{searched_name}": {message}'
                 )
         except Exception as exc:
             section.set_status("Auto fill failed")
@@ -1394,9 +1421,7 @@ class JsonBatchEditor(QWidget):
         resolution.addItem("Scanning available qualities…", "")
         resolution.setEnabled(False)
         section.set_status("Scanning")
-        scanner = VideoQualityScanner(
-            url, self, retry_attempts=self.retry_attempts
-        )
+        scanner = VideoQualityScanner(url, self, retry_attempts=self.retry_attempts)
         self._scanners.add(scanner)
 
         def apply_result(scanned_url: str, result: dict) -> None:
@@ -1454,9 +1479,7 @@ class JsonBatchEditor(QWidget):
             fields[field] = widget
             if field == "artists":
                 widget.editingFinished.connect(
-                    lambda edit=widget: edit.setText(
-                        format_artist_names(edit.text()) or "Unknown"
-                    )
+                    lambda edit=widget: edit.setText(format_artist_names(edit.text()) or "Unknown")
                 )
             if self.kind == "jukebox" and field in {"album", "artists"}:
                 form.addRow(
@@ -1502,6 +1525,7 @@ class JsonBatchEditor(QWidget):
         record = {"section": section, "fields": fields}
         tracks.append(record)
         section.remove_button.clicked.connect(lambda: self._remove_track(layout, tracks, record))
+
         def update_track_title(text: str) -> None:
             section.set_title(text.strip() or "New track")
             if self._AUTO_DISABLED_TRACK.search(text):
@@ -1522,7 +1546,10 @@ class JsonBatchEditor(QWidget):
         fields = record["fields"]
         album_edit = fields.get("album")
         artists_edit = fields.get("artists")
-        if not self._field_value(album_edit) or self._field_value(album_edit).casefold() == "unknown":
+        if (
+            not self._field_value(album_edit)
+            or self._field_value(album_edit).casefold() == "unknown"
+        ):
             self._find_track_metadata(record, target="all")
             return
         if (
@@ -1620,11 +1647,7 @@ class JsonBatchEditor(QWidget):
         artists_edit = fields.get("artists")
         current_album = self._field_value(album_edit)
         current_artists = self._field_value(artists_edit)
-        artists_hint = (
-            ""
-            if current_artists.casefold() in {"", "unknown"}
-            else current_artists
-        )
+        artists_hint = "" if current_artists.casefold() in {"", "unknown"} else current_artists
         album_button = fields.get("__find_album_button__")
         artists_button = fields.get("__find_artists_button__")
         for button in (album_button, artists_button):
@@ -1657,9 +1680,7 @@ class JsonBatchEditor(QWidget):
                 widget = fields.get(field_name)
                 if isinstance(widget, QLineEdit) and value:
                     text = (
-                        format_artist_names(str(value))
-                        if field_name == "artists"
-                        else str(value)
+                        format_artist_names(str(value)) if field_name == "artists" else str(value)
                     )
                     widget.setText(text)
             record["section"].set_status("Track metadata found")
@@ -1679,9 +1700,7 @@ class JsonBatchEditor(QWidget):
         searcher.found.connect(apply_result)
         searcher.failed.connect(apply_error)
         searcher.finished.connect(finish)
-        searcher.finished.connect(
-            lambda: self._track_metadata_searchers.discard(searcher)
-        )
+        searcher.finished.connect(lambda: self._track_metadata_searchers.discard(searcher))
         searcher.finished.connect(searcher.deleteLater)
         searcher.start()
 
@@ -1737,9 +1756,7 @@ class JsonBatchEditor(QWidget):
             for track in parsed_tracks:
                 if isinstance(track, dict) and track:
                     name, values = next(iter(track.items()))
-                    added_tracks.append(
-                        self._add_track(tracks_layout, tracks, str(name), values)
-                    )
+                    added_tracks.append(self._add_track(tracks_layout, tracks, str(name), values))
             button.setToolTip(timestamp_text)
             section.set_status(f"{len(parsed_tracks)} tracks found")
             self.log_requested.emit(
@@ -1812,9 +1829,7 @@ class JsonBatchEditor(QWidget):
         button.setObjectName("secondaryButton")
         button.setToolTip("Find the album release year from Wikipedia")
         button.clicked.connect(
-            lambda checked=False: self._find_release_year(
-                album_edit, year_edit, button, section
-            )
+            lambda checked=False: self._find_release_year(album_edit, year_edit, button, section)
         )
         if fields is not None:
             fields["__find_year_button__"] = button
@@ -1901,9 +1916,7 @@ class JsonBatchEditor(QWidget):
         layout.addWidget(button)
         return row
 
-    def _choose_local_media_source(
-        self, link_edit: QLineEdit, section: CollapsibleSection
-    ) -> None:
+    def _choose_local_media_source(self, link_edit: QLineEdit, section: CollapsibleSection) -> None:
         path, _selected_filter = QFileDialog.getOpenFileName(
             self,
             "Choose existing audio or video source",
@@ -2008,9 +2021,7 @@ class JsonBatchEditor(QWidget):
         find_button.setObjectName("secondaryButton")
         find_button.setToolTip("Search Google Images for the first square album-art image")
         find_button.clicked.connect(
-            lambda checked=False: self._find_album_art(
-                album_edit, art_edit, find_button, section
-            )
+            lambda checked=False: self._find_album_art(album_edit, art_edit, find_button, section)
         )
         if fields is not None:
             fields["__find_cover_button__"] = find_button
@@ -2018,9 +2029,7 @@ class JsonBatchEditor(QWidget):
         preview_button.setObjectName("secondaryButton")
         preview_button.setToolTip("Open the current album-art URL in a preview popup")
         preview_button.clicked.connect(
-            lambda checked=False: self._preview_album_art(
-                art_edit, preview_button, section
-            )
+            lambda checked=False: self._preview_album_art(art_edit, preview_button, section)
         )
         layout.addWidget(art_edit, 1)
         layout.addWidget(preview_button)
@@ -2045,9 +2054,7 @@ class JsonBatchEditor(QWidget):
         button.setText("Loading…")
         section.set_status("Loading preview")
         self.log_requested.emit(f"[COVER-PREVIEW] Loading album art preview: {url}")
-        loader = CoverImageLoader(
-            url, self, retry_attempts=self.retry_attempts
-        )
+        loader = CoverImageLoader(url, self, retry_attempts=self.retry_attempts)
         self._cover_loaders.add(loader)
 
         def show_preview(loaded_url: str, data: bytes) -> None:
@@ -2064,7 +2071,9 @@ class JsonBatchEditor(QWidget):
             section.set_status("Preview ready")
             dialog = CoverPreviewDialog(pixmap, self)
             self._cover_preview_dialogs.add(dialog)
-            dialog.finished.connect(lambda _result=0, item=dialog: self._cover_preview_dialogs.discard(item))
+            dialog.finished.connect(
+                lambda _result=0, item=dialog: self._cover_preview_dialogs.discard(item)
+            )
             dialog.show()
             dialog.raise_()
             dialog.activateWindow()
@@ -2186,7 +2195,9 @@ class JsonBatchEditor(QWidget):
             if self.kind in {"album", "jukebox"}:
                 if self.kind == "album":
                     values["album"] = name
-                values["track_numbering"] = "true" if fields["track_numbering"].isChecked() else "false"
+                values["track_numbering"] = (
+                    "true" if fields["track_numbering"].isChecked() else "false"
+                )
                 values["tracks"] = self._track_data(fields["__tracks__"])
             result[name] = values
         return result
@@ -2252,7 +2263,7 @@ class JsonBatchEditor(QWidget):
                 for item in completed:
                     if not item.startswith(prefix):
                         continue
-                    result_track = re.sub(r"^\d+\.\s*", "", item[len(prefix):])
+                    result_track = re.sub(r"^\d+\.\s*", "", item[len(prefix) :])
                     if result_track == track_name or result_track.endswith(track_name):
                         matching.append(item)
                 if matching:
@@ -2263,16 +2274,18 @@ class JsonBatchEditor(QWidget):
                     track["section"].set_expanded(False)
                 track_failed = any(
                     item.startswith(prefix)
-                    and re.sub(r"^\d+\.\s*", "", item[len(prefix):]) == track_name
+                    and re.sub(r"^\d+\.\s*", "", item[len(prefix) :]) == track_name
                     for item in failed
                 )
                 if track_failed:
                     track["section"].set_status("Needs attention")
                     track["section"].set_expanded(True)
             tracks = fields.get("__tracks__", [])
-            if tracks and all(
-                not track["fields"]["download"].isChecked() for track in tracks
-            ) and not entry_failed:
+            if (
+                tracks
+                and all(not track["fields"]["download"].isChecked() for track in tracks)
+                and not entry_failed
+            ):
                 download = fields.get("download")
                 if isinstance(download, QCheckBox):
                     download.setChecked(False)
@@ -2302,7 +2315,9 @@ class JsonBatchEditor(QWidget):
     def import_json(self) -> None:
         import json
 
-        selected, _ = QFileDialog.getOpenFileName(self, "Import JSON", str(Path.cwd()), "JSON files (*.json *.jsonc)")
+        selected, _ = QFileDialog.getOpenFileName(
+            self, "Import JSON", str(Path.cwd()), "JSON files (*.json *.jsonc)"
+        )
         if not selected:
             return
         payload = json.loads(Path(selected).read_text(encoding="utf-8"))

@@ -122,6 +122,10 @@ from youtube_audio_video_downloader.services.ai.library_recommendations import (
     recommend_library_tracks,
 )
 from youtube_audio_video_downloader.services.ai.ai_provider import configured_primary_identity
+from youtube_audio_video_downloader.services.google_cloud_profile import (
+    match_portable_tracks,
+    portable_playlist_snapshot,
+)
 
 MEDIA_TYPE_ALL = "all"
 MEDIA_TYPE_AUDIO = "audio"
@@ -967,6 +971,7 @@ class MediaLibraryPage(QWidget):
     spectrum_buffer_ready = pyqtSignal(object)
     visualizer_playback_changed = pyqtSignal(bool)
     remote_action_requested = pyqtSignal(object)
+    cloud_profile_changed = pyqtSignal()
 
     def __init__(self, settings: QSettings, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -2399,6 +2404,30 @@ class MediaLibraryPage(QWidget):
         self.settings.setValue("library/active_playlist", self._active_playlist)
         self.settings.sync()
         self._remote_state_dirty = True
+        self.cloud_profile_changed.emit()
+
+    def cloud_playlist_snapshot(self) -> dict[str, list[dict[str, object]]]:
+        """Return playlists without machine-specific filesystem paths."""
+
+        return portable_playlist_snapshot(
+            self.playlists, [item.as_dict() for item in self.items]
+        )
+
+    def import_cloud_playlist_entries(
+        self, name: str, entries: list[dict[str, object]]
+    ) -> tuple[int, list[str]]:
+        """Merge portable/cloud entries into a local playlist by metadata identity."""
+
+        paths, missing = match_portable_tracks(
+            entries, [item.as_dict() for item in self.items]
+        )
+        existing = self.playlists.setdefault(name, [])
+        known = {path.casefold() for path in existing}
+        additions = [path for path in paths if path.casefold() not in known]
+        existing.extend(additions)
+        self._save_playlists()
+        self._render_playlists()
+        return len(additions), missing
 
     def _render_playlists(self) -> None:
         self.playlist_list.blockSignals(True)

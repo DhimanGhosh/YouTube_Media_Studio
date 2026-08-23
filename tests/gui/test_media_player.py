@@ -131,6 +131,30 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.assertEqual(self.page.queue, [])
         self.assertEqual(self.page.playlists["List"], [])
 
+    def test_cloud_playlist_snapshot_uses_identity_instead_of_local_path(self) -> None:
+        self.page.playlists = {"Portable": [self.page.items[0].path]}
+
+        snapshot = self.page.cloud_playlist_snapshot()
+
+        self.assertEqual(snapshot["Portable"][0]["title"], "Short")
+        self.assertNotIn("path", snapshot["Portable"][0])
+
+    def test_cloud_playlist_import_matches_this_machines_library(self) -> None:
+        changed = QSignalSpy(self.page.cloud_profile_changed)
+
+        added, missing = self.page.import_cloud_playlist_entries(
+            "From cloud",
+            [
+                {"title": "Short", "artists": "Test Artist"},
+                {"title": "Not installed", "artists": "Someone"},
+            ],
+        )
+
+        self.assertEqual(added, 1)
+        self.assertEqual(missing, ["Not installed"])
+        self.assertEqual(self.page.playlists["From cloud"], [self.page.items[0].path])
+        self.assertEqual(len(changed), 1)
+
     def test_delete_key_removes_selected_queue_track_without_deleting_file(self) -> None:
         self.page.queue = list(self.page.items)
         self.page._queue_source = list(self.page.items)
