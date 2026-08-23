@@ -212,7 +212,8 @@ def download_with_fallback(
                 flush=True,
             )
             try:
-                _emit_download_lifecycle(label, options, "downloading", 0.0)
+                if download:
+                    _emit_download_lifecycle(label, options, "downloading", 0.0)
                 with yt_dlp.YoutubeDL(options) as downloader:
                     result = downloader.extract_info(url, download=download)
                     if download:

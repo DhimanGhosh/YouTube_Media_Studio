@@ -8,6 +8,7 @@ import tempfile
 import time
 import unittest
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -554,6 +555,18 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.page.apply_filters = Mock()
         self.page._scan_finished(list(self.page.items))
         self.page.apply_filters.assert_not_called()
+
+    def test_future_only_year_metadata_stays_clamped_to_current_year(self) -> None:
+        current_year = datetime.now().year
+
+        self.page._scan_finished([media("Future", current_year + 50, 1_000)])
+
+        self.assertEqual(self.page.year_from.maximum(), current_year)
+        self.assertEqual(self.page.year_to.maximum(), current_year)
+        self.assertEqual(
+            self.page.year_from.lineEdit().placeholderText(),
+            f"From {current_year}",
+        )
 
     def test_refresh_requested_during_scan_is_queued(self) -> None:
         self.page._scanner_thread = Mock()

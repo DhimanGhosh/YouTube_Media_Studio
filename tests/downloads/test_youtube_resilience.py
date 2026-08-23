@@ -58,3 +58,36 @@ def test_download_falls_back_after_403(monkeypatch) -> None:
         )
     assert result["download"] is True
     assert len(calls) == 2
+
+
+def test_metadata_extraction_does_not_emit_download_lifecycle(monkeypatch) -> None:
+    class FakeDownloader:
+        def __init__(self, _options):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def extract_info(self, _url, *, download):
+            return {"download": download}
+
+    lifecycle_events: list[tuple] = []
+    monkeypatch.setattr("yt_dlp.YoutubeDL", FakeDownloader)
+    monkeypatch.setattr(
+        "youtube_audio_video_downloader.services.downloads.youtube_resilience."
+        "_emit_download_lifecycle",
+        lambda *args: lifecycle_events.append(args),
+    )
+
+    result = download_with_fallback(
+        "https://example.test/video",
+        {},
+        label="Metadata",
+        download=False,
+    )
+
+    assert result["download"] is False
+    assert lifecycle_events == []

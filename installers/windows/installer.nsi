@@ -70,8 +70,11 @@ Section "${APP_NAME} (required)" SecMain
   SetShellVarContext current
   SetOutPath "$INSTDIR"
 
-  ; Close an older running build so OTA upgrades can replace the executable.
-  nsExec::ExecToLog 'taskkill /F /IM "${APP_EXE}"'
+  ; Close only the app installed at this exact path. Using an inherited
+  ; environment variable avoids interpolating the path into PowerShell code.
+  System::Call 'Kernel32::SetEnvironmentVariable(t, t)i("YMS_UPGRADE_TARGET", "$INSTDIR\${APP_EXE}")'
+  nsExec::ExecToLog 'powershell.exe -NoProfile -NonInteractive -Command "Get-CimInstance Win32_Process | Where-Object { $$_.ExecutablePath -and [StringComparer]::OrdinalIgnoreCase.Equals($$_.ExecutablePath, $$env:YMS_UPGRADE_TARGET) } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force }"'
+  System::Call 'Kernel32::SetEnvironmentVariable(t, i)i("YMS_UPGRADE_TARGET", 0)'
   File "/oname=${APP_EXE}" "${GUI_PAYLOAD}"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 
@@ -116,7 +119,9 @@ LangString DESC_SecDesktop ${LANG_ENGLISH} "Create a shortcut on your desktop."
 
 Section "Uninstall"
   SetShellVarContext current
-  nsExec::ExecToLog 'taskkill /F /IM "${APP_EXE}"'
+  System::Call 'Kernel32::SetEnvironmentVariable(t, t)i("YMS_UPGRADE_TARGET", "$INSTDIR\${APP_EXE}")'
+  nsExec::ExecToLog 'powershell.exe -NoProfile -NonInteractive -Command "Get-CimInstance Win32_Process | Where-Object { $$_.ExecutablePath -and [StringComparer]::OrdinalIgnoreCase.Equals($$_.ExecutablePath, $$env:YMS_UPGRADE_TARGET) } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force }"'
+  System::Call 'Kernel32::SetEnvironmentVariable(t, i)i("YMS_UPGRADE_TARGET", 0)'
   Delete "$DESKTOP\${APP_NAME}.lnk"
   RMDir /r "$SMPROGRAMS\${APP_NAME}"
   DeleteRegKey HKCU "${UNINSTALL_KEY}"

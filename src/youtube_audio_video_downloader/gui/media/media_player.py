@@ -3790,11 +3790,13 @@ class MediaLibraryPage(QWidget):
             )
             return
         self.items = scanned_items
-        available_years = sorted(
-            item.year for item in scanned_items if isinstance(item.year, int) and item.year > 0
-        )
-        lowest_year = available_years[0] if available_years else datetime.now().year
         current_year = datetime.now().year
+        available_years = sorted(
+            item.year
+            for item in scanned_items
+            if isinstance(item.year, int) and 0 < item.year <= current_year
+        )
+        lowest_year = available_years[0] if available_years else current_year
         self.year_from.set_year_limits(lowest_year, current_year)
         self.year_to.set_year_limits(lowest_year, current_year)
         self.year_from.lineEdit().setPlaceholderText(f"From {lowest_year}")
