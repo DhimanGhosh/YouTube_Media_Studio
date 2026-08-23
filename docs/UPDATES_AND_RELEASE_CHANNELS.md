@@ -23,4 +23,3 @@ Google sign-in could be useful in a separate, opt-in feature for:
 - authenticated YouTube Data API actions such as reading the signed-in user's private playlists.
 
 Those uses require narrowly scoped OAuth permissions and a published privacy policy. They should not be coupled to downloads, local media tools, playback, or updates. No Google account is required by the current implementation.
-

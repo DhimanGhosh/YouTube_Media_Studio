@@ -58,4 +58,3 @@ def test_download_falls_back_after_403(monkeypatch) -> None:
         )
     assert result["download"] is True
     assert len(calls) == 2
-
