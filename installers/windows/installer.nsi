@@ -37,6 +37,7 @@ RequestExecutionLevel user
 SetCompressor /SOLID lzma
 ShowInstDetails show
 ShowUninstDetails show
+BrandingText "YouTube Media Studio · Dhiman Ghosh"
 
 VIProductVersion "${VERSION}.0"
 VIAddVersionKey "ProductName" "${APP_NAME}"
@@ -49,6 +50,14 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
 !define MUI_ABORTWARNING
 !define MUI_ICON "${APP_ICON}"
 !define MUI_UNICON "${APP_ICON}"
+!define MUI_HEADERIMAGE
+!define MUI_HEADERIMAGE_RIGHT
+!define MUI_HEADERIMAGE_BITMAP "assets\installer-header.bmp"
+!define MUI_WELCOMEFINISHPAGE_BITMAP "assets\installer-welcome.bmp"
+!define MUI_WELCOMEPAGE_TITLE "Welcome to ${APP_NAME}"
+!define MUI_WELCOMEPAGE_TEXT "Setup will install ${APP_NAME} ${VERSION} on this computer.$\r$\n$\r$\nClose any running copy of the application before continuing. Your settings, playlists, history, and media files are kept during upgrades.$\r$\n$\r$\nClick Next to continue."
+!define MUI_FINISHPAGE_TITLE "${APP_NAME} is ready"
+!define MUI_FINISHPAGE_TEXT "Installation completed successfully.$\r$\n$\r$\nClick Finish to close Setup. You can optionally launch ${APP_NAME} now."
 !define MUI_FINISHPAGE_RUN "$INSTDIR\${APP_EXE}"
 !define MUI_FINISHPAGE_RUN_TEXT "Launch ${APP_NAME}"
 
