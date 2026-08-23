@@ -34,6 +34,10 @@ TOKEN_URI = "https://oauth2.googleapis.com/token"
 PORTABLE_SETTING_KEYS = (
     "defaults/audio_quality",
     "defaults/sample_rate",
+    "defaults/album_silence_threshold_db",
+    "defaults/album_min_silence_duration",
+    "defaults/album_min_track_duration",
+    "defaults/album_trim_silence_padding",
     "defaults/video_seek_seconds",
     "defaults/remember_video_display_modes",
     "defaults/wikipedia_track_order",
