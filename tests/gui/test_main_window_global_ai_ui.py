@@ -143,7 +143,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
 
         self.assertEqual(
             set(menus),
-            {"File", "Download", "Organize", "Edit", "View", "Media Player", "Help"},
+            {"File", "Download", "Organize", "Edit", "View", "Help"},
         )
         self.assertNotIn("&", "".join(action.text() for action in self.window.menuBar().actions()))
         workspace_labels = {
@@ -167,8 +167,16 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
             if not action.isSeparator()
         }
         self.assertEqual(set(workspace_actions), workspace_labels)
-        self.assertIsNone(menus["Media Player"])
         self.assertEqual(self.window.media_player_action.shortcut(), QKeySequence("Ctrl+L"))
+        self.assertIs(
+            self.window.menuBar().cornerWidget(Qt.Corner.TopRightCorner),
+            self.window.media_player_menu_button,
+        )
+        self.assertEqual(self.window.media_player_menu_button.text(), "Media Player")
+        self.assertIs(
+            self.window.media_player_menu_button.defaultAction(),
+            self.window.media_player_action,
+        )
         self.assertTrue(all(not action.icon().isNull() for action in workspace_actions.values()))
         self.assertIn(
             "Check for Updates…",
