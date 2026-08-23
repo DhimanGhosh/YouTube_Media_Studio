@@ -78,6 +78,7 @@ def select_update(
         )
         if (
             parsed is None
+            or (not include_betas and parsed.major != 2)
             or (parsed <= current and not returning_to_stable)
             or (prerelease and not include_betas)
         ):

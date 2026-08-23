@@ -45,6 +45,16 @@ def test_stable_channel_excludes_newer_beta(monkeypatch) -> None:
     assert update.prerelease is False
 
 
+def test_stable_channel_excludes_misclassified_non_prerelease_3x(monkeypatch) -> None:
+    monkeypatch.setattr("platform.system", lambda: "Windows")
+    update = select_update(
+        [release("v3.1.0", prerelease=False), release("v2.13.0")],
+        "2.12.0",
+    )
+    assert update is not None
+    assert update.version == "2.13.0"
+
+
 def test_beta_opt_in_selects_newest_prerelease(monkeypatch) -> None:
     monkeypatch.setattr("platform.system", lambda: "Windows")
     update = select_update(

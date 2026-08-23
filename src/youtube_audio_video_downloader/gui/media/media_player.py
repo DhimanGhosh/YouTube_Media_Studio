@@ -5165,7 +5165,6 @@ class MediaLibraryPage(QWidget):
             return
         removed_current = self.queue_index in rows
         rows_before_current = sum(row < self.queue_index for row in rows)
-        first_removed = min(rows)
         for row in rows:
             if 0 <= row < len(self.queue):
                 self.queue.pop(row)
@@ -5173,7 +5172,9 @@ class MediaLibraryPage(QWidget):
         if not self.queue:
             self.clear_playback_queue()
         elif removed_current:
-            self.queue_index = min(first_removed, len(self.queue) - 1)
+            self.queue_index = min(
+                self.queue_index - rows_before_current, len(self.queue) - 1
+            )
             self._load_current()
         else:
             self.queue_index -= rows_before_current

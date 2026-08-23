@@ -17,8 +17,8 @@ import numpy as np
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtCore import (  # noqa: E402
-    QBuffer, QByteArray, QEvent, QIODevice, QPoint, QPointF, QRect, QRectF, QSettings,
-    QSize, Qt, QTimer,
+    QBuffer, QByteArray, QEvent, QIODevice, QItemSelectionModel, QPoint, QPointF,
+    QRect, QRectF, QSettings, QSize, Qt, QTimer,
 )
 from PyQt6.QtGui import QColor, QIcon, QPixmap, QWheelEvent  # noqa: E402
 from PyQt6.QtMultimedia import QAudioBuffer, QAudioFormat, QMediaPlayer  # noqa: E402
@@ -146,6 +146,32 @@ class MediaPlayerPageTest(unittest.TestCase):
 
         self.assertEqual([item.title for item in self.page.queue], ["Short"])
         self.assertEqual(self.page.queue_index, 0)
+
+    def test_removing_current_and_earlier_queue_rows_advances_to_next(self) -> None:
+        first, second = self.page.items
+        current = media("Current", 2010, 120_000)
+        following = media("Following", 2011, 130_000)
+        self.page.queue = [first, second, current, following]
+        self.page._queue_source = list(self.page.queue)
+        self.page.queue_index = 2
+        self.page._sync_queue_drawer()
+        selection = self.page.queue_list.selectionModel()
+        flags = (
+            QItemSelectionModel.SelectionFlag.Select
+            | QItemSelectionModel.SelectionFlag.Rows
+        )
+        selection.select(self.page.queue_list.model().index(0, 0), flags)
+        selection.select(self.page.queue_list.model().index(2, 0), flags)
+
+        with patch.object(self.page, "_load_current") as load_current:
+            self.page._remove_selected_queue_entries()
+
+        self.assertEqual(
+            [item.title for item in self.page.queue],
+            ["Long", "Following"],
+        )
+        self.assertEqual(self.page.queue_index, 1)
+        load_current.assert_called_once()
 
     def test_play_next_moves_existing_tracks_after_current_without_duplicates(self) -> None:
         first, second = self.page.items
