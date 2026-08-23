@@ -88,7 +88,13 @@ def consolidate_albums(
 
     token = cancellation_token or CancellationToken()
     requested_source = Path(source_folder).expanduser().resolve()
-    source = resolve_album_folder_successor(requested_source).resolve()
+    source_is_file = requested_source.is_file()
+    source = (
+        requested_source
+        if source_is_file
+        else resolve_album_folder_successor(requested_source).resolve()
+    )
+    scan_root = source.parent if source_is_file else source
     destination = Path(destination_folder).expanduser().resolve()
     verified_audio = (
         None
@@ -98,26 +104,30 @@ def consolidate_albums(
             for value in verified_audio_paths
         }
     )
-    if not source.is_dir():
-        raise NotADirectoryError(f"Source folder does not exist: {source}")
-    if source == destination:
+    if not source_is_file and not source.is_dir():
+        raise NotADirectoryError(f"Source file or folder does not exist: {source}")
+    if not source_is_file and source == destination:
         raise ValueError("Source and destination folders must be different")
-    if destination.is_relative_to(source):
+    if not source_is_file and destination.is_relative_to(source):
         raise ValueError("Destination folder cannot be inside the source folder")
 
     token.raise_if_cancelled()
     repaired_folders = normalize_album_folders(destination)
-    candidates = sorted(
-        (
-            path for path in source.rglob("*")
-            if path.is_file()
-            and not path.is_symlink()
-            and path.suffix.lower() in SUPPORTED_MEDIA_EXTENSIONS
-        ),
-        key=lambda path: str(path).casefold(),
+    candidates = (
+        [source]
+        if source_is_file and source.suffix.lower() in SUPPORTED_MEDIA_EXTENSIONS
+        else sorted(
+            (
+                path for path in source.rglob("*")
+                if path.is_file()
+                and not path.is_symlink()
+                and path.suffix.lower() in SUPPORTED_MEDIA_EXTENSIONS
+            ),
+            key=lambda path: str(path).casefold(),
+        )
     )
     if not candidates:
-        raise ValueError("No supported audio or video files were found in the source folder")
+        raise ValueError("No supported audio or video files were found in the selected source")
 
     planned: list[tuple[Path, Path, str]] = []
     moved: list[Path] = []
@@ -128,7 +138,7 @@ def consolidate_albums(
     destination_titles: dict[str, dict[str, Path]] = {}
     for media_path in candidates:
         token.raise_if_cancelled()
-        media_path = _follow_renamed_source_file(media_path, source)
+        media_path = _follow_renamed_source_file(media_path, scan_root)
         if not media_path.is_file():
             message = (
                 f"{media_path.name}: source changed during consolidation and "
@@ -250,7 +260,7 @@ def consolidate_albums(
 
     for media_path, target, album in planned:
         token.raise_if_cancelled()
-        media_path = _follow_renamed_source_file(media_path, source)
+        media_path = _follow_renamed_source_file(media_path, scan_root)
         if not media_path.is_file():
             message = (
                 f"{media_path.name}: source changed before moving and the "

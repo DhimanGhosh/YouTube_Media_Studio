@@ -743,6 +743,18 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         self.assertEqual(self.window.pages.currentIndex(), 6)
         self.assertEqual(self.window.track_reorder_folder.text(), str(album))
 
+    def test_single_file_enrichment_updates_the_consolidator_source(self) -> None:
+        renamed = self.data_directory / "Song - Album (2024) - Artist.mp3"
+        renamed.write_bytes(b"media")
+
+        self.window._follow_enriched_album_source({"output_path": str(renamed)})
+
+        self.assertEqual(self.window.album_consolidator_source.text(), str(renamed))
+        self.assertEqual(
+            self.window.settings.value("workspace/album_consolidator_source"),
+            str(renamed),
+        )
+
     def test_library_album_handoff_opens_bulk_album_editor(self) -> None:
         album = self.data_directory / "Album (2024)"
         album.mkdir()
