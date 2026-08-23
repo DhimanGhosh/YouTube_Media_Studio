@@ -279,7 +279,7 @@ class YouTubeAudioDownloader:
             )
             if not final_mp3_path.exists():
                 raise FileNotFoundError(f"Expected MP3 was not created: {final_mp3_path}")
-            self.metadata_tagger.tag_mp3(final_mp3_path, song)
+            self._tag_downloaded_mp3_with_retries(final_mp3_path, song)
             return DownloadResult(
                 song=song.json_key,
                 status=DownloadStatus.DOWNLOADED,
@@ -296,6 +296,28 @@ class YouTubeAudioDownloader:
                 file_name=file_name,
                 reason=reason,
             )
+
+    def _tag_downloaded_mp3_with_retries(self, mp3_path: Path, song: Song) -> None:
+        """Retry transient metadata writes without downloading the media again."""
+
+        attempts = max(1, self.settings.max_retries)
+        for attempt in range(1, attempts + 1):
+            self.cancellation_token.raise_if_cancelled()
+            try:
+                self.metadata_tagger.tag_mp3(mp3_path, song)
+                return
+            except UserCancelledError:
+                raise
+            except Exception as exc:
+                if attempt >= attempts:
+                    raise
+                delay = self.settings.retry_wait_seconds * attempt
+                print(
+                    f"[TAG-RETRY] {song.json_key}: attempt {attempt}/{attempts} "
+                    f"failed ({exc}); retrying in {delay}s",
+                    flush=True,
+                )
+                self.cancellation_token.wait(delay)
 
     @staticmethod
     def _remove_existing_download_files(output_dir: Path, file_name: str, song_title: str) -> None:

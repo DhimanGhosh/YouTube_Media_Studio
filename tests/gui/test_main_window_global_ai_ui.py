@@ -90,6 +90,19 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         self.assertFalse(self.window.cancel_button.isEnabled())
         self.assertIn("QPushButton#dangerButton:disabled", APP_STYLE)
 
+    def test_beta_update_toggle_immediately_updates_channel_status(self) -> None:
+        self.assertEqual(self.window.update_status.text(), "Stable 2.x channel")
+
+        self.window.settings_beta_updates.setChecked(True)
+
+        self.assertEqual(self.window.update_status.text(), "3.x beta channel")
+        self.assertTrue(
+            self.window.settings.value("updates/include_betas", False, type=bool)
+        )
+
+        self.window.settings_beta_updates.setChecked(False)
+        self.assertEqual(self.window.update_status.text(), "Stable 2.x channel")
+
     def test_different_workspaces_remain_available_while_jobs_run(self) -> None:
         self.window._active_thread = object()
         self.window._active_operation_name = "album"

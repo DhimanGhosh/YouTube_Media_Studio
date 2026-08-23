@@ -638,7 +638,7 @@ class YouTubeAlbumSplitter:
         track: AlbumSongSpec,
         temp_dir: Path,
     ) -> Path:
-        """Download the unconverted source audio for a standalone track."""
+        """Return an existing local source or download a remote source."""
 
         local_source = Path(track.ytb_link).expanduser()
         if local_source.is_file():

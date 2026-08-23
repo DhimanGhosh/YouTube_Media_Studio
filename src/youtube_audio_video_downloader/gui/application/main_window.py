@@ -2509,14 +2509,18 @@ class MainWindow(QMainWindow):
         self.settings_beta_updates.setToolTip(
             "Off by default. Enable only to receive experimental built-in-AI 3.x betas."
         )
-        self.settings_beta_updates.toggled.connect(
-            lambda enabled: self.settings.setValue("updates/include_betas", enabled)
-        )
         update_controls = QWidget()
         update_controls_layout = QHBoxLayout(update_controls)
         update_controls_layout.setContentsMargins(0, 0, 0, 0)
-        self.update_status = QLabel("Stable 2.x channel")
+        self.update_status = QLabel(
+            "3.x beta channel"
+            if self.settings_beta_updates.isChecked()
+            else "Stable 2.x channel"
+        )
         self.update_status.setObjectName("mutedLabel")
+        self.settings_beta_updates.toggled.connect(
+            self._beta_update_channel_toggled
+        )
         check_update = QPushButton("Check for updates")
         check_update.setObjectName("secondaryButton")
         check_update.clicked.connect(
@@ -3395,6 +3399,14 @@ class MainWindow(QMainWindow):
             )
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder.resolve())))
+
+    def _beta_update_channel_toggled(self, enabled: bool) -> None:
+        """Persist and immediately display the selected update channel."""
+
+        self.settings.setValue("updates/include_betas", enabled)
+        self.update_status.setText(
+            "3.x beta channel" if enabled else "Stable 2.x channel"
+        )
 
     def _check_for_updates(self, *, interactive: bool) -> None:
         """Check the configured stable/beta GitHub release channel in background."""
