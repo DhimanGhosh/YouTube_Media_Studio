@@ -3444,6 +3444,8 @@ class MainWindow(QMainWindow):
         ):
             self._set_ai_status("AI ENABLED · no model call was needed", active=True)
         self._handle_operation_output(summary)
+        if str(summary.get("operation", "")) == "album_metadata_enricher":
+            self._follow_enriched_album_source(summary)
         editor = self._batch_editor_for_operation(str(summary.get("operation", "")))
         if editor is not None:
             editor.disable_completed(
@@ -3460,6 +3462,19 @@ class MainWindow(QMainWindow):
             self._set_active_album_status(status)
         self._save_workspace_state()
         self.media_library.refresh_library()
+
+    def _follow_enriched_album_source(self, summary: dict[str, Any]) -> None:
+        """Keep a single-file workflow pointed at the path produced by enrichment."""
+
+        enriched_source = Path(str(summary.get("output_path", "") or ""))
+        if not enriched_source.is_file():
+            return
+        self.album_consolidator_source.set_text(str(enriched_source))
+        self.settings.setValue("workspace/album_consolidator_source", str(enriched_source))
+        self.settings.sync()
+        self._append_log(
+            f"[UPDATED] Album source now follows the enriched file: {enriched_source}"
+        )
 
     def _operation_failed(self, message: str, traceback_text: str) -> None:
         self._session_failed += 1

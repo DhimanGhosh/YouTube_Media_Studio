@@ -173,16 +173,34 @@ def _run_album_consolidator(
     verified_audio_paths = None
     if agentic_model and perform_enrichment:
         print("[AGENT-PRE-MOVE] Verifying audio identity before folder routing")
-        pre_move_enrichment = enrich_folder_metadata(
-            source,
-            workers=workers,
-            retries=retries,
-            allow_empty=True,
-            tracker_path=params.get("tracker_path"),
-            cancellation_token=token,
-            agentic_model=agentic_model,
-        )
-        source = resolve_album_folder_successor(source)
+        enrichment_options = {
+            "workers": workers,
+            "retries": retries,
+            "tracker_path": params.get("tracker_path"),
+            "cancellation_token": token,
+            "agentic_model": agentic_model,
+        }
+        if source.is_file():
+            pre_move_enrichment = enrich_media_files([source], **enrichment_options)
+            current_paths = tuple(
+                dict.fromkeys(
+                    path
+                    for path in (
+                        *pre_move_enrichment.updated,
+                        *pre_move_enrichment.completed,
+                    )
+                    if path.is_file()
+                )
+            )
+            if len(current_paths) == 1:
+                source = current_paths[0]
+        else:
+            pre_move_enrichment = enrich_folder_metadata(
+                source,
+                allow_empty=True,
+                **enrichment_options,
+            )
+            source = resolve_album_folder_successor(source)
         verified_audio_paths = pre_move_enrichment.completed
     report = consolidate_albums(
         source,
@@ -342,6 +360,9 @@ def _run_album_metadata_enricher(
             ),
             verification_policy_key(params.get("agentic_model")),
         )
+    output_path = source.parent if source_is_file else source
+    if source_is_file and len(report.updated) == 1:
+        output_path = report.updated[0]
     return OperationSummary(
         operation="album_metadata_enricher",
         total=1 if source_is_file else report.scanned,
@@ -350,7 +371,7 @@ def _run_album_metadata_enricher(
         skipped=len(report.skipped),
         tracked=report.tracked,
         failed=len(report.failed),
-        output_path=str(source.parent if source_is_file else source),
+        output_path=str(output_path),
         completed_items=tuple(path.name for path in report.updated),
         failed_items=report.failed,
     )

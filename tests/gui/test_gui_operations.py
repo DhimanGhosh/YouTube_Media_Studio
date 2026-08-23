@@ -58,7 +58,7 @@ class GuiOperationsTest(unittest.TestCase):
         reorder.assert_not_called()
         self.assertEqual(summary.total, 1)
         self.assertEqual(summary.tagged, 1)
-        self.assertEqual(Path(summary.output_path), selected.parent.resolve())
+        self.assertEqual(Path(summary.output_path), selected.resolve())
 
     def test_album_enricher_accepts_a_supported_file_already_in_tracker(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
