@@ -56,6 +56,22 @@ def test_next_version_uses_requested_or_commit_driven_bump(monkeypatch) -> None:
     assert release.next_version("major")[0] == "3.0.0"
 
 
+def test_next_version_can_stay_on_two_x_release_line(monkeypatch) -> None:
+    monkeypatch.setattr(release, "project_version", lambda: (2, 12, 0))
+    monkeypatch.setattr(
+        release,
+        "latest_release_tag",
+        lambda major_line=None: (
+            ("v2.12.0", (2, 12, 0))
+            if major_line == 2
+            else ("v3.0.0", (3, 0, 0))
+        ),
+    )
+    monkeypatch.setattr(release, "commits_since", lambda _tag: [commit("feat: stable tool")])
+
+    assert release.next_version("auto", major_line=2)[0] == "2.13.0"
+
+
 def test_changelog_records_subject_and_abbreviated_hash() -> None:
     section = release.changelog_section("2.1.0", [commit("feat: useful feature")])
     assert "## [2.1.0]" in section

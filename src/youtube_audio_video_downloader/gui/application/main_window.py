@@ -5,12 +5,23 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
-from PyQt6.QtCore import QSettings, QStandardPaths, Qt, QThread, QTimer, QUrl
+from PyQt6.QtCore import (
+    QObject,
+    QProcess,
+    QSettings,
+    QStandardPaths,
+    Qt,
+    QThread,
+    QTimer,
+    QUrl,
+    pyqtSignal,
+)
 from PyQt6.QtGui import QCloseEvent, QDesktopServices, QGuiApplication
 from PyQt6.QtWidgets import (
     QAbstractItemView,
@@ -114,6 +125,15 @@ from youtube_audio_video_downloader.services.downloads.song_search import (
     available_ollama_models,
     routed_result_title,
 )
+from youtube_audio_video_downloader.config.runtime_tools import configure_runtime_tools
+from youtube_audio_video_downloader.services.downloads.youtube_resilience import (
+    ytdlp_runtime_diagnostic,
+)
+from youtube_audio_video_downloader.services.updates import (
+    AvailableUpdate,
+    check_for_update,
+    download_update,
+)
 from youtube_audio_video_downloader.services.metadata.serpapi_metadata import (
     SERPAPI_API_KEY_ENV,
     configure_serpapi_environment,
@@ -125,6 +145,45 @@ from youtube_audio_video_downloader.services.media.video_transformer import (
     VIDEO_EXTENSIONS,
 )
 from youtube_audio_video_downloader.version import application_version
+
+
+class UpdateWorker(QObject):
+    """Perform public GitHub update network work without blocking the GUI."""
+
+    checked = pyqtSignal(object, str)
+    downloaded = pyqtSignal(object, str)
+    progress = pyqtSignal(int)
+
+    def __init__(
+        self,
+        *,
+        include_betas: bool,
+        update: AvailableUpdate | None = None,
+    ) -> None:
+        super().__init__()
+        self.include_betas = include_betas
+        self.update = update
+
+    def run(self) -> None:
+        try:
+            if self.update is None:
+                result = check_for_update(
+                    application_version(), include_betas=self.include_betas
+                )
+                self.checked.emit(result, "")
+                return
+
+            def report(downloaded: int, total: int) -> None:
+                if total:
+                    self.progress.emit(min(100, round(downloaded * 100 / total)))
+
+            path = download_update(self.update, progress=report)
+            self.downloaded.emit(self.update, str(path))
+        except Exception as exc:  # network and filesystem errors belong in the UI
+            if self.update is None:
+                self.checked.emit(None, str(exc))
+            else:
+                self.downloaded.emit(self.update, str(exc))
 
 
 class MainWindow(QMainWindow):
@@ -190,6 +249,8 @@ class MainWindow(QMainWindow):
         self._tool_ai_checks: dict[str, QCheckBox] = {}
         self._background: LiquidBackground | None = None
         self._resize_idle_timer: QTimer | None = None
+        self._update_thread: QThread | None = None
+        self._update_worker: UpdateWorker | None = None
 
         self._build_window()
         self._resize_idle_timer = QTimer(self)
@@ -210,6 +271,9 @@ class MainWindow(QMainWindow):
         self._workspace_autosave.start()
         self._restore_last_page()
         self._append_log("Application ready. Select a workflow from the sidebar.")
+        QTimer.singleShot(500, self._report_downloader_health_on_startup)
+        if "PYTEST_CURRENT_TEST" not in os.environ:
+            QTimer.singleShot(2500, lambda: self._check_for_updates(interactive=False))
 
     # ------------------------------------------------------------------ shell
     def _build_window(self) -> None:
@@ -2438,6 +2502,32 @@ class MainWindow(QMainWindow):
         self.settings_search_suggestions.setToolTip(
             "Maximum ranked matches shown beneath the Media Library search field."
         )
+        self.settings_beta_updates = self._check(
+            "Include 3.x beta releases",
+            self._setting_bool("updates/include_betas", False),
+        )
+        self.settings_beta_updates.setToolTip(
+            "Off by default. Enable only to receive experimental built-in-AI 3.x betas."
+        )
+        update_controls = QWidget()
+        update_controls_layout = QHBoxLayout(update_controls)
+        update_controls_layout.setContentsMargins(0, 0, 0, 0)
+        self.update_status = QLabel(
+            "3.x beta channel"
+            if self.settings_beta_updates.isChecked()
+            else "Stable 2.x channel"
+        )
+        self.update_status.setObjectName("mutedLabel")
+        self.settings_beta_updates.toggled.connect(
+            self._beta_update_channel_toggled
+        )
+        check_update = QPushButton("Check for updates")
+        check_update.setObjectName("secondaryButton")
+        check_update.clicked.connect(
+            lambda: self._check_for_updates(interactive=True)
+        )
+        update_controls_layout.addWidget(self.update_status, 1)
+        update_controls_layout.addWidget(check_update)
         self.settings_data_directory = PathPicker(
             placeholder="Folder for settings, enrichment history, and diagnostics",
             mode="folder",
@@ -2508,6 +2598,13 @@ class MainWindow(QMainWindow):
         batch_form.addRow("Retries", self.settings_retries)
         batch_form.addRow("Retry delay", self.settings_retry_wait)
         batch_form.addRow("Rate-limit wait", self.settings_rate_limit_wait)
+        download_diagnostics = QPushButton("Diagnose / Auto-fix downloads")
+        download_diagnostics.setObjectName("secondaryButton")
+        download_diagnostics.setToolTip(
+            "Check yt-dlp, FFmpeg, Deno, and browser-cookie recovery support"
+        )
+        download_diagnostics.clicked.connect(self._diagnose_download_setup)
+        batch_form.addRow("Downloader health", download_diagnostics)
         self.settings_sections["batch_network"] = batch_section
         layout.addWidget(batch_section)
 
@@ -2562,6 +2659,8 @@ class MainWindow(QMainWindow):
         behavior_form.addRow("Workspace state", self.settings_persist_state)
         behavior_form.addRow("Crash-report storage", self.settings_crash_reports)
         behavior_form.addRow("Library suggestions", self.settings_search_suggestions)
+        behavior_form.addRow("Update channel", self.settings_beta_updates)
+        behavior_form.addRow("Application updates", update_controls)
         self.settings_sections["behavior_privacy"] = behavior_section
         layout.addWidget(behavior_section)
 
@@ -3301,6 +3400,221 @@ class MainWindow(QMainWindow):
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder.resolve())))
 
+    def _beta_update_channel_toggled(self, enabled: bool) -> None:
+        """Persist and immediately display the selected update channel."""
+
+        self.settings.setValue("updates/include_betas", enabled)
+        self.update_status.setText(
+            "3.x beta channel" if enabled else "Stable 2.x channel"
+        )
+
+    def _check_for_updates(self, *, interactive: bool) -> None:
+        """Check the configured stable/beta GitHub release channel in background."""
+
+        if self._update_thread is not None:
+            if interactive:
+                self.update_status.setText("Update check already running…")
+            return
+        include_betas = self._setting_bool("updates/include_betas", False)
+        self.update_status.setText("Checking GitHub Releases…")
+        thread = QThread(self)
+        worker = UpdateWorker(include_betas=include_betas)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.checked.connect(
+            lambda update, error: self._update_check_finished(
+                update, error, interactive=interactive
+            )
+        )
+        worker.checked.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._update_thread_finished)
+        self._update_thread = thread
+        self._update_worker = worker
+        thread.start()
+
+    def _diagnose_download_setup(self) -> None:
+        """Show actionable downloader health and offer the safe applicable repair."""
+
+        diagnostic = ytdlp_runtime_diagnostic()
+        tools = configure_runtime_tools(allow_download=False)
+        problems: list[str] = []
+        if diagnostic.version == "not installed":
+            problems.append("yt-dlp is not installed")
+        elif diagnostic.stale:
+            problems.append(f"yt-dlp {diagnostic.version} is over 60 days old")
+        if not tools.ffmpeg:
+            problems.append("FFmpeg is unavailable")
+        if not tools.ffprobe:
+            problems.append("FFprobe is unavailable")
+        if not tools.deno:
+            problems.append("Deno is unavailable for YouTube JavaScript challenges")
+        browser = diagnostic.browser or "none detected (anonymous fallback remains available)"
+        summary = (
+            f"yt-dlp: {diagnostic.version}\n"
+            f"FFmpeg: {tools.ffmpeg or 'missing'}\n"
+            f"FFprobe: {tools.ffprobe or 'missing'}\n"
+            f"Deno: {tools.deno or 'missing'}\n"
+            f"Browser cookies: {browser}\n\n"
+        )
+        if not problems:
+            QMessageBox.information(
+                self,
+                "Downloader diagnostics",
+                summary
+                + "No local setup problem was detected. The automatic client/cookie "
+                "fallback will handle transient YouTube 403 responses.",
+            )
+            return
+        repair_text = "\n".join(f"• {problem}" for problem in problems)
+        answer = QMessageBox.question(
+            self,
+            "Downloader repair available",
+            summary + "Detected:\n" + repair_text + "\n\nRun the applicable auto-fix?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        if getattr(sys, "frozen", False):
+            self._check_for_updates(interactive=True)
+            return
+        updater = Path(__file__).resolve().parents[4] / "tools" / "update_ytdlp.py"
+        started = (
+            QProcess.startDetached(sys.executable, [str(updater)])
+            if updater.is_file()
+            else False
+        )
+        started_ok = bool(started[0]) if isinstance(started, tuple) else bool(started)
+        if started_ok:
+            QMessageBox.information(
+                self,
+                "Downloader repair started",
+                "yt-dlp is updating in the background. Restart the application when it finishes.",
+            )
+        else:
+            QMessageBox.warning(
+                self,
+                "Auto-fix could not start",
+                f"Run this file manually:\n{updater}",
+            )
+
+    def _report_downloader_health_on_startup(self) -> None:
+        diagnostic = ytdlp_runtime_diagnostic()
+        browser = diagnostic.browser or "none"
+        self._append_log(
+            f"[YT-DLP] version={diagnostic.version} | browser-cookies={browser}"
+        )
+        if diagnostic.stale:
+            self._append_log(
+                "[YT-DLP-WARNING] Installed yt-dlp is over 60 days old; use "
+                "Global Settings > Diagnose / Auto-fix downloads."
+            )
+            if getattr(sys, "frozen", False):
+                QMessageBox.warning(
+                    self,
+                    "Downloader update recommended",
+                    f"yt-dlp {diagnostic.version} is over 60 days old. Open Global "
+                    "Settings and run Diagnose / Auto-fix downloads before downloading.",
+                )
+
+    def _update_thread_finished(self) -> None:
+        self._update_thread = None
+        self._update_worker = None
+
+    def _update_check_finished(
+        self,
+        update: object,
+        error: str,
+        *,
+        interactive: bool,
+    ) -> None:
+        if error:
+            self.update_status.setText("Update check unavailable")
+            self._append_log(f"[UPDATE-WARNING] {error}")
+            if interactive:
+                QMessageBox.warning(self, "Update check failed", error)
+            return
+        if not isinstance(update, AvailableUpdate):
+            channel = "beta" if self.settings_beta_updates.isChecked() else "stable"
+            self.update_status.setText(f"Up to date on the {channel} channel")
+            if interactive:
+                QMessageBox.information(
+                    self,
+                    "No update available",
+                    f"{APP_DISPLAY_NAME} {application_version()} is current on the {channel} channel.",
+                )
+            return
+        label = "beta" if update.prerelease else "stable"
+        self.update_status.setText(f"{update.version} {label} available")
+        notes = update.notes.strip()
+        if len(notes) > 1200:
+            notes = notes[:1200].rstrip() + "…"
+        answer = QMessageBox.question(
+            self,
+            f"{APP_DISPLAY_NAME} {update.version} available",
+            f"A newer {label} release is available. Download its installer now?"
+            + (f"\n\n{notes}" if notes else ""),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if answer == QMessageBox.StandardButton.Yes:
+            QTimer.singleShot(0, lambda: self._download_application_update(update))
+
+    def _download_application_update(self, update: AvailableUpdate) -> None:
+        if self._update_thread is not None:
+            QTimer.singleShot(150, lambda: self._download_application_update(update))
+            return
+        self.update_status.setText(f"Downloading {update.version}…")
+        thread = QThread(self)
+        worker = UpdateWorker(
+            include_betas=self.settings_beta_updates.isChecked(), update=update
+        )
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.progress.connect(
+            lambda percent: self.update_status.setText(
+                f"Downloading {update.version}… {percent}%"
+            )
+        )
+        worker.downloaded.connect(self._application_update_downloaded)
+        worker.downloaded.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._update_thread_finished)
+        self._update_thread = thread
+        self._update_worker = worker
+        thread.start()
+
+    def _application_update_downloaded(
+        self, update: object, path_or_error: str
+    ) -> None:
+        installer = Path(path_or_error).expanduser()
+        if not installer.is_file():
+            self.update_status.setText("Update download failed")
+            QMessageBox.warning(self, "Update download failed", path_or_error)
+            return
+        self.update_status.setText("Installer ready")
+        answer = QMessageBox.question(
+            self,
+            "Install downloaded update?",
+            "The installer is ready. Open it now and close YouTube Media Studio?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(installer.parent)))
+            return
+        if QDesktopServices.openUrl(QUrl.fromLocalFile(str(installer.resolve()))):
+            QApplication.quit()
+        else:
+            QMessageBox.warning(
+                self,
+                "Could not start installer",
+                f"Open this file manually:\n{installer}",
+            )
+
     def _add_history(self, operation: str, status: str, total: int, details: str) -> None:
         self._history.insert(0, {
             "time": datetime.now().strftime("%H:%M:%S"),
@@ -3631,7 +3945,11 @@ class MainWindow(QMainWindow):
         }
 
     @staticmethod
-    def _write_reset_settings(settings: QSettings, values: dict[str, Any]) -> None:
+    def _write_reset_settings(
+        settings: QSettings,
+        values: dict[str, Any],
+        preserved: dict[str, Any] | None = None,
+    ) -> None:
         settings.clear()
         for key, value in values.items():
             if key == "crash_reports_enabled":
@@ -3641,6 +3959,9 @@ class MainWindow(QMainWindow):
             "privacy/crash_reports_enabled", values["crash_reports_enabled"]
         )
         settings.setValue("workspace/persist_enabled", True)
+        for key, value in (preserved or {}).items():
+            if value not in (None, ""):
+                settings.setValue(key, value)
         settings.sync()
 
     def _reset_app(self) -> None:
@@ -3668,7 +3989,7 @@ class MainWindow(QMainWindow):
             "This will remove saved AI-provider and SerpApi credentials and all model selections, "
             "restore global defaults, clear every tool form, library folder, status, "
             "and history, and return application storage to its default folder.\n\n"
-            "Downloaded and edited media files will not be deleted.",
+            "Downloaded and edited media files and saved playlists will not be deleted.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -3677,6 +3998,12 @@ class MainWindow(QMainWindow):
 
         self._workspace_autosave.stop()
         values = self._reset_default_values()
+        preserved_library = {
+            "library/playlists": self.settings.value("library/playlists", ""),
+            "library/active_playlist": self.settings.value(
+                "library/active_playlist", ""
+            ),
+        }
         default_directory = default_data_directory().resolve()
         try:
             default_directory.mkdir(parents=True, exist_ok=True)
@@ -3690,7 +4017,7 @@ class MainWindow(QMainWindow):
         self.settings_persist_state.blockSignals(persist_signals)
         self._reset_all_tool_forms()
 
-        self._write_reset_settings(original_settings, values)
+        self._write_reset_settings(original_settings, values, preserved_library)
         default_settings_path = application_settings_file(default_directory).resolve()
         if Path(original_settings.fileName()).resolve() == default_settings_path:
             reset_settings = original_settings
@@ -3699,7 +4026,7 @@ class MainWindow(QMainWindow):
                 str(default_settings_path),
                 QSettings.Format.IniFormat,
             )
-            self._write_reset_settings(reset_settings, values)
+            self._write_reset_settings(reset_settings, values, preserved_library)
         save_data_directory_choice(default_directory)
         self.settings = reset_settings
         self.media_library.settings = reset_settings

@@ -8,6 +8,7 @@ import tempfile
 import time
 import unittest
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -16,8 +17,8 @@ import numpy as np
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtCore import (  # noqa: E402
-    QBuffer, QByteArray, QEvent, QIODevice, QPoint, QPointF, QRect, QRectF, QSettings,
-    QSize, Qt, QTimer,
+    QBuffer, QByteArray, QEvent, QIODevice, QItemSelectionModel, QPoint, QPointF,
+    QRect, QRectF, QSettings, QSize, Qt, QTimer,
 )
 from PyQt6.QtGui import QColor, QIcon, QPixmap, QWheelEvent  # noqa: E402
 from PyQt6.QtMultimedia import QAudioBuffer, QAudioFormat, QMediaPlayer  # noqa: E402
@@ -129,6 +130,102 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.assertFalse(path.exists())
         self.assertEqual(self.page.queue, [])
         self.assertEqual(self.page.playlists["List"], [])
+
+    def test_delete_key_removes_selected_queue_track_without_deleting_file(self) -> None:
+        self.page.queue = list(self.page.items)
+        self.page._queue_source = list(self.page.items)
+        self.page.queue_index = 0
+        self.page._sync_queue_drawer()
+        self.page.show()
+        self.page._toggle_queue_drawer(True)
+        self.page.queue_list.setFocus()
+        self.page.queue_list.setCurrentRow(1)
+
+        QTest.keyClick(self.page.queue_list, Qt.Key.Key_Delete)
+        QTest.qWait(10)
+
+        self.assertEqual([item.title for item in self.page.queue], ["Short"])
+        self.assertEqual(self.page.queue_index, 0)
+
+    def test_removing_current_and_earlier_queue_rows_advances_to_next(self) -> None:
+        first, second = self.page.items
+        current = media("Current", 2010, 120_000)
+        following = media("Following", 2011, 130_000)
+        self.page.queue = [first, second, current, following]
+        self.page._queue_source = list(self.page.queue)
+        self.page.queue_index = 2
+        self.page._sync_queue_drawer()
+        selection = self.page.queue_list.selectionModel()
+        flags = (
+            QItemSelectionModel.SelectionFlag.Select
+            | QItemSelectionModel.SelectionFlag.Rows
+        )
+        selection.select(self.page.queue_list.model().index(0, 0), flags)
+        selection.select(self.page.queue_list.model().index(2, 0), flags)
+
+        with patch.object(self.page, "_load_current") as load_current:
+            self.page._remove_selected_queue_entries()
+
+        self.assertEqual(
+            [item.title for item in self.page.queue],
+            ["Long", "Following"],
+        )
+        self.assertEqual(self.page.queue_index, 1)
+        load_current.assert_called_once()
+
+    def test_play_next_moves_existing_tracks_after_current_without_duplicates(self) -> None:
+        first, second = self.page.items
+        third = media("Third", 2010, 120_000)
+        self.page.queue = [first, second, third]
+        self.page._queue_source = list(self.page.queue)
+        self.page.queue_index = 0
+
+        added = self.page._play_next([third, second, third])
+
+        self.assertEqual(added, 2)
+        self.assertEqual(
+            [item.title for item in self.page.queue],
+            ["Short", "Third", "Long"],
+        )
+
+    def test_now_playing_links_open_album_artist_and_exact_year(self) -> None:
+        collaboration = LibraryItem(
+            path="C:/collab.mp3",
+            title="Collab",
+            album="Other Album",
+            artists="Test Artist, Guest",
+            year=2005,
+            duration_ms=1000,
+            media_type="audio",
+            modified_ns=1,
+        )
+        self.page.items.append(collaboration)
+        self.page.apply_filters()
+
+        self.page.search.setText("Short")
+        self.page.year_from.setValue(2005)
+        self.page.year_to.setValue(2005)
+        self.page.media_type_filter.setCurrentIndex(
+            self.page.media_type_filter.findData("video")
+        )
+        self.page.apply_filters()
+        self.assertEqual(self.page.filtered, [])
+
+        self.page._now_playing_link_activated("album:Test%20Album")
+        self.assertEqual(self.page._open_album_name, "Test Album")
+        self.assertEqual(len(self.page._open_album_items), 2)
+        self.assertEqual(self.page.search.text(), "")
+        self.assertEqual(self.page.year_from.value(), 0)
+        self.assertEqual(self.page.year_to.value(), 0)
+        self.assertEqual(self.page.media_type_filter.currentIndex(), 0)
+
+        self.page._now_playing_link_activated("artist:Test%20Artist")
+        self.assertEqual(len(self.page.filtered), 3)
+
+        self.page._now_playing_link_activated("year:2005")
+        self.assertEqual(self.page.year_from.value(), 2005)
+        self.assertEqual(self.page.year_to.value(), 2005)
+        self.assertEqual({item.year for item in self.page.filtered}, {2005})
 
     def test_album_delete_warns_when_tracks_span_multiple_folders(self) -> None:
         paths = []
@@ -497,6 +594,18 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.page.apply_filters = Mock()
         self.page._scan_finished(list(self.page.items))
         self.page.apply_filters.assert_not_called()
+
+    def test_future_only_year_metadata_stays_clamped_to_current_year(self) -> None:
+        current_year = datetime.now().year
+
+        self.page._scan_finished([media("Future", current_year + 50, 1_000)])
+
+        self.assertEqual(self.page.year_from.maximum(), current_year)
+        self.assertEqual(self.page.year_to.maximum(), current_year)
+        self.assertEqual(
+            self.page.year_from.lineEdit().placeholderText(),
+            f"From {current_year}",
+        )
 
     def test_refresh_requested_during_scan_is_queued(self) -> None:
         self.page._scanner_thread = Mock()

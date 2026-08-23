@@ -245,7 +245,8 @@ class YouTubeJukeboxSplitter(YouTubeAlbumSplitter):
         temp_dir = Path(temp_context.name)
 
         try:
-            self._wait_before_download(job.json_key)
+            if not Path(job.ytb_link).expanduser().is_file():
+                self._wait_before_download(job.json_key)
             print(f"[JUKEBOX] {job.json_key}: downloading best source audio")
             source_audio_path, info = self._download_source_audio(job, temp_dir)  # type: ignore[arg-type]
             duration = self._read_audio_duration_seconds(source_audio_path)
@@ -442,6 +443,11 @@ class YouTubeJukeboxSplitter(YouTubeAlbumSplitter):
                 ytb_link = str(metadata.get(field) or "").strip()
                 if ytb_link:
                     break
+            if ytb_link and not ytb_link.lower().startswith(_URL_PREFIXES):
+                candidate = Path(ytb_link).expanduser()
+                if not candidate.is_absolute():
+                    candidate = json_path.parent / candidate
+                ytb_link = str(candidate.resolve())
             if not ytb_link:
                 errors.append(f"{key_text!r}: missing ytb_link/video_url/youtube_url/url")
                 continue

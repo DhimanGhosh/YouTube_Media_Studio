@@ -3,7 +3,7 @@ name: Test, build, and release
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, release/2.x]
   workflow_dispatch:
     inputs:
       version_bump:
@@ -41,7 +41,7 @@ jobs:
 
   prepare-version:
     name: Select semantic version
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release/2.x')
     needs: quality
     runs-on: ubuntu-latest
     outputs:
@@ -55,14 +55,19 @@ jobs:
         shell: bash
         env:
           REQUESTED_BUMP: ${{ inputs.version_bump || 'auto' }}
+          RELEASE_BRANCH: ${{ github.ref_name }}
         run: |
-          version="$(python tools/prepare_release.py next-version --bump "$REQUESTED_BUMP")"
+          if [ "$RELEASE_BRANCH" = "release/2.x" ]; then
+            version="$(python tools/prepare_release.py next-version --bump "$REQUESTED_BUMP" --major-line 2)"
+          else
+            version="$(python tools/prepare_release.py next-version --bump "$REQUESTED_BUMP")"
+          fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Selected version $version"
 
   python-and-raspi:
     name: Python and Raspberry Pi CLI
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release/2.x')
     needs: [quality, prepare-version]
     runs-on: ubuntu-latest
     steps:
@@ -102,7 +107,7 @@ jobs:
 
   desktop:
     name: ${{ matrix.label }} installer
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release/2.x')
     needs: [quality, prepare-version]
     strategy:
       fail-fast: false
@@ -129,6 +134,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes libegl1 libpulse0
+      - name: Install NSIS
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: choco install nsis --yes --no-progress
       - name: Import macOS signing certificate
         if: runner.os == 'macOS'
         env:
@@ -172,7 +181,7 @@ jobs:
 
   github-release:
     name: Changelog, tag, and GitHub Release
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release/2.x')
     needs: [prepare-version, python-and-raspi, desktop]
     runs-on: ubuntu-latest
     steps:
@@ -200,7 +209,7 @@ jobs:
           git add pyproject.toml uv.lock CHANGELOG.md
           git commit -m "chore(release): v${VERSION} [skip ci]"
           git tag -a "v${VERSION}" -m "YouTube Media Studio v${VERSION}"
-          git push origin HEAD:main "v${VERSION}"
+          git push origin "HEAD:${GITHUB_REF_NAME}" "v${VERSION}"
       - name: Create unified checksums
         shell: bash
         run: |
@@ -211,7 +220,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.prepare-version.outputs.version }}
+          RELEASE_BRANCH: ${{ github.ref_name }}
         run: |
+          prerelease_args=()
+          title="YouTube Media Studio v${VERSION}"
+          if [ "$RELEASE_BRANCH" = "main" ]; then
+            prerelease_args+=(--prerelease)
+            title="${title} Beta"
+          fi
           gh release create "v${VERSION}" dist/releases/* \
-            --title "YouTube Media Studio v${VERSION}" \
-            --generate-notes
+            --title "$title" \
+            --generate-notes "${prerelease_args[@]}"

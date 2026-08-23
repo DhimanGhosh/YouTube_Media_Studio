@@ -43,12 +43,14 @@ def project_version() -> tuple[int, int, int]:
     return tuple(map(int, match.groups()))
 
 
-def latest_release_tag() -> tuple[str, tuple[int, int, int]] | None:
+def latest_release_tag(major_line: int | None = None) -> tuple[str, tuple[int, int, int]] | None:
     tags = run_git("tag", "--list", "v[0-9]*", "--sort=-v:refname").splitlines()
     for tag in tags:
         match = VERSION_RE.fullmatch(tag.strip())
         if match:
-            return tag.strip(), tuple(map(int, match.groups()))
+            version = tuple(map(int, match.groups()))
+            if major_line is None or version[0] == major_line:
+                return tag.strip(), version
     return None
 
 
@@ -75,10 +77,15 @@ def automatic_bump(commits: list[Commit]) -> str:
     return "patch"
 
 
-def next_version(requested_bump: str) -> tuple[str, list[Commit]]:
-    latest = latest_release_tag()
+def next_version(
+    requested_bump: str, *, major_line: int | None = None
+) -> tuple[str, list[Commit]]:
+    latest = latest_release_tag() if major_line is None else latest_release_tag(major_line)
     commits = commits_since(latest[0] if latest else None)
-    base = max(project_version(), latest[1] if latest else (0, 0, 0))
+    project = project_version()
+    if major_line is not None and project[0] != major_line:
+        project = (major_line, 0, 0)
+    base = max(project, latest[1] if latest else (major_line or 0, 0, 0))
     bump = automatic_bump(commits) if requested_bump == "auto" else requested_bump
     major, minor, patch = base
     if bump == "major":
@@ -173,6 +180,7 @@ def parse_args() -> argparse.Namespace:
     subparsers = parser.add_subparsers(dest="command", required=True)
     next_parser = subparsers.add_parser("next-version")
     next_parser.add_argument("--bump", choices=["auto", "patch", "minor", "major"], default="auto")
+    next_parser.add_argument("--major-line", type=int)
     changelog_parser = subparsers.add_parser("changelog")
     changelog_parser.add_argument("--version", required=True)
     return parser.parse_args()
@@ -181,7 +189,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     if args.command == "next-version":
-        version, _ = next_version(args.bump)
+        version, _ = next_version(args.bump, major_line=args.major_line)
         print(version)
     else:
         if not VERSION_RE.fullmatch(args.version):

@@ -1877,7 +1877,15 @@ class JsonBatchEditor(QWidget):
         layout = QHBoxLayout(row)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(7)
-        link_edit.setPlaceholderText("Paste a URL or find the first full-album result")
+        link_edit.setPlaceholderText("Paste a URL or choose an existing audio/video file")
+        local_button = QPushButton("Use local file…")
+        local_button.setObjectName("secondaryButton")
+        local_button.setToolTip(
+            "Use an audio/video file already downloaded outside this application"
+        )
+        local_button.clicked.connect(
+            lambda checked=False: self._choose_local_media_source(link_edit, section)
+        )
         button = QPushButton("Find on YouTube")
         button.setObjectName("secondaryButton")
         button.setToolTip(
@@ -1889,8 +1897,26 @@ class JsonBatchEditor(QWidget):
             )
         )
         layout.addWidget(link_edit, 1)
+        layout.addWidget(local_button)
         layout.addWidget(button)
         return row
+
+    def _choose_local_media_source(
+        self, link_edit: QLineEdit, section: CollapsibleSection
+    ) -> None:
+        path, _selected_filter = QFileDialog.getOpenFileName(
+            self,
+            "Choose existing audio or video source",
+            "",
+            (
+                "Media files (*.mp3 *.m4a *.aac *.flac *.wav *.ogg *.opus *.webm "
+                "*.mp4 *.mkv *.mov *.avi *.m4v);;All files (*)"
+            ),
+        )
+        if path:
+            link_edit.setText(str(Path(path).expanduser().resolve()))
+            section.set_status("Local source ready")
+            self.log_requested.emit(f"[LOCAL-SOURCE] Selected existing media: {path}")
 
     def _find_youtube_album(
         self,

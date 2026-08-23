@@ -90,6 +90,19 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         self.assertFalse(self.window.cancel_button.isEnabled())
         self.assertIn("QPushButton#dangerButton:disabled", APP_STYLE)
 
+    def test_beta_update_toggle_immediately_updates_channel_status(self) -> None:
+        self.assertEqual(self.window.update_status.text(), "Stable 2.x channel")
+
+        self.window.settings_beta_updates.setChecked(True)
+
+        self.assertEqual(self.window.update_status.text(), "3.x beta channel")
+        self.assertTrue(
+            self.window.settings.value("updates/include_betas", False, type=bool)
+        )
+
+        self.window.settings_beta_updates.setChecked(False)
+        self.assertEqual(self.window.update_status.text(), "Stable 2.x channel")
+
     def test_different_workspaces_remain_available_while_jobs_run(self) -> None:
         self.window._active_thread = object()
         self.window._active_operation_name = "album"
@@ -792,6 +805,11 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         self.window.edit_file_input.set_text("C:/Music/song.mp3")
         self.window.album_consolidator_source.set_text("C:/Music/Source")
         self.window.media_library.folder_list.addItem("C:/Music")
+        self.window.media_library.playlists = {
+            "Saved forever": ["C:/Music/song.mp3"]
+        }
+        self.window.media_library._active_playlist = "Saved forever"
+        self.window.media_library._save_playlists()
 
         with (
             patch.object(
@@ -834,6 +852,11 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         self.assertEqual(self.window.album_consolidator_source.text(), "")
         self.assertTrue(self.window.album_move_perform_enrichment.isChecked())
         self.assertEqual(self.window.media_library.folder_list.count(), 0)
+        self.assertEqual(
+            self.window.media_library.playlists,
+            {"Saved forever": ["C:/Music/song.mp3"]},
+        )
+        self.assertTrue(self.window.settings.value("library/playlists"))
         self.assertIn("STATIC FALLBACK", self.window.ai_status_badge.text())
 
 if __name__ == "__main__":
