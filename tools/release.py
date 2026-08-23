@@ -147,7 +147,55 @@ def check() -> None:
             "--ignore=tests/gui/test_media_player.py",
         ]
     )
-    run(["uv", "run", "--group", "dev", "pytest", "-q", "tests/gui/test_media_player.py"])
+    run_media_player_tests_batched()
+
+
+def run_media_player_tests_batched(*, batch_size: int = 10) -> None:
+    """Run Qt Multimedia cases in fresh, bounded processes.
+
+    Some headless Qt multimedia backends abort natively after enough player,
+    thumbnail, and full-screen lifecycles have accumulated in one process.
+    Small deterministic batches still execute every collected test while
+    preventing an unrelated backend teardown from cancelling a release.
+    """
+
+    test_file = "tests/gui/test_media_player.py"
+    collected = subprocess.run(
+        [
+            "uv",
+            "run",
+            "--group",
+            "dev",
+            "pytest",
+            "--collect-only",
+            "-q",
+            test_file,
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    node_ids = [
+        line.strip()
+        for line in collected.stdout.splitlines()
+        if line.strip().startswith(f"{test_file}::")
+    ]
+    if not node_ids:
+        raise RuntimeError(f"No tests were collected from {test_file}")
+    size = max(1, int(batch_size))
+    for start in range(0, len(node_ids), size):
+        run(
+            [
+                "uv",
+                "run",
+                "--group",
+                "dev",
+                "pytest",
+                "-q",
+                *node_ids[start : start + size],
+            ]
+        )
 
 
 def _generated_paths(*, include_ide: bool = False) -> list[Path]:

@@ -50,6 +50,28 @@ def test_host_target_is_known() -> None:
     assert release_tool.host_target() in {"windows", "linux", "macos", "unsupported"}
 
 
+def test_media_player_release_tests_run_every_collected_case_in_small_batches(
+    monkeypatch,
+) -> None:
+    collected = "\n".join(
+        f"tests/gui/test_media_player.py::MediaPlayerPageTest::test_{index}"
+        for index in range(23)
+    )
+    monkeypatch.setattr(
+        release_tool.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(stdout=collected),
+    )
+    commands: list[list[str]] = []
+    monkeypatch.setattr(release_tool, "run", lambda command: commands.append(command))
+
+    release_tool.run_media_player_tests_batched(batch_size=10)
+
+    assert [len(command) - 6 for command in commands] == [10, 10, 3]
+    executed = [node_id for command in commands for node_id in command[6:]]
+    assert executed == collected.splitlines()
+
+
 def test_every_desktop_target_has_a_native_icon() -> None:
     assert release_tool.desktop_icon_for_target("windows").suffix == ".ico"
     assert release_tool.desktop_icon_for_target("macos").suffix == ".icns"
