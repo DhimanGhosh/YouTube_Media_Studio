@@ -189,6 +189,11 @@ multiple machines while keeping each machine's media storage independent.
 - **Default sample rate** offers 44.1 or 48 kHz.
 - **Album track ordering** uses verified Wikipedia ordering and compresses a downloaded
   subset to `1..N` when enabled.
+- **Album silence threshold**, **Album minimum silence**, and **Album minimum track**
+  control fallback silence detection when explicit timestamps are unavailable.
+- **Album trim padding** retains a small amount around detected boundaries. These four
+  saved defaults apply to every Album Splitter job and are no longer repeated in its
+  workspace form.
 - **Seek interval** is used by the `<<` and `>>` player buttons and the Left/Right keys.
   Shift+Left/Right seeks twice this number.
 - **Crop/aspect memory** off means each newly loaded video starts at Default. On carries
@@ -215,7 +220,10 @@ Application updates use public GitHub Releases and require no Google sign-in. Th
 stable 2.x channel is selected by default. Enable **Include 3.x beta releases** only to
 try experimental built-in-AI builds; turning it off offers the latest stable 2.x build.
 Use the dedicated, expanded **Software updates** section or choose **Help → Check for
-Updates…** from the application menu bar.
+Updates…** from the application menu bar. Every normal application launch also starts
+the same check on a background thread. It stays silent when the installed version is
+current and automatically opens the update dialog when a newer release exists on the
+selected channel.
 
 ## How AI and internet evidence work
 
@@ -432,9 +440,8 @@ Verify it manually because an incorrect first boundary shifts the entire album.
 
 - **Download** disables an album or track without deleting its entered data.
 - **Track numbering** writes sequential track tags when enabled.
-- **Silence threshold**, **Minimum silence**, and **Minimum track** control fallback
-  silence detection when explicit timestamps are unavailable.
-- **Trim padding** retains a small amount around detected boundaries.
+- Silence detection and trim behavior use the saved values under **File → Settings… →
+  Audio and metadata**.
 - **Keep temporary source audio** is useful for diagnosis but consumes extra disk space.
 - **Write result report** records batch outcomes when explicitly enabled; it is disabled
   by default in every downloader and splitter.

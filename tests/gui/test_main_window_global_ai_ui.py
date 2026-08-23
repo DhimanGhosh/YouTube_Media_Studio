@@ -124,6 +124,27 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         self.assertIn("SHA-256 verified", dialog.progress.format())
         dialog.close()
 
+    def test_background_startup_result_opens_update_dialog_when_available(self) -> None:
+        update = AvailableUpdate(
+            version="2.16.2",
+            tag="v2.16.2",
+            name="YouTube Media Studio 2.16.2",
+            notes="A newer stable release is ready.",
+            prerelease=False,
+            asset_name="YouTubeMediaStudio-2.16.2-windows-amd64-Setup.exe",
+            asset_url="https://example.invalid/setup.exe",
+            checksum_url="https://example.invalid/SHA256SUMS.txt",
+            page_url="https://example.invalid/release",
+        )
+
+        self.window._update_check_finished(update, "", interactive=False)
+
+        self.assertIsNotNone(self.window._update_dialog)
+        assert self.window._update_dialog is not None
+        self.assertTrue(self.window._update_dialog.isVisible())
+        self.assertIn("2.16.2", self.window.update_status.text())
+        self.window._update_dialog.close()
+
     def test_beta_update_toggle_immediately_updates_channel_status(self) -> None:
         self.assertEqual(self.window.update_status.text(), "Stable 2.x channel")
 
@@ -477,6 +498,32 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         )
         apply_seek.assert_called_once_with(7)
         apply_mode_memory.assert_called_once_with(True)
+
+    def test_album_detection_controls_live_only_in_settings_and_feed_jobs(self) -> None:
+        self.assertFalse(hasattr(self.window, "album_threshold"))
+        album_page_labels = {
+            label.text() for label in self.window.pages.widget(4).findChildren(QLabel)
+        }
+        self.assertNotIn("Silence threshold", album_page_labels)
+        self.assertNotIn("Minimum silence", album_page_labels)
+        self.assertNotIn("Minimum track", album_page_labels)
+        self.assertNotIn("Trim padding", album_page_labels)
+
+        self.window.settings_album_silence_threshold.setValue(-42.0)
+        self.window.settings_album_min_silence.setValue(2.25)
+        self.window.settings_album_min_track.setValue(72.0)
+        self.window.settings_album_trim_padding.setValue(0.4)
+        with (
+            patch.object(self.window, "_save_data_directory", return_value=False),
+            patch.object(QMessageBox, "information"),
+        ):
+            self.window._save_defaults()
+
+        params = self.window._album_params()
+        self.assertEqual(params["silence_threshold_db"], -42.0)
+        self.assertEqual(params["min_silence_duration"], 2.25)
+        self.assertEqual(params["min_track_duration"], 72.0)
+        self.assertEqual(params["trim_silence_padding"], 0.4)
 
     def test_serpapi_key_is_saved_and_applied_without_operation_parameters(self) -> None:
         self.window.settings_serpapi_api_key.setText("serpapi-secret")

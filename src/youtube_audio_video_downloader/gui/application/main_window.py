@@ -1695,19 +1695,11 @@ class MainWindow(QMainWindow):
         )
         self.album_input.log_requested.connect(self._append_log)
         self.album_output = PathPicker(placeholder="Optional output folder", mode="folder")
-        self.album_threshold = self._double_spin(-90.0, -1.0, -35.0, 1.0, " dB")
-        self.album_silence = self._double_spin(0.1, 30.0, 1.5, 0.1, " s")
-        self.album_track_duration = self._double_spin(1.0, 3600.0, 45.0, 1.0, " s")
-        self.album_padding = self._double_spin(0.0, 10.0, 0.25, 0.05, " s")
         self.album_keep_temp = self._check("Keep temporary source audio")
         self.album_report = self._check("Write result report", False)
         self.album_overwrite = self._check("Overwrite existing tracks")
         form.addRow("Albums and tracks", self.album_input)
         form.addRow("Output folder", self.album_output)
-        form.addRow("Silence threshold", self.album_threshold)
-        form.addRow("Minimum silence", self.album_silence)
-        form.addRow("Minimum track", self.album_track_duration)
-        form.addRow("Trim padding", self.album_padding)
         form.addRow("Temporary files", self.album_keep_temp)
         form.addRow("Reporting", self.album_report)
         form.addRow("Existing files", self.album_overwrite)
@@ -1718,7 +1710,7 @@ class MainWindow(QMainWindow):
             self._feature_card(
                 "Shared settings",
                 [
-                    "Workers, download delays, retries, MP3 bitrate, and sample rate are configured once from the Settings window.",
+                    "Workers, download behavior, audio quality, and silence-detection defaults are configured once from the Settings window.",
                 ],
             )
         )
@@ -1729,10 +1721,10 @@ class MainWindow(QMainWindow):
         return {
             "input_data": self.album_input.data(),
             "output_dir": self.album_output.text(),
-            "silence_threshold_db": self.album_threshold.value(),
-            "min_silence_duration": self.album_silence.value(),
-            "min_track_duration": self.album_track_duration.value(),
-            "trim_silence_padding": self.album_padding.value(),
+            "silence_threshold_db": self._default_float_value("album_silence_threshold_db", -35.0),
+            "min_silence_duration": self._default_float_value("album_min_silence_duration", 1.5),
+            "min_track_duration": self._default_float_value("album_min_track_duration", 45.0),
+            "trim_silence_padding": self._default_float_value("album_trim_silence_padding", 0.25),
             "keep_temp": self.album_keep_temp.isChecked(),
             "write_report": self.album_report.isChecked(),
             "overwrite": self.album_overwrite.isChecked(),
@@ -2789,6 +2781,34 @@ class MainWindow(QMainWindow):
         self.settings_sample_rate.setCurrentText(
             str(self.settings.value("defaults/sample_rate", "44100"))
         )
+        self.settings_album_silence_threshold = self._double_spin(
+            -90.0,
+            -1.0,
+            self._default_float_value("album_silence_threshold_db", -35.0),
+            1.0,
+            " dB",
+        )
+        self.settings_album_min_silence = self._double_spin(
+            0.1,
+            30.0,
+            self._default_float_value("album_min_silence_duration", 1.5),
+            0.1,
+            " s",
+        )
+        self.settings_album_min_track = self._double_spin(
+            1.0,
+            3600.0,
+            self._default_float_value("album_min_track_duration", 45.0),
+            1.0,
+            " s",
+        )
+        self.settings_album_trim_padding = self._double_spin(
+            0.0,
+            10.0,
+            self._default_float_value("album_trim_silence_padding", 0.25),
+            0.05,
+            " s",
+        )
         self.settings_video_seek_seconds = self._spin(
             1,
             60,
@@ -3083,6 +3103,13 @@ class MainWindow(QMainWindow):
         audio_form.addRow("Default MP3 bitrate", self.settings_audio_quality)
         audio_form.addRow("Default sample rate", self.settings_sample_rate)
         audio_form.addRow("Album track ordering", self.settings_wikipedia_order)
+        audio_form.addRow(
+            "Album silence threshold",
+            self.settings_album_silence_threshold,
+        )
+        audio_form.addRow("Album minimum silence", self.settings_album_min_silence)
+        audio_form.addRow("Album minimum track", self.settings_album_min_track)
+        audio_form.addRow("Album trim padding", self.settings_album_trim_padding)
         self.settings_sections["audio_metadata"] = audio_section
         layout.addWidget(audio_section)
 
@@ -4391,6 +4418,12 @@ class MainWindow(QMainWindow):
         except (TypeError, ValueError):
             return fallback
 
+    def _default_float_value(self, key: str, fallback: float) -> float:
+        try:
+            return float(self.settings.value(f"defaults/{key}", fallback))
+        except (TypeError, ValueError):
+            return fallback
+
     def _setting_bool(self, key: str, fallback: bool) -> bool:
         value = self.settings.value(key, fallback)
         if isinstance(value, bool):
@@ -4562,6 +4595,10 @@ class MainWindow(QMainWindow):
             "rate_limit_wait": 180,
             "audio_quality": "320",
             "sample_rate": "44100",
+            "album_silence_threshold_db": -35.0,
+            "album_min_silence_duration": 1.5,
+            "album_min_track_duration": 45.0,
+            "album_trim_silence_padding": 0.25,
             "wikipedia_track_order": True,
             "ai_enabled": True,
             "ai_provider": "ollama",
@@ -4671,6 +4708,10 @@ class MainWindow(QMainWindow):
         self.settings_rate_limit_wait.setValue(int(values["rate_limit_wait"]))
         self.settings_audio_quality.setCurrentText(str(values["audio_quality"]))
         self.settings_sample_rate.setCurrentText(str(values["sample_rate"]))
+        self.settings_album_silence_threshold.setValue(float(values["album_silence_threshold_db"]))
+        self.settings_album_min_silence.setValue(float(values["album_min_silence_duration"]))
+        self.settings_album_min_track.setValue(float(values["album_min_track_duration"]))
+        self.settings_album_trim_padding.setValue(float(values["album_trim_silence_padding"]))
         self.settings_wikipedia_order.setChecked(bool(values["wikipedia_track_order"]))
         self.settings_ai_enabled.setChecked(bool(values["ai_enabled"]))
         self.settings_crash_reports.setChecked(bool(values["crash_reports_enabled"]))
@@ -4756,10 +4797,6 @@ class MainWindow(QMainWindow):
         self.video_report.setChecked(False)
         self.video_overwrite.setChecked(False)
         self.album_output.set_text("")
-        self.album_threshold.setValue(-35.0)
-        self.album_silence.setValue(1.5)
-        self.album_track_duration.setValue(45.0)
-        self.album_padding.setValue(0.25)
         self.album_keep_temp.setChecked(False)
         self.album_report.setChecked(False)
         self.album_overwrite.setChecked(False)
@@ -4810,6 +4847,10 @@ class MainWindow(QMainWindow):
             "rate_limit_wait": self.settings_rate_limit_wait.value(),
             "audio_quality": self.settings_audio_quality.currentText(),
             "sample_rate": self.settings_sample_rate.currentText(),
+            "album_silence_threshold_db": self.settings_album_silence_threshold.value(),
+            "album_min_silence_duration": self.settings_album_min_silence.value(),
+            "album_min_track_duration": self.settings_album_min_track.value(),
+            "album_trim_silence_padding": self.settings_album_trim_padding.value(),
             "wikipedia_track_order": self.settings_wikipedia_order.isChecked(),
             "ai_enabled": self.settings_ai_enabled.isChecked(),
             "agentic_model": self.settings_agentic_model.currentText().strip(),
