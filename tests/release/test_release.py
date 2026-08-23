@@ -198,11 +198,18 @@ def test_nsis_installer_renames_internal_gui_executable() -> None:
 
     unpack = 'File /r "${GUI_PAYLOAD_DIR}\\*"'
     stage = 'Rename "$INSTDIR\\${APP_EXE}" "$INSTDIR\\${APP_EXE}.previous"'
-    rename = 'Rename "$INSTDIR\\${GUI_BUNDLE_EXE}" "$INSTDIR\\${APP_EXE}"'
+    runtime_stage = 'Rename "$INSTDIR\\_internal" "$INSTDIR\\_internal.previous"'
+    runtime_swap = 'Rename "$INSTDIR\\.update\\_internal" "$INSTDIR\\_internal"'
+    rename = 'Rename "$INSTDIR\\.update\\${GUI_BUNDLE_EXE}" "$INSTDIR\\${APP_EXE}"'
     restore = 'Rename "$INSTDIR\\${APP_EXE}.previous" "$INSTDIR\\${APP_EXE}"'
 
-    assert -1 < script.index(unpack) < script.index(stage) < script.index(rename)
-    assert script.index(rename) < script.index(restore)
+    assert -1 < script.index(unpack) < script.index(stage) < script.index(runtime_stage)
+    assert script.index(runtime_stage) < script.index(runtime_swap) < script.index(rename)
+    assert script.index(rename) < script.index(restore, script.index(rename))
+    assert 'RMDir /r "$INSTDIR\\_internal.previous"' in script
+    assert 'Rename "$INSTDIR\\_internal" "$INSTDIR\\_internal.failed"' in script
+    assert "IfErrors rollback_failed" in script
+    assert "automatic rollback" in script
     assert 'Abort "Could not replace ${APP_EXE}' in script
 
 

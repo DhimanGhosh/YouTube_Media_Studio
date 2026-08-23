@@ -116,12 +116,20 @@ class DownloadProgressPanel(QFrame):
     def update_download(self, event: dict) -> None:
         label = str(event.get("label") or event.get("file") or "Media")
         percent = max(0.0, min(100.0, float(event.get("percent") or 0)))
-        configured = max(1, int(event.get("connections_configured") or 1))
+        finished = event.get("status") == "finished"
+        fragmented = bool(event.get("fragmented"))
+        configured = max(1, int(event.get("connections_configured") or 1)) if fragmented else 1
         used = max(1, int(event.get("connections_used") or 1))
         self.title.setText(label)
-        self.status.setText("Complete" if event.get("status") == "finished" else "Downloading")
+        used = min(configured, used)
+        self.status.setText("Complete" if finished else "Downloading")
         total = int(event.get("total") or 0)
-        if total:
+        if finished:
+            percent = 100.0
+            self.overall.setRange(0, 1000)
+            self.overall.setValue(1000)
+            self.overall.setFormat("Download complete")
+        elif total:
             self.overall.setRange(0, 1000)
             self.overall.setValue(round(percent * 10))
             self.overall.setFormat(f"{percent:.1f}%")
@@ -137,7 +145,7 @@ class DownloadProgressPanel(QFrame):
                 bar.setRange(0, 100)
                 bar.setTextVisible(False)
                 bar.setFixedHeight(7)
-                bar.setValue(round(percent) if index < used else 0)
+                bar.setValue(100 if finished else round(percent) if index < used else 0)
                 bar.setToolTip(
                     f"Connection {index + 1}: "
                     + ("active" if index < used else "available when the source supports it")
@@ -145,17 +153,23 @@ class DownloadProgressPanel(QFrame):
                 self.connection_row.addWidget(bar, 1)
                 self.connection_bars.append(bar)
         for index, bar in enumerate(self.connection_bars):
-            bar.setValue(round(percent) if index < used else 0)
+            bar.setValue(100 if finished else round(percent) if index < used else 0)
         downloaded = self._size(int(event.get("downloaded") or 0))
         total_text = self._size(total) if total else "unknown"
         speed = self._size(int(event.get("speed") or 0)) + "/s" if event.get("speed") else "--"
         eta = int(event.get("eta") or 0)
         eta_text = f"{eta // 60:02d}:{eta % 60:02d}" if eta else "--:--"
-        source_note = "parallel fragments" if event.get("fragmented") else "single source stream"
-        self.stats.setText(
-            f"{downloaded} / {total_text} · {speed} · ETA {eta_text} · "
-            f"Connections {used}/{configured} ({source_note})"
-        )
+        source_note = "parallel fragments" if fragmented else "single source stream"
+        if finished:
+            completed_size = int(event.get("downloaded") or 0) or total
+            self.stats.setText(
+                f"{self._size(completed_size)} downloaded · Complete · {source_note}"
+            )
+        else:
+            self.stats.setText(
+                f"{downloaded} / {total_text} · {speed} · ETA {eta_text} · "
+                f"Connections {used}/{configured} ({source_note})"
+            )
 
     @staticmethod
     def _size(value: int) -> str:

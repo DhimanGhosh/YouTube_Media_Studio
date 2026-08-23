@@ -56,6 +56,7 @@ from PyQt6.QtWidgets import (
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
+    QTextBrowser,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -238,6 +239,142 @@ class GoogleCloudWorker(QObject):
             self.finished.emit(self.action, None, str(exc))
 
 
+class ApplicationUpdateDialog(QDialog):
+    """Persistent release-details, download-progress, and install experience."""
+
+    download_requested = pyqtSignal(object)
+    install_requested = pyqtSignal(str)
+    open_folder_requested = pyqtSignal(str)
+
+    def __init__(self, update: AvailableUpdate, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.update = update
+        self.installer_path = ""
+        self._downloading = False
+        self.setWindowTitle(f"Software Update — {APP_DISPLAY_NAME}")
+        self.setModal(False)
+        self.setMinimumSize(680, 500)
+        self.resize(760, 580)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 18, 20, 18)
+        layout.setSpacing(12)
+
+        heading = QLabel(f"{APP_DISPLAY_NAME} {update.version} is ready")
+        heading.setObjectName("pageTitle")
+        layout.addWidget(heading)
+        channel = "Beta channel" if update.prerelease else "Stable channel"
+        summary = QLabel(
+            f"Installed {application_version()}  •  Available {update.version}  •  {channel}"
+        )
+        summary.setObjectName("mutedLabel")
+        layout.addWidget(summary)
+
+        notes_card = GlassCard()
+        notes_layout = QVBoxLayout(notes_card)
+        notes_layout.setContentsMargins(14, 12, 14, 12)
+        notes_layout.addWidget(QLabel("What’s new"))
+        self.notes = QTextBrowser()
+        self.notes.setOpenExternalLinks(True)
+        self.notes.setMarkdown(update.notes.strip() or "No release notes were supplied.")
+        notes_layout.addWidget(self.notes, 1)
+        layout.addWidget(notes_card, 1)
+
+        self.status = QLabel(
+            "Download the signed release installer when you are ready. "
+            "It will be verified before installation."
+        )
+        self.status.setWordWrap(True)
+        layout.addWidget(self.status)
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 100)
+        self.progress.setValue(0)
+        self.progress.setFormat("Waiting to download")
+        layout.addWidget(self.progress)
+
+        actions = QHBoxLayout()
+        self.release_button = QPushButton("View release")
+        self.release_button.setObjectName("secondaryButton")
+        self.release_button.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl(update.page_url))
+        )
+        self.folder_button = QPushButton("Open download folder")
+        self.folder_button.setObjectName("secondaryButton")
+        self.folder_button.setVisible(False)
+        self.folder_button.clicked.connect(
+            lambda: self.open_folder_requested.emit(self.installer_path)
+        )
+        self.later_button = QPushButton("Not now")
+        self.later_button.setObjectName("secondaryButton")
+        self.later_button.clicked.connect(self.close)
+        self.primary_button = QPushButton("Download update")
+        self.primary_button.setObjectName("primaryButton")
+        self.primary_button.clicked.connect(self._primary_clicked)
+        actions.addWidget(self.release_button)
+        actions.addWidget(self.folder_button)
+        actions.addStretch(1)
+        actions.addWidget(self.later_button)
+        actions.addWidget(self.primary_button)
+        layout.addLayout(actions)
+
+    def _primary_clicked(self) -> None:
+        if self.installer_path:
+            self.install_requested.emit(self.installer_path)
+        elif not self._downloading:
+            self.download_requested.emit(self.update)
+
+    def start_download(self) -> None:
+        self._downloading = True
+        self.primary_button.setEnabled(False)
+        self.later_button.setEnabled(False)
+        self.progress.setRange(0, 100)
+        self.progress.setValue(0)
+        self.progress.setFormat("Downloading… %p%")
+        self.status.setText(
+            "Downloading the installer. Keep this window open; checksum verification "
+            "will run automatically when the transfer finishes."
+        )
+
+    def set_download_progress(self, percent: int) -> None:
+        self.progress.setValue(max(0, min(100, int(percent))))
+
+    def set_ready(self, installer: Path) -> None:
+        self._downloading = False
+        self.installer_path = str(installer.resolve())
+        self.progress.setRange(0, 100)
+        self.progress.setValue(100)
+        self.progress.setFormat("Download complete • SHA-256 verified")
+        self.status.setText(
+            "The installer is verified and ready. Install now to close the application "
+            "and continue setup."
+        )
+        self.primary_button.setText("Install update")
+        self.primary_button.setEnabled(True)
+        self.later_button.setText("Install later")
+        self.later_button.setEnabled(True)
+        self.folder_button.setVisible(True)
+
+    def set_failed(self, message: str) -> None:
+        self._downloading = False
+        self.status.setText(f"The update could not be downloaded or verified.\n{message}")
+        self.progress.setRange(0, 100)
+        self.progress.setValue(0)
+        self.progress.setFormat("Download failed")
+        self.primary_button.setText("Retry download")
+        self.primary_button.setEnabled(True)
+        self.later_button.setEnabled(True)
+
+    def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
+        if self._downloading:
+            event.ignore()
+            self.status.setText(
+                "The verified installer is still downloading. This window will remain "
+                "open until the transfer finishes."
+            )
+            return
+        super().closeEvent(event)
+
+
 class MainWindow(QMainWindow):
     """Primary desktop window."""
 
@@ -249,7 +386,7 @@ class MainWindow(QMainWindow):
     ) -> None:
         super().__init__()
         self.setWindowTitle(APP_DISPLAY_NAME)
-        self.setMinimumSize(1120, 720)
+        self.setMinimumSize(1280, 800)
         self.resize(1380, 860)
         self.setWindowFlags(
             Qt.WindowType.Window
@@ -296,6 +433,7 @@ class MainWindow(QMainWindow):
         self._resize_idle_timer: QTimer | None = None
         self._update_thread: QThread | None = None
         self._update_worker: UpdateWorker | None = None
+        self._update_dialog: ApplicationUpdateDialog | None = None
         self._google_thread: QThread | None = None
         self._google_worker: GoogleCloudWorker | None = None
         self._google_pending_playlists: list[YouTubePlaylist] = []
@@ -468,14 +606,6 @@ class MainWindow(QMainWindow):
             QStyle.StandardPixmap.SP_DesktopIcon,
             "Ctrl+1",
         )
-        view_menu.addSeparator()
-        self._add_workspace_action(
-            view_menu,
-            "Media Library",
-            13,
-            QStyle.StandardPixmap.SP_DirHomeIcon,
-            "Ctrl+L",
-        )
         self._add_workspace_action(
             view_menu,
             "Live Logs",
@@ -483,6 +613,15 @@ class MainWindow(QMainWindow):
             QStyle.StandardPixmap.SP_FileDialogInfoView,
             "Ctrl+Shift+L",
         )
+
+        self.media_player_action = menu_bar.addAction("Media Player")
+        self.media_player_action.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
+        )
+        self.media_player_action.setShortcut(QKeySequence("Ctrl+L"))
+        self.media_player_action.setToolTip("Open the Media Player (Ctrl+L)")
+        self.media_player_action.setCheckable(True)
+        self.media_player_action.triggered.connect(lambda: self._set_page(13))
 
         help_menu = menu_bar.addMenu("Help")
         self.check_for_updates_action = help_menu.addAction(
@@ -583,7 +722,7 @@ class MainWindow(QMainWindow):
             self,
             f"About {APP_DISPLAY_NAME}",
             f"{APP_DISPLAY_NAME} {application_version()}\n\n"
-            "Download, enrich, organize, and play your local media library.\n\n"
+            "Download, enrich, organize, and play your local media.\n\n"
             "Created by Dhiman Ghosh.",
         )
 
@@ -591,12 +730,13 @@ class MainWindow(QMainWindow):
         """Create the compact visualizer/version card used in the bottom status bar."""
 
         spectrum_card = GlassCard()
-        spectrum_card.setFixedSize(205, 58)
+        spectrum_card.setFixedSize(220, 96)
         spectrum_layout = QVBoxLayout(spectrum_card)
-        spectrum_layout.setContentsMargins(8, 2, 8, 2)
-        spectrum_layout.setSpacing(0)
+        spectrum_layout.setContentsMargins(8, 6, 8, 6)
+        spectrum_layout.setSpacing(4)
         self.music_visualizer = MusicVisualizer()
-        self.music_visualizer.setMaximumHeight(38)
+        self.music_visualizer.setMinimumHeight(56)
+        self.music_visualizer.setMaximumHeight(56)
         spectrum_layout.addWidget(self.music_visualizer)
         self.version_label = QLabel(f"Version {application_version()}")
         self.version_label.setObjectName("appVersionLabel")
@@ -637,7 +777,7 @@ class MainWindow(QMainWindow):
 
     def _build_activity_bar(self) -> QWidget:
         bar = QWidget()
-        bar.setFixedHeight(76)
+        bar.setFixedHeight(112)
         layout = QGridLayout(bar)
         layout.setContentsMargins(22, 7, 15, 9)
         layout.setHorizontalSpacing(10)
@@ -1025,7 +1165,7 @@ class MainWindow(QMainWindow):
         actions_layout.addWidget(self._section_label("Quick launch"))
         buttons = QGridLayout()
         quick_items = [
-            ("Open media library", 13),
+            ("Open media player", 13),
             ("Search for music", 1),
             ("Download MP3", 2),
             ("Download video", 3),
@@ -1976,7 +2116,7 @@ class MainWindow(QMainWindow):
             self.edit_file_run_button.setText("Redownload and edit")
         elif video_display:
             self.edit_file_action_help.setText(
-                "Stores crop and aspect as a Media Library playback profile for this "
+                "Stores crop and aspect as a Media Player playback profile for this "
                 "video. The video file and its encoded dimensions are not changed."
             )
             self.edit_file_run_button.setText("Save playback settings")
@@ -2750,7 +2890,7 @@ class MainWindow(QMainWindow):
             1, 20, self._default_value("search_suggestions", 10), " matches"
         )
         self.settings_search_suggestions.setToolTip(
-            "Maximum ranked matches shown beneath the Media Library search field."
+            "Maximum ranked matches shown beneath the Media Player search field."
         )
         self.settings_beta_updates = self._check(
             "Include 3.x beta releases",
@@ -2790,7 +2930,7 @@ class MainWindow(QMainWindow):
         google_actions_layout = QHBoxLayout(google_actions)
         google_actions_layout.setContentsMargins(0, 0, 0, 0)
         for label, handler in (
-            ("Connect Google account", self._connect_google_account),
+            ("Sign in with Google", self._connect_google_account),
             ("Back up now", self._backup_google_profile),
             ("Restore", self._restore_google_profile),
             ("Import YouTube playlist", self._import_google_playlist),
@@ -2960,7 +3100,7 @@ class MainWindow(QMainWindow):
 
         behavior_section, _behavior_body, behavior_form = self._settings_group(
             "Application behavior and privacy",
-            "Control workspace restoration, local diagnostics, and Media Library suggestion size.",
+            "Control workspace restoration, local diagnostics, and Media Player suggestion size.",
             "behavior_privacy",
             expanded=False,
         )
@@ -3023,6 +3163,8 @@ class MainWindow(QMainWindow):
         if not 0 <= index < self.pages.count():
             index = 0
         self.pages.setCurrentIndex(index)
+        if hasattr(self, "media_player_action"):
+            self.media_player_action.setChecked(index == 13)
         self.settings.setValue("window/last_page", index)
         operation = {
             1: "search_song",
@@ -4003,32 +4145,30 @@ class MainWindow(QMainWindow):
             return
         label = "beta" if update.prerelease else "stable"
         self.update_status.setText(f"{update.version} {label} available")
-        notes = update.notes.strip()
-        if len(notes) > 1200:
-            notes = notes[:1200].rstrip() + "…"
-        answer = QMessageBox.question(
-            self,
-            f"{APP_DISPLAY_NAME} {update.version} available",
-            f"A newer {label} release is available. Download its installer now?"
-            + (f"\n\n{notes}" if notes else ""),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.Yes,
-        )
-        if answer == QMessageBox.StandardButton.Yes:
-            QTimer.singleShot(0, lambda: self._download_application_update(update))
+        if self._update_dialog is not None:
+            self._update_dialog.close()
+        dialog = ApplicationUpdateDialog(update, self)
+        dialog.download_requested.connect(self._download_application_update)
+        dialog.install_requested.connect(self._launch_application_update)
+        dialog.open_folder_requested.connect(self._open_update_download_folder)
+        dialog.finished.connect(lambda: self._clear_update_dialog(dialog))
+        self._update_dialog = dialog
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
 
     def _download_application_update(self, update: AvailableUpdate) -> None:
         if self._update_thread is not None:
             QTimer.singleShot(150, lambda: self._download_application_update(update))
             return
         self.update_status.setText(f"Downloading {update.version}…")
+        if self._update_dialog is not None:
+            self._update_dialog.start_download()
         thread = QThread(self)
         worker = UpdateWorker(include_betas=self.settings_beta_updates.isChecked(), update=update)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
-        worker.progress.connect(
-            lambda percent: self.update_status.setText(f"Downloading {update.version}… {percent}%")
-        )
+        worker.progress.connect(lambda percent: self._application_update_progress(update, percent))
         worker.downloaded.connect(self._application_update_downloaded)
         worker.downloaded.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
@@ -4042,27 +4182,48 @@ class MainWindow(QMainWindow):
         installer = Path(path_or_error).expanduser()
         if not installer.is_file():
             self.update_status.setText("Update download failed")
-            QMessageBox.warning(self, "Update download failed", path_or_error)
+            if self._update_dialog is not None:
+                self._update_dialog.set_failed(path_or_error)
+            else:
+                QMessageBox.warning(self, "Update download failed", path_or_error)
             return
         self.update_status.setText("Installer ready")
-        answer = QMessageBox.question(
-            self,
-            "Install downloaded update?",
-            "The installer is ready. Open it now and close YouTube Media Studio?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.Yes,
-        )
-        if answer != QMessageBox.StandardButton.Yes:
-            QDesktopServices.openUrl(QUrl.fromLocalFile(str(installer.parent)))
+        if self._update_dialog is not None:
+            self._update_dialog.set_ready(installer)
+        else:
+            self._launch_application_update(str(installer))
+
+    def _application_update_progress(self, update: AvailableUpdate, percent: int) -> None:
+        value = max(0, min(100, int(percent)))
+        self.update_status.setText(f"Downloading {update.version}… {value}%")
+        if self._update_dialog is not None:
+            self._update_dialog.set_download_progress(value)
+
+    def _launch_application_update(self, installer_path: str) -> None:
+        installer = Path(installer_path).expanduser().resolve()
+        if not installer.is_file():
+            if self._update_dialog is not None:
+                self._update_dialog.set_failed(f"Installer is missing: {installer}")
             return
-        if QDesktopServices.openUrl(QUrl.fromLocalFile(str(installer.resolve()))):
+        started = QProcess.startDetached(str(installer), [])
+        started_ok = bool(started[0]) if isinstance(started, tuple) else bool(started)
+        if started_ok:
             QApplication.quit()
         else:
-            QMessageBox.warning(
-                self,
-                "Could not start installer",
-                f"Open this file manually:\n{installer}",
-            )
+            message = f"Could not start the installer. Open it manually:\n{installer}"
+            if self._update_dialog is not None:
+                self._update_dialog.set_failed(message)
+            else:
+                QMessageBox.warning(self, "Could not start installer", message)
+
+    def _open_update_download_folder(self, installer_path: str) -> None:
+        installer = Path(installer_path).expanduser()
+        folder = installer.parent if installer.name else installer
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder.resolve())))
+
+    def _clear_update_dialog(self, dialog: ApplicationUpdateDialog) -> None:
+        if self._update_dialog is dialog:
+            self._update_dialog = None
 
     def _add_history(self, operation: str, status: str, total: int, details: str) -> None:
         self._history.insert(

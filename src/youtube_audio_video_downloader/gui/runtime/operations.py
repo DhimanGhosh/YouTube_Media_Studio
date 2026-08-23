@@ -713,7 +713,7 @@ def _run_edit_media(params: dict[str, Any], token: CancellationToken) -> Operati
     action = str(params.get("action", "metadata") or "metadata")
     if action == "video_display":
         raise ValueError(
-            "Video crop/aspect must be saved as a Media Library playback profile"
+            "Video crop/aspect must be saved as a Media Player playback profile"
         )
     output_paths = edit_media_file(
         str(params.get("input_path", "") or ""),

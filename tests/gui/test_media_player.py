@@ -171,6 +171,15 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.assertEqual([item.title for item in self.page.queue], ["Short"])
         self.assertEqual(self.page.queue_index, 0)
 
+    def test_queue_heading_totals_cached_durations_and_marks_unknown_tracks(self) -> None:
+        self.page.queue = [self.page.items[0], self.page.items[1], media("Unknown", 2020, 0)]
+        self.page._update_queue_status()
+
+        self.assertEqual(
+            self.page.queue_duration_label.text(),
+            "3 tracks • 11 min • 1 unknown",
+        )
+
     def test_removing_current_and_earlier_queue_rows_advances_to_next(self) -> None:
         first, second = self.page.items
         current = media("Current", 2010, 120_000)

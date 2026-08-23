@@ -233,7 +233,7 @@ edit, consolidate, inspect logs, configure defaults, and play the finished libra
 | Repair or trim a local file | [Edit File guide](docs/USER_GUIDE.md#edit-a-local-media-file) |
 | Retag a complete album folder | [Edit Album guide](docs/USER_GUIDE.md#edit-an-album-folder) |
 | Enrich and move an existing music folder | [Album Consolidator guide](docs/USER_GUIDE.md#enrich-and-organize-an-existing-music-folder) |
-| Browse and play my local collection | [Media Library guide](docs/USER_GUIDE.md#use-the-local-media-library) |
+| Browse and play my local collection | [Media Player guide](docs/USER_GUIDE.md#use-the-local-media-player) |
 | Understand a skip, review, or failure | [Live Log glossary](docs/USER_GUIDE.md#read-live-logs) |
 | Use the application safely | [File-safety rules](docs/USER_GUIDE.md#file-safety-rules) |
 
@@ -252,7 +252,7 @@ edit, consolidate, inspect logs, configure defaults, and play the finished libra
 | **Search Song** | Find tracks, albums, release years, performers, and cover artwork |
 | **Metadata tools** | Inspect, repair, reorder, retag, trim, rename, and consolidate local media |
 | **Edit Album** | Change album name, year, track artist(s), and optional album artwork across every supported file in a folder |
-| **Media Library** | Browse dynamically sized track tables, filter, create persistent ordered playlists, play, queue, permanently delete confirmed files/albums, semantically curate local media, and control it from a phone on the same Wi-Fi |
+| **Media Player** | Browse dynamically sized track tables, filter, create persistent ordered playlists, play, queue, permanently delete confirmed files/albums, semantically curate local media, and control it from a phone on the same Wi-Fi |
 | **Google Cloud Profile** | Optionally use one Google account to synchronize portable settings and playlist identities between machines and import private YouTube playlists already present in the local library |
 | **Utilities** | Normalize artist names and convert timestamps to splitter-ready JSON |
 | **Live Logs** | Follow background operations and diagnose failures without leaving the app |
@@ -447,7 +447,7 @@ src/youtube_audio_video_downloader/
   gui/                               PyQt6 desktop packages
     application/                     Entry point and main window
     components/                      Shared resources, theme, and widgets
-    media/                           Media Library player and visualization
+    media/                           Media Player player and visualization
     runtime/                         Operations, workers, diagnostics, and AI usage
   loaders/                           Job-file loading
   metadata/                          Media tagging

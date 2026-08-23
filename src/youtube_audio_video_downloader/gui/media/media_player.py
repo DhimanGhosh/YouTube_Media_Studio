@@ -127,6 +127,32 @@ from youtube_audio_video_downloader.services.google_cloud_profile import (
     portable_playlist_snapshot,
 )
 
+
+def _chevron_icon(direction: str) -> QIcon:
+    """Return a crisp, font-independent drawer chevron."""
+
+    pixmap = QPixmap(20, 20)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setPen(
+        QPen(
+            QColor("#dbe4ff"),
+            2.2,
+            Qt.PenStyle.SolidLine,
+            Qt.PenCapStyle.RoundCap,
+            Qt.PenJoinStyle.RoundJoin,
+        )
+    )
+    points = (
+        [QPointF(7, 4), QPointF(13, 10), QPointF(7, 16)]
+        if direction == "right"
+        else [QPointF(13, 4), QPointF(7, 10), QPointF(13, 16)]
+    )
+    painter.drawPolyline(QPolygonF(points))
+    painter.end()
+    return QIcon(pixmap)
+
 MEDIA_TYPE_ALL = "all"
 MEDIA_TYPE_AUDIO = "audio"
 MEDIA_TYPE_VIDEO = "video"
@@ -1111,7 +1137,7 @@ class MediaLibraryPage(QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(10)
         header = QHBoxLayout()
-        title = QLabel("Media Library")
+        title = QLabel("Media Player")
         title.setObjectName("pageTitle")
         header.addWidget(title)
         header.addStretch(1)
@@ -1129,7 +1155,7 @@ class MediaLibraryPage(QWidget):
         self.phone_access_switch.setObjectName("phoneAccessSwitch")
         self.phone_access_switch.setAccessibleName("Phone access")
         self.phone_access_switch.setToolTip(
-            "Allow phones on this Wi-Fi network to use the Media Library"
+            "Allow phones on this Wi-Fi network to use the Media Player"
         )
         self.phone_access_switch.setChecked(remote_enabled and not remote_forced_off)
         self.phone_access_switch.setEnabled(not remote_forced_off)
@@ -1155,16 +1181,20 @@ class MediaLibraryPage(QWidget):
         )
         self.artist_repair_button.clicked.connect(self.review_artist_name_repairs)
         header.addWidget(self.artist_repair_button)
-        self.playlist_toggle_button = QPushButton("Playlists (0) ‹")
+        self.playlist_toggle_button = QPushButton("Playlists (0)")
         self.playlist_toggle_button.setObjectName("secondaryButton")
         self.playlist_toggle_button.setCheckable(True)
         self.playlist_toggle_button.setToolTip("Create and browse saved local playlists")
         self.playlist_toggle_button.toggled.connect(self._toggle_playlist_drawer)
         header.addWidget(self.playlist_toggle_button)
-        self.queue_toggle_button = QPushButton("Queue (0) ›")
+        self.playlist_toggle_button.setIcon(_chevron_icon("left"))
+        self.playlist_toggle_button.setIconSize(QSize(18, 18))
+        self.queue_toggle_button = QPushButton("Queue (0)")
         self.queue_toggle_button.setObjectName("secondaryButton")
         self.queue_toggle_button.setCheckable(True)
         self.queue_toggle_button.setToolTip("Show or hide the current playback queue")
+        self.queue_toggle_button.setIcon(_chevron_icon("right"))
+        self.queue_toggle_button.setIconSize(QSize(18, 18))
         self.queue_toggle_button.toggled.connect(self._toggle_queue_drawer)
         header.addWidget(self.queue_toggle_button)
         main_layout.addLayout(header)
@@ -1284,7 +1314,7 @@ class MediaLibraryPage(QWidget):
         self._remote_state_dirty = True
         self._set_phone_access_switch(False, "Off")
         self.phone_access_switch.setToolTip(
-            "Allow phones on this Wi-Fi network to use the Media Library"
+            "Allow phones on this Wi-Fi network to use the Media Player"
         )
         self.phone_access_details_button.setVisible(False)
 
@@ -2275,7 +2305,7 @@ class MediaLibraryPage(QWidget):
     def _build_playlist_drawer(self) -> QWidget:
         drawer = GlassCard()
         drawer.setObjectName("playlistDrawer")
-        drawer.setMinimumWidth(180)
+        drawer.setMinimumWidth(300)
         layout = QVBoxLayout(drawer)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(8)
@@ -2285,7 +2315,11 @@ class MediaLibraryPage(QWidget):
         heading.setObjectName("sectionTitle")
         header.addWidget(heading)
         header.addStretch(1)
-        close_button = QPushButton("‹")
+        close_button = QPushButton()
+        close_button.setIcon(_chevron_icon("left"))
+        close_button.setIconSize(QSize(20, 20))
+        close_button.setFixedSize(40, 40)
+        close_button.setAccessibleName("Collapse playlists")
         close_button.setObjectName("secondaryButton")
         close_button.setToolTip("Collapse playlists")
         close_button.clicked.connect(
@@ -2351,17 +2385,18 @@ class MediaLibraryPage(QWidget):
         )
         layout.addWidget(self.playlist_tracks, 3)
 
-        track_actions = QHBoxLayout()
-        for text, handler, primary in (
+        track_actions = QGridLayout()
+        for index, (text, handler, primary) in enumerate((
             ("Play", self.play_selected_playlist_tracks, True),
             ("Play next", self.play_next_selected_playlist_tracks, False),
             ("Queue", self.queue_selected_playlist_tracks, False),
             ("Remove", self.remove_selected_playlist_tracks, False),
-        ):
+        )):
             button = QPushButton(text)
+            button.setMinimumWidth(112)
             button.setObjectName("primaryButton" if primary else "secondaryButton")
             button.clicked.connect(handler)
-            track_actions.addWidget(button)
+            track_actions.addWidget(button, index // 2, index % 2)
         layout.addLayout(track_actions)
         return drawer
 
@@ -2376,12 +2411,12 @@ class MediaLibraryPage(QWidget):
         sizes = self.drawer_splitter.sizes()
         total = max(sum(sizes), self.drawer_splitter.width())
         playlist = (
-            max(180, int(self.settings.value("library/playlist_drawer_width", 340)))
+            max(300, int(self.settings.value("library/playlist_drawer_width", 340)))
             if self.playlist_drawer.isVisible()
             else 0
         )
         queue = (
-            max(180, int(self.settings.value("library/queue_drawer_width", 330)))
+            max(300, int(self.settings.value("library/queue_drawer_width", 330)))
             if self.queue_drawer.isVisible()
             else 0
         )
@@ -2392,9 +2427,9 @@ class MediaLibraryPage(QWidget):
         self.playlist_drawer.setVisible(bool(visible))
         if visible:
             QTimer.singleShot(0, self._restore_drawer_widths)
-        arrow = "›" if visible else "‹"
-        self.playlist_toggle_button.setText(
-            f"Playlists ({len(self.playlists)}) {arrow}"
+        self.playlist_toggle_button.setText(f"Playlists ({len(self.playlists)})")
+        self.playlist_toggle_button.setIcon(
+            _chevron_icon("right" if visible else "left")
         )
 
     def _save_playlists(self) -> None:
@@ -2450,9 +2485,9 @@ class MediaLibraryPage(QWidget):
             self.playlist_list.setCurrentRow(selected_row)
         self.playlist_list.blockSignals(False)
         self._render_playlist_tracks()
-        arrow = "›" if self.playlist_drawer.isVisible() else "‹"
-        self.playlist_toggle_button.setText(
-            f"Playlists ({len(self.playlists)}) {arrow}"
+        self.playlist_toggle_button.setText(f"Playlists ({len(self.playlists)})")
+        self.playlist_toggle_button.setIcon(
+            _chevron_icon("right" if self.playlist_drawer.isVisible() else "left")
         )
 
     def _playlist_selection_changed(self) -> None:
@@ -2693,22 +2728,30 @@ class MediaLibraryPage(QWidget):
         duplicate_count = sum(item.path.casefold() in known for item in items)
         policy = duplicate_policy
         if duplicate_count and policy not in {"skip", "add"}:
-            box = QMessageBox(self)
-            box.setIcon(QMessageBox.Icon.Warning)
-            box.setWindowTitle("Track already present")
-            box.setText("Track already present")
-            box.setInformativeText(
-                f"{duplicate_count} selected track(s) already exist in {name}."
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Tracks already in playlist")
+            dialog.setMinimumSize(480, 220)
+            content = QVBoxLayout(dialog)
+            heading = QLabel("Some selected tracks are already present")
+            heading.setObjectName("sectionTitle")
+            content.addWidget(heading)
+            details = QLabel(
+                f"{duplicate_count} of {len(items)} selected track(s) already exist in "
+                f"‘{name}’.\n\nChoose whether to skip those duplicates or add another copy."
             )
-            skip_button = box.addButton(
-                "Skip duplicates", QMessageBox.ButtonRole.AcceptRole
-            )
-            add_button = box.addButton(
-                "Add anyway", QMessageBox.ButtonRole.DestructiveRole
-            )
-            box.exec()
-            policy = "skip" if box.clickedButton() is skip_button else "add"
-            if box.clickedButton() not in {skip_button, add_button}:
+            details.setWordWrap(True)
+            content.addWidget(details, 1)
+            actions = QDialogButtonBox()
+            skip_button = actions.addButton("Skip duplicates", QDialogButtonBox.ButtonRole.AcceptRole)
+            add_button = actions.addButton("Add anyway", QDialogButtonBox.ButtonRole.DestructiveRole)
+            cancel_button = actions.addButton(QDialogButtonBox.StandardButton.Cancel)
+            skip_button.clicked.connect(lambda: dialog.done(1))
+            add_button.clicked.connect(lambda: dialog.done(2))
+            cancel_button.clicked.connect(dialog.reject)
+            content.addWidget(actions)
+            choice = dialog.exec()
+            policy = "skip" if choice == 1 else "add"
+            if choice not in {1, 2}:
                 return 0
         result = add_playlist_paths(
             existing,
@@ -2796,7 +2839,7 @@ class MediaLibraryPage(QWidget):
     def _build_queue_drawer(self) -> QWidget:
         drawer = GlassCard()
         drawer.setObjectName("playbackQueueDrawer")
-        drawer.setMinimumWidth(180)
+        drawer.setMinimumWidth(300)
         layout = QVBoxLayout(drawer)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(8)
@@ -2804,8 +2847,15 @@ class MediaLibraryPage(QWidget):
         heading = QLabel("Current queue")
         heading.setObjectName("sectionTitle")
         header.addWidget(heading)
+        self.queue_duration_label = QLabel("0 tracks • 0 min")
+        self.queue_duration_label.setObjectName("mutedLabel")
+        header.addWidget(self.queue_duration_label)
         header.addStretch(1)
-        close_button = QPushButton("›")
+        close_button = QPushButton()
+        close_button.setIcon(_chevron_icon("right"))
+        close_button.setIconSize(QSize(20, 20))
+        close_button.setFixedSize(40, 40)
+        close_button.setAccessibleName("Collapse queue")
         close_button.setObjectName("secondaryButton")
         close_button.setToolTip("Collapse queue")
         close_button.clicked.connect(lambda: self.queue_toggle_button.setChecked(False))
@@ -3337,7 +3387,7 @@ class MediaLibraryPage(QWidget):
         self.video.setFocus()
 
     def exit_video_fullscreen(self) -> None:
-        """Restore the player card to the Media Library workspace."""
+        """Restore the player card to the Media Player workspace."""
 
         if not self._player_fullscreen:
             return
@@ -3441,7 +3491,7 @@ class MediaLibraryPage(QWidget):
         return str(Path(path).expanduser().resolve()).casefold()
 
     def video_display_profile(self, path: str | Path) -> tuple[str, str]:
-        """Return the Media Library playback profile saved for one video."""
+        """Return the Media Player playback profile saved for one video."""
 
         profile = self._video_display_profiles.get(self._video_profile_key(path), {})
         if not isinstance(profile, dict):
@@ -5101,8 +5151,10 @@ class MediaLibraryPage(QWidget):
         self.queue_drawer.setVisible(bool(visible))
         if visible:
             QTimer.singleShot(0, self._restore_drawer_widths)
-        arrow = "‹" if visible else "›"
-        self.queue_toggle_button.setText(f"Queue ({len(self.queue)}) {arrow}")
+        self.queue_toggle_button.setText(f"Queue ({len(self.queue)})")
+        self.queue_toggle_button.setIcon(
+            _chevron_icon("left" if visible else "right")
+        )
 
     @staticmethod
     def _queue_entry_text(item: LibraryItem, index: int, current: bool) -> str:
@@ -5136,8 +5188,11 @@ class MediaLibraryPage(QWidget):
         if selected_row >= 0:
             self.queue_list.setCurrentRow(selected_row)
         self.queue_list.blockSignals(False)
-        arrow = "‹" if self.queue_drawer.isVisible() else "›"
-        self.queue_toggle_button.setText(f"Queue ({len(self.queue)}) {arrow}")
+        self.queue_toggle_button.setText(f"Queue ({len(self.queue)})")
+        self.queue_toggle_button.setIcon(
+            _chevron_icon("left" if self.queue_drawer.isVisible() else "right")
+        )
+        self._update_queue_duration_label()
 
     def _refresh_queue_list_labels(self) -> None:
         for index, item in enumerate(self.queue):
@@ -5394,6 +5449,22 @@ class MediaLibraryPage(QWidget):
             )
         if rebuild_drawer:
             self._sync_queue_drawer()
+        else:
+            self._update_queue_duration_label()
+
+    def _update_queue_duration_label(self) -> None:
+        if not hasattr(self, "queue_duration_label"):
+            return
+        known_ms = sum(max(0, int(item.duration_ms)) for item in self.queue)
+        unknown = sum(int(item.duration_ms) <= 0 for item in self.queue)
+        total_seconds = known_ms // 1000
+        hours, remainder = divmod(total_seconds, 3600)
+        minutes = remainder // 60
+        duration = f"{hours} hr {minutes} min" if hours else f"{minutes} min"
+        suffix = f" • {unknown} unknown" if unknown else ""
+        self.queue_duration_label.setText(
+            f"{len(self.queue)} track{'s' if len(self.queue) != 1 else ''} • {duration}{suffix}"
+        )
 
     def play(self) -> None:
         log_diagnostic("PLAYER", "play requested")
