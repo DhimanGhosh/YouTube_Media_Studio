@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
+import io
 import json
 import os
 import sys
@@ -51,6 +53,37 @@ def test_every_desktop_target_has_a_native_icon() -> None:
     assert release_tool.desktop_icon_for_target("windows").suffix == ".ico"
     assert release_tool.desktop_icon_for_target("macos").suffix == ".icns"
     assert release_tool.desktop_icon_for_target("linux").suffix == ".png"
+
+
+def test_pinned_linux_ffmpeg_archive_is_verified_and_safely_extracted(
+    monkeypatch, tmp_path
+) -> None:
+    archive = io.BytesIO()
+    with tarfile.open(fileobj=archive, mode="w:xz") as bundle:
+        for name, payload in (("ffmpeg", b"static ffmpeg"), ("ffprobe", b"static ffprobe")):
+            member = tarfile.TarInfo(f"ffmpeg-static/{name}")
+            member.size = len(payload)
+            bundle.addfile(member, io.BytesIO(payload))
+    payload = archive.getvalue()
+    monkeypatch.setattr(
+        release_tool,
+        "LINUX_FFMPEG_ARCHIVE_SHA256",
+        hashlib.sha256(payload).hexdigest(),
+    )
+    monkeypatch.setattr(
+        release_tool,
+        "urlopen",
+        lambda _request, timeout: io.BytesIO(payload),
+    )
+
+    ffmpeg, ffprobe = release_tool._download_pinned_linux_ffmpeg(tmp_path)
+
+    assert ffmpeg.read_bytes() == b"static ffmpeg"
+    assert ffprobe.read_bytes() == b"static ffprobe"
+    if os.name != "nt":
+        assert ffmpeg.stat().st_mode & 0o111
+        assert ffprobe.stat().st_mode & 0o111
+    assert not (tmp_path / "ffmpeg-6.0.1-amd64-static.tar.xz").exists()
 
 
 def test_macos_desktop_build_rejects_intel_hosts(monkeypatch) -> None:

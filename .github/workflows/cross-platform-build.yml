@@ -35,7 +35,7 @@ jobs:
       - name: Install Linux GUI runtime libraries
         run: |
           sudo apt-get update
-          sudo apt-get install --yes ffmpeg libegl1 libpulse0
+          sudo apt-get install --yes libegl1 libpulse0
       - run: uv sync --group dev
       - run: uv run python tools/release.py check
 
@@ -133,7 +133,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install --yes ffmpeg libegl1 libpulse0
+          sudo apt-get install --yes libegl1 libpulse0
       - name: Install NSIS
         if: runner.os == 'Windows'
         shell: pwsh

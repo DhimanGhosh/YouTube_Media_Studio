@@ -2,7 +2,7 @@
 
 Desktop packages of YouTube Media Studio include these command-line runtimes so media workflows can run without separate installation:
 
-- **FFmpeg and FFprobe 7.1** are invoked as separate processes. Release builds are obtained by `portable-ffmpeg` from BtbN FFmpeg Builds on Windows/Linux and OSXExperts on macOS. The selected builds are distributed under GNU GPL v3; FFmpeg source and licensing information are available from <https://ffmpeg.org/>, and the BtbN build scripts are available from <https://github.com/BtbN/FFmpeg-Builds>.
+- **FFmpeg and FFprobe** are invoked as separate processes. Windows and macOS packages use the 7.1 builds obtained by `portable-ffmpeg` from BtbN FFmpeg Builds and OSXExperts. Linux x64 packages use the checksum-pinned, self-contained 6.0.1 static build from John Van Sickle. The selected builds are distributed under GNU GPL v3; FFmpeg source and licensing information are available from <https://ffmpeg.org/>, and the BtbN build scripts are available from <https://github.com/BtbN/FFmpeg-Builds>.
 - **Deno** is invoked as a separate process by yt-dlp for JavaScript challenge support. Deno is MIT licensed and its source is available from <https://github.com/denoland/deno>.
 - **yt-dlp and yt-dlp-ejs** provide extraction and JavaScript challenge components. Their source and applicable notices are available from <https://github.com/yt-dlp/yt-dlp> and <https://github.com/yt-dlp/ejs>.
 

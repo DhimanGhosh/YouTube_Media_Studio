@@ -16,6 +16,7 @@ import time
 import tomllib
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from urllib.request import Request, urlopen
 
 from youtube_audio_video_downloader.config.app_identity import (
     APP_DISPLAY_NAME,
@@ -30,6 +31,13 @@ from youtube_audio_video_downloader.config.app_identity import (
 ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / "dist"
 ASSETS = ROOT / "assets"
+LINUX_FFMPEG_ARCHIVE_URL = (
+    "https://johnvansickle.com/ffmpeg/old-releases/"
+    "ffmpeg-6.0.1-amd64-static.tar.xz"
+)
+LINUX_FFMPEG_ARCHIVE_SHA256 = (
+    "28268bf402f1083833ea269331587f60a242848880073be8016501d864bd07a5"
+)
 
 
 @dataclass(frozen=True)
@@ -701,15 +709,12 @@ def prepare_runtime_tools(target: str) -> list[Path]:
         shutil.rmtree(staging)
     staging.mkdir(parents=True)
     if target == "linux":
-        # portable-ffmpeg's upstream Linux archive can disappear independently
-        # of this project. The release runner installs distro FFmpeg explicitly.
+        ffmpeg, ffprobe = _download_pinned_linux_ffmpeg(staging)
         script = (
-            "import json, shutil\n"
+            "import json\n"
             "import deno\n"
-            "ffmpeg, ffprobe = shutil.which('ffmpeg'), shutil.which('ffprobe')\n"
-            "assert ffmpeg and ffprobe, 'system FFmpeg/FFprobe were not found'\n"
             "print('RUNTIME_TOOLS_JSON=' + json.dumps({"
-            "'ffmpeg': ffmpeg, 'ffprobe': ffprobe, "
+            f"'ffmpeg': {str(ffmpeg)!r}, 'ffprobe': {str(ffprobe)!r}, "
             "'deno': str(deno.find_deno_bin())}))\n"
         )
     else:
@@ -771,11 +776,54 @@ def prepare_runtime_tools(target: str) -> list[Path]:
         if not source.is_file():
             raise RuntimeError(f"Required packaging tool was not found: {source}")
         destination = staging / output_name
-        shutil.copy2(source, destination)
+        if source.resolve() != destination.resolve():
+            shutil.copy2(source, destination)
         destination.chmod(destination.stat().st_mode | 0o111)
         packaged.append(destination)
     _verify_runtime_tools(packaged)
     return packaged
+
+
+def _download_pinned_linux_ffmpeg(staging: Path) -> tuple[Path, Path]:
+    """Download and safely extract the checksum-pinned static Linux runtimes."""
+
+    archive = staging / "ffmpeg-6.0.1-amd64-static.tar.xz"
+    request = Request(
+        LINUX_FFMPEG_ARCHIVE_URL,
+        headers={"User-Agent": "YouTube-Media-Studio release builder"},
+    )
+    digest = hashlib.sha256()
+    with urlopen(request, timeout=120) as response, archive.open("wb") as output:
+        while chunk := response.read(1024 * 1024):
+            output.write(chunk)
+            digest.update(chunk)
+    if digest.hexdigest() != LINUX_FFMPEG_ARCHIVE_SHA256:
+        archive.unlink(missing_ok=True)
+        raise RuntimeError("Pinned Linux FFmpeg archive failed SHA-256 verification")
+
+    extracted: list[Path] = []
+    with tarfile.open(archive, "r:xz") as bundle:
+        for name in ("ffmpeg", "ffprobe"):
+            member = next(
+                (
+                    candidate
+                    for candidate in bundle.getmembers()
+                    if candidate.isfile() and Path(candidate.name).name == name
+                ),
+                None,
+            )
+            if member is None:
+                raise RuntimeError(f"Pinned Linux FFmpeg archive is missing {name}")
+            source = bundle.extractfile(member)
+            if source is None:
+                raise RuntimeError(f"Could not read {name} from Linux FFmpeg archive")
+            destination = staging / name
+            with source, destination.open("wb") as output:
+                shutil.copyfileobj(source, output)
+            destination.chmod(destination.stat().st_mode | 0o111)
+            extracted.append(destination)
+    archive.unlink()
+    return extracted[0], extracted[1]
 
 
 def _verify_runtime_tools(tools: list[Path]) -> None:
