@@ -1650,7 +1650,7 @@ class MediaLibraryPage(QWidget):
         heading = QLabel("Smart Library Curator")
         heading.setObjectName("sectionTitle")
         heading.setToolTip(
-            "Uses the Global Settings agentic model and only indexed library metadata."
+            "Uses the agentic model from File → Settings… and only indexed library metadata."
         )
         row.addWidget(heading)
         self.recommendation_ai_enabled = QCheckBox("Use AI for this section")
@@ -2094,6 +2094,7 @@ class MediaLibraryPage(QWidget):
         actions.addWidget(self.add_selected_to_playlist_button)
         for text, handler, primary in (
             ("Play selected", self.play_selected, True),
+            ("Play selected next", self.play_next_selected, False),
             ("Queue selected", self.enqueue_selected, False),
             ("Play all matches", self.play_all_matches, False),
             ("Shuffle all", self.shuffle_all_matches, False),
@@ -2241,6 +2242,7 @@ class MediaLibraryPage(QWidget):
         detail_header.addWidget(self.add_open_album_to_playlist_button)
         for text, mode, selected in (
             ("Play selected", "play", True),
+            ("Play selected next", "next", True),
             ("Queue selected", "queue", True),
             ("Shuffle selected", "shuffle", True),
         ):
@@ -2347,6 +2349,7 @@ class MediaLibraryPage(QWidget):
         track_actions = QHBoxLayout()
         for text, handler, primary in (
             ("Play", self.play_selected_playlist_tracks, True),
+            ("Play next", self.play_next_selected_playlist_tracks, False),
             ("Queue", self.queue_selected_playlist_tracks, False),
             ("Remove", self.remove_selected_playlist_tracks, False),
         ):
@@ -2725,6 +2728,10 @@ class MediaLibraryPage(QWidget):
     def queue_selected_playlist_tracks(self) -> None:
         selected = self._selected_playlist_items() or self._visible_playlist_items()
         self._append_to_queue(selected)
+
+    def play_next_selected_playlist_tracks(self) -> None:
+        selected = self._selected_playlist_items() or self._visible_playlist_items()
+        self._play_next(selected)
 
     def remove_selected_playlist_tracks(self) -> None:
         removals: dict[str, set[int]] = {}
@@ -4593,13 +4600,20 @@ class MediaLibraryPage(QWidget):
         global_position: QPoint,
         *,
         source_playlist: str = "",
-    ) -> None:
+    ) -> QMenu | None:
         if not items:
-            return
+            return None
         menu = QMenu(self)
-        play_next_action = menu.addAction("Play next")
+        multiple = len(items) > 1
+        play_next_action = menu.addAction(
+            "Play selected next" if multiple else "Play next"
+        )
         play_next_action.triggered.connect(
             lambda _checked=False, selected=list(items): self._play_next(selected)
+        )
+        queue_action = menu.addAction("Queue selected" if multiple else "Queue")
+        queue_action.triggered.connect(
+            lambda _checked=False, selected=list(items): self._append_to_queue(selected)
         )
         menu.addSeparator()
         self._add_playlist_destinations(menu, items)
@@ -4648,6 +4662,7 @@ class MediaLibraryPage(QWidget):
             lambda _checked=False, selected=list(items): self._permanently_delete_media(selected)
         )
         menu.exec(global_position)
+        return menu
 
     def _playback_display_edit_modes(self, path: str | Path) -> tuple[str, str]:
         """Return the active or saved playback profile for a video."""
@@ -4962,6 +4977,9 @@ class MediaLibraryPage(QWidget):
         selected = self._selected_library_items()
         self._append_to_queue(selected)
 
+    def play_next_selected(self) -> None:
+        self._play_next(self._selected_library_items())
+
     def _append_to_queue(self, selected: list[LibraryItem]) -> int:
         """Append unique tracks without interrupting the item currently playing."""
 
@@ -5045,6 +5063,8 @@ class MediaLibraryPage(QWidget):
             return
         if mode == "queue":
             self._append_to_queue(tracks)
+        elif mode == "next":
+            self._play_next(tracks)
         else:
             self._replace_queue(tracks, shuffle=(mode == "shuffle") or None)
 

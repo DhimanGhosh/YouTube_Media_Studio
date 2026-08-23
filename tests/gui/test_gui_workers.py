@@ -28,6 +28,18 @@ from youtube_audio_video_downloader.gui.runtime.workers import (
 
 class GuiWorkerProgressTest(unittest.TestCase):
 
+    def test_album_enricher_estimates_a_single_file_as_one_item(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            selected = Path(temporary_directory) / "Selected.mp3"
+            selected.write_bytes(b"audio")
+
+            total = _estimate_operation_total(
+                "album_metadata_enricher",
+                {"source_folder": str(selected)},
+            )
+
+        self.assertEqual(total, 1)
+
     def test_signal_stream_keeps_partial_prints_separate_per_thread(self) -> None:
         lines: list[str] = []
         stream = SignalTextStream(lines.append)

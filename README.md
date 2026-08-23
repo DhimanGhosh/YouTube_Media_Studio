@@ -217,7 +217,7 @@ available on the Pi. Remove the package with `youtube-media-studio-uninstall`.
 The desktop interface is organized as task-focused pages: search, download, split,
 edit, consolidate, inspect logs, configure defaults, and play the finished library.
 
-1. Open **Global Settings** once to confirm download and application-data defaults.
+1. Open **File → Settings…** once to confirm download and application-data defaults.
 2. Use **Search Song** to find a source, or open a downloader/splitter directly when
    you already have its URL.
 3. Review metadata and output locations before starting an operation.
@@ -270,7 +270,7 @@ splitting, playback, and deterministic catalog matching continue to work with AI
 
 | Mode | Setup | What happens |
 | --- | --- | --- |
-| **Local AI with Ollama** | Install and run Ollama separately, download a compatible model, then select **Ollama (local)** and the model under **Global Settings → AI providers and online evidence**. No API key is required. | Prompts and model responses stay on the user's computer. Internet evidence is still contacted when the selected workflow requires it. |
+| **Local AI with Ollama** | Install and run Ollama separately, download a compatible model, then select **Ollama (local)** and the model under **File → Settings… → AI providers and online evidence**. No API key is required. | Prompts and model responses stay on the user's computer. Internet evidence is still contacted when the selected workflow requires it. |
 | **Hosted AI with an API key** | Select NVIDIA NIM, OpenAI, Anthropic, Google Gemini, Groq, Hugging Face Inference, OpenRouter, or OpenCode Zen; then save that provider's key and model. | The selected provider runs through Agno. Its password-masked key/model draft is retained independently, and Ollama is the local fallback. |
 | **Compatible endpoint** | Select **Custom OpenAI-compatible**, enter its `/v1` base URL and model, and add a key only if the endpoint requires one. | Self-hosted and other compatible services can participate without provider-specific application code. |
 | **No AI** | Leave **Use AI for this task** off. | Wikipedia, catalog, web evidence, SerpApi (when separately configured), and deterministic rules perform the work without model calls. |
@@ -301,8 +301,10 @@ defaults** and restart. See the [desktop user guide](docs/USER_GUIDE.md#how-ai-a
 for configuration, fallback order, privacy notes, and log meanings.
 
 Album Enricher uses Wikipedia and Apple's public catalog by default. Users may add
-their own optional [SerpApi](https://serpapi.com/) key under **Global Settings** to use
+their own optional [SerpApi](https://serpapi.com/) key under **File → Settings…** to use
 Google Search as a fallback when those sources cannot identify an album or movie.
+Its source field accepts either one audio file (only that track is enriched) or a folder
+for recursive batch enrichment.
 
 ## Command line
 
@@ -333,8 +335,9 @@ Run `youtube-media-studio <command> --help` for command-specific options.
 ## How the release pipeline works
 
 Every successful push to a release line produces a complete, versioned release. Stable
-non-built-in-AI work ships from `release/2.x`; experimental built-in-AI work ships from
-`main` as a 3.x GitHub prerelease/beta:
+work ships from `release/2.x`; experimental built-in-AI work ships from `release/3.x`
+with explicit beta versions. `main` contains only the latest public release and its
+documentation:
 
 ```mermaid
 flowchart LR

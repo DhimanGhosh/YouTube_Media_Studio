@@ -14,7 +14,7 @@ For installation packages and platform requirements, see the
 - [First-time setup](#first-time-setup)
 - [How the interface works](#how-the-interface-works)
 - [Screen reference](#screen-reference)
-- [Configure Global Settings](#configure-global-settings)
+- [Configure application Settings](#configure-application-settings)
 - [How AI and internet evidence work](#how-ai-and-internet-evidence-work)
 - [Use Dashboard](#use-dashboard)
 - [Find and download a song](#find-and-download-a-song)
@@ -51,7 +51,7 @@ text remains the authoritative description of what it does.
 
 1. Install and start **YouTube Media Studio** from the Windows Start menu, macOS
    Applications, or the Linux application menu.
-2. Open **Global Settings**. Select the application data directory, output quality,
+2. Open **File → Settings…**. Select the application data directory, output quality,
    worker count, network retry behavior, and playback seek interval.
 3. Decide whether AI should be enabled by default. Ordinary deterministic downloading,
    editing, timestamp parsing, and playback do not require AI.
@@ -92,7 +92,7 @@ open /Applications/YouTubeMediaStudio.app
 
 ## How the interface works
 
-The sidebar selects one of 14 workspaces. A selected workspace remains available while
+The sidebar selects one of 13 workspaces. A selected workspace remains available while
 other jobs run in the background. The application disables only the run button for a
 workspace that already has a job, preventing that same task from being started twice.
 
@@ -106,7 +106,7 @@ workspace that already has a job, preventing that same task from being started t
 - **Version x.y.z** under the sidebar is the installed application version. Include it
   in a bug report.
 - Form state, output folders, statuses, and history are restored after restart when
-  workspace persistence is enabled in Global Settings.
+  workspace persistence is enabled in **File → Settings…**.
 
 ## Screen reference
 
@@ -124,26 +124,21 @@ workspace that already has a job, preventing that same task from being started t
 | **Album Consolidator** | Enrich metadata, then route verified tracks to album folders. | [Enrich and organize](#enrich-and-organize-an-existing-music-folder) |
 | **Utilities** | Format artist credits and parse timestamp text into JSON. | [Use Utilities](#use-utilities) |
 | **Live Logs** | Inspect, copy, clear, or save detailed operation output. | [Read Live Logs](#read-live-logs) |
-| **Global Settings** | Configure shared processing, playback, AI, privacy, and storage defaults. | [Configure Global Settings](#configure-global-settings) |
 | **Media Library** | Scan, filter, play, curate, queue, playlist, and serve local media. | [Use the local media library](#use-the-local-media-library) |
 
-## Configure Global Settings
+## Configure application Settings
 
-Global Settings controls values shared by the other workspaces. Expand only the group
-being changed, then select **Save and apply defaults**. **Reset app** clears tool forms,
+Choose **File → Settings…** or press `Ctrl+,` to open the separate, resizable Settings
+window. Select a category on the left, edit its controls on the right, then select
+**Save and apply defaults**. The processing workspaces remain available behind this
+non-modal window. **Reset app** clears tool forms,
 saved provider credentials/models, saved state, and restored defaults; it does not act as
 a media-library deletion command. Saved playlists and media files are preserved even
 when configured library folders are cleared.
 
-![Global processing settings](media/user-guide/workspaces/global-settings-processing.png)
-
-| Callout | Area | Use |
-| --- | --- | --- |
-| 1 | Settings actions | Reset all application settings or save the edited defaults. |
-| 2 | Batch processing and network | Set parallel item workers, per-download connections, randomized delays, retries, retry delay, and the longer rate-limit wait. |
-| 3 | Audio and metadata defaults | Expand for MP3 bitrate, sample rate, and Wikipedia track-order behavior. |
-| 4 | Media Playback | Expand for audio/video seek controls and video display memory. |
-| 5 | AI providers and online evidence | Expand for provider, model, credentials, Ollama fallback, and SerpApi. |
+The category list contains Software updates, Batch processing and network, Audio and
+metadata, Media playback, AI providers and online evidence, Application behavior and
+privacy, and Storage and appearance.
 
 ### Batch processing and network
 
@@ -162,17 +157,6 @@ when configured library folders are cleared.
   detected browser-cookie support. Source installs can update yt-dlp directly; packaged
   installs use the application updater to receive repaired binaries.
 
-![Audio and playback settings](media/user-guide/workspaces/global-settings-audio-playback.png)
-
-| Callout | Area | Use |
-| --- | --- | --- |
-| 1 | Settings actions | Save the values after editing. |
-| 2 | Batch processing | Collapsed here; expand to change network/concurrency defaults. |
-| 3 | Audio and metadata defaults | Select MP3 bitrate, sample rate, and verified Wikipedia ordering. |
-| 4 | Media Playback | Set the `<<`/`>>` and keyboard seek interval and choose whether crop/aspect carries to the next video. |
-| 5 | AI and online evidence | Collapsed provider group. |
-| 6 | Application behavior and privacy | Collapsed state, diagnostics, and suggestion group. |
-
 ### Audio, metadata, and playback
 
 - **Default MP3 bitrate** offers 320, 256, 192, or 128 kbps.
@@ -183,14 +167,6 @@ when configured library folders are cleared.
   Shift+Left/Right seeks twice this number.
 - **Crop/aspect memory** off means each newly loaded video starts at Default. On carries
   the last display choices to the next video and the next application session.
-
-![AI provider settings](media/user-guide/workspaces/global-settings-ai.png)
-
-| Callout | Area | Use |
-| --- | --- | --- |
-| 1 | Settings actions | Apply the selected provider and credentials. |
-| 2–4 | Other collapsed groups | Processing, audio, and playback defaults remain independent. |
-| 5 | AI providers and online evidence | Choose the default AI policy, primary provider, provider-specific key/model/base URL, local Ollama fallback, and optional SerpApi key. |
 
 Supported primary providers are Ollama, NVIDIA NIM, OpenAI, Anthropic, Google Gemini,
 Groq, Hugging Face Inference, OpenRouter, OpenCode Zen, and a custom
@@ -205,15 +181,6 @@ operation logs.
 - **SerpApi key** does not run a language model. It supplies optional Google Search and
   Google Images evidence when built-in catalog sources are insufficient.
 
-![Behavior and storage settings](media/user-guide/workspaces/global-settings-behavior-storage.png)
-
-| Callout | Area | Use |
-| --- | --- | --- |
-| 1 | Settings actions | Save or reset. |
-| 2–5 | Other setting groups | Expand any independent group without losing values in another. |
-| 6 | Application behavior and privacy | Restore workspace state, opt into local crash reports, and set the Media Library suggestion count. |
-| 7 | Storage and appearance | Move the application-data folder, open it, and tune the live glass “Crystalness” level. |
-
 Changing the application-data folder safely copies existing application data and takes
 effect on the next start. Crash reporting is local and opt-in. **Open data folder** opens
 the exact active location.
@@ -221,6 +188,8 @@ the exact active location.
 Application updates use public GitHub Releases and require no Google sign-in. The
 stable 2.x channel is selected by default. Enable **Include 3.x beta releases** only to
 try experimental built-in-AI builds; turning it off offers the latest stable 2.x build.
+Use the dedicated, expanded **Software updates** section or choose **Help → Check for
+Updates…** from the application menu bar.
 
 ## How AI and internet evidence work
 
@@ -317,7 +286,7 @@ From scratch:
 
 The output filename is generated from `Title - Album - Artists`. The saved MP3 receives
 title, album, normalized artists, year, artwork, and track numbering. Download pacing,
-retries, bitrate, sample rate, worker count, and connections come from Global Settings.
+retries, bitrate, sample rate, worker count, and connections come from **File → Settings…**.
 The activity card and Live Logs update during transfer; fragment lines include the
 segment position when the source exposes it.
 
@@ -455,7 +424,7 @@ Verify it manually because an incorrect first boundary shifts the entire album.
 | 1 | AI policy | Controls AI-assisted mixed-track extraction and metadata validation. |
 | 2 | Jukebox extraction job | Add/import compilations, choose output/temp/report/overwrite behavior, and start. |
 | 3 | Jukebox editor | Name the compilation, find/paste its link, enable numbering, then add or extract tracks. |
-| 4 | Shared defaults reminder | Worker, retry, delay, bitrate, and sample-rate values come from Global Settings. |
+| 4 | Shared defaults reminder | Worker, retry, delay, bitrate, and sample-rate values come from **File → Settings…**. |
 
 Jukebox track rows contain **Start**, **End**, **Album**, **Artists**, **Album Art**, and
 **Release Year** because the values may differ for every song. After extraction, each
@@ -585,7 +554,7 @@ artist. Each file is written through a temporary copy; failures are listed indiv
 | Callout | Area | Use |
 | --- | --- | --- |
 | 1 | AI policy | Enables optional metadata and pre-move identity verification. |
-| 2 | Album enricher | Repair metadata recursively without moving files. |
+| 2 | Album enricher | Repair one audio file or a folder recursively without moving files. |
 | 3 | Move into album folders | Choose destination and enrichment scope, then route approved files. |
 | 4 | Consolidation rules | On-screen summary of matching, naming, duplicate, skip, and ordering rules. |
 
@@ -593,7 +562,8 @@ Album Consolidator has two intentionally separate stages.
 
 ### Stage 1: Album enricher
 
-1. Select the source folder containing incoming tracks.
+1. Select a single audio file to enrich only that track, or select a source folder to
+   enrich supported tracks recursively. Pasted file paths are accepted in the same field.
 2. **Enable destination path for enrichment** only when the destination should also be
    part of the enrichment scan.
 3. Enable **Recheck files already marked complete** to repair a previously accepted but
@@ -601,6 +571,9 @@ Album Consolidator has two intentionally separate stages.
 4. Select **Run album enricher**.
 5. Inspect `[ENRICHED]`, `[METADATA-REVIEW]`, and `[ENRICH-SKIPPED]` lines. Correct an
    unresolved file in Edit File or rerun when better evidence is available.
+
+Single-file enrichment does not run album-wide Wikipedia ordering, so sibling tracks in
+the selected file's folder are not modified.
 
 Enrichment searches built-in sources such as Wikipedia and Apple's catalog. With a
 SerpApi key, Google Search and Images are fallbacks when built-in evidence is
@@ -809,7 +782,7 @@ year filters to that exact year.
 
 Transport controls are ordered **Shuffle, Backward, Previous, Play/Pause, Next,
 Forward, Stop, Repeat**. Backward and Forward use solid double-triangle icons and the
-Global Settings seek interval. Video adds **Aspect**, **Crop**, and **Full screen**;
+the **File → Settings… → Media playback** seek interval. Video adds **Aspect**, **Crop**, and **Full screen**;
 those controls are hidden for audio.
 
 - Clicking anywhere on the seek slider jumps/animates to that position.

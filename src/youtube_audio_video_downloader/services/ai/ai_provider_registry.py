@@ -1,4 +1,4 @@
-"""Stable provider metadata shared by Global Settings and Agno model creation."""
+"""Stable provider metadata shared by Settings and Agno model creation."""
 
 from __future__ import annotations
 

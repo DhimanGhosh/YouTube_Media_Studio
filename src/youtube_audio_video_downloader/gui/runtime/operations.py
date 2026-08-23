@@ -17,7 +17,10 @@ from youtube_audio_video_downloader.core.cancellation import CancellationToken
 from youtube_audio_video_downloader.domain.models import DownloadResult
 from youtube_audio_video_downloader.gui.runtime.ai_usage import operation_ai_usage
 from youtube_audio_video_downloader.services.albums.album_splitter import YouTubeAlbumSplitter
-from youtube_audio_video_downloader.services.albums.album_consolidator import consolidate_albums
+from youtube_audio_video_downloader.services.albums.album_consolidator import (
+    SUPPORTED_AUDIO_EXTENSIONS,
+    consolidate_albums,
+)
 from youtube_audio_video_downloader.services.albums.album_metadata_enricher import (
     enrich_folder_metadata,
     enrich_media_files,
@@ -268,34 +271,49 @@ def _run_album_consolidator(
 def _run_album_metadata_enricher(
     params: dict[str, Any], token: CancellationToken
 ) -> OperationSummary:
-    source = resolve_album_folder_successor(
+    requested_source = Path(
         str(params.get("source_folder", "") or "")
-    )
-    report = enrich_folder_metadata(
-        source,
-        additional_folders=(str(params.get("destination_folder", "") or ""),),
-        workers=int(params.get("workers", machine_parallel_workers()) or machine_parallel_workers()),
-        retries=int(params.get("retries", 3) or 3),
-        tracker_path=params.get("tracker_path"),
-        cancellation_token=token,
-        agentic_model=str(params.get("agentic_model", "") or ""),
-        ai_enabled=bool(params.get("ai_enabled", True)),
-        force_recheck=bool(params.get("force_recheck", False)),
-    )
+    ).expanduser().resolve()
+    source_is_file = requested_source.is_file()
+    common_options = {
+        "workers": int(
+            params.get("workers", machine_parallel_workers())
+            or machine_parallel_workers()
+        ),
+        "retries": int(params.get("retries", 3) or 3),
+        "tracker_path": params.get("tracker_path"),
+        "cancellation_token": token,
+        "agentic_model": str(params.get("agentic_model", "") or ""),
+        "ai_enabled": bool(params.get("ai_enabled", True)),
+        "force_recheck": bool(params.get("force_recheck", False)),
+    }
+    if source_is_file:
+        if requested_source.suffix.casefold() not in SUPPORTED_AUDIO_EXTENSIONS:
+            raise ValueError(f"Select a supported audio file: {requested_source}")
+        report = enrich_media_files([requested_source], **common_options)
+        source = requested_source
+    else:
+        source = resolve_album_folder_successor(requested_source)
+        report = enrich_folder_metadata(
+            source,
+            additional_folders=(str(params.get("destination_folder", "") or ""),),
+            **common_options,
+        )
     reordered = 0
     failed_ordering_folders: set[Path] = set()
     album_groups: dict[tuple[Path, str], str] = {}
-    for path in report.completed:
-        try:
-            album = read_media_metadata(path).album.strip()
-        except (OSError, RuntimeError, ValueError):
-            continue
-        if album:
-            album_base, _album_year = split_album_folder_name(album)
-            album_groups.setdefault(
-                (path.parent.resolve(), album_base.casefold()), album
-            )
-    if bool(params.get("wikipedia_track_order", True)):
+    if not source_is_file:
+        for path in report.completed:
+            try:
+                album = read_media_metadata(path).album.strip()
+            except (OSError, RuntimeError, ValueError):
+                continue
+            if album:
+                album_base, _album_year = split_album_folder_name(album)
+                album_groups.setdefault(
+                    (path.parent.resolve(), album_base.casefold()), album
+                )
+    if album_groups and bool(params.get("wikipedia_track_order", True)):
         if album_groups:
             print(
                 "[PROGRESS-PHASE] Wikipedia album ordering "
@@ -326,13 +344,13 @@ def _run_album_metadata_enricher(
         )
     return OperationSummary(
         operation="album_metadata_enricher",
-        total=report.scanned,
+        total=1 if source_is_file else report.scanned,
         tagged=len(report.updated),
         reordered=reordered,
         skipped=len(report.skipped),
         tracked=report.tracked,
         failed=len(report.failed),
-        output_path=str(Path(str(params.get("source_folder", "") or "")).expanduser().resolve()),
+        output_path=str(source.parent if source_is_file else source),
         completed_items=tuple(path.name for path in report.updated),
         failed_items=report.failed,
     )

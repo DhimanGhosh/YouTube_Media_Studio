@@ -22,13 +22,15 @@ from PyQt6.QtCore import (
     QUrl,
     pyqtSignal,
 )
-from PyQt6.QtGui import QCloseEvent, QDesktopServices, QGuiApplication
+from PyQt6.QtGui import QCloseEvent, QDesktopServices, QGuiApplication, QKeySequence
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
     QFormLayout,
     QFrame,
@@ -46,6 +48,7 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSlider,
+    QSplitter,
     QSpinBox,
     QStackedWidget,
     QTabWidget,
@@ -196,7 +199,7 @@ class MainWindow(QMainWindow):
         data_directory: str | Path | None = None,
     ) -> None:
         super().__init__()
-        self.setWindowTitle(f"{APP_DISPLAY_NAME} {application_version()}")
+        self.setWindowTitle(APP_DISPLAY_NAME)
         self.setMinimumSize(1120, 720)
         self.resize(1380, 860)
         self.setWindowFlags(
@@ -306,6 +309,116 @@ class MainWindow(QMainWindow):
         root_layout.setContentsMargins(0, 0, 0, 0)
         root_layout.addWidget(shell, 0, 0)
         self.setCentralWidget(root)
+        self._build_menu_bar()
+
+    def _build_menu_bar(self) -> None:
+        """Expose standard application navigation and maintenance commands."""
+
+        menu_bar = self.menuBar()
+        menu_bar.setNativeMenuBar(False)
+
+        file_menu = menu_bar.addMenu("&File")
+        settings_action = file_menu.addAction("&Settings…")
+        settings_action.setShortcut(QKeySequence("Ctrl+,"))
+        settings_action.triggered.connect(lambda: self._open_settings_dialog())
+        file_menu.addSeparator()
+        self.menu_open_output_action = file_menu.addAction("Open Last Output Folder")
+        self.menu_open_output_action.setEnabled(False)
+        self.menu_open_output_action.triggered.connect(self._open_last_output)
+        file_menu.addSeparator()
+        exit_action = file_menu.addAction("E&xit")
+        exit_action.setShortcut(QKeySequence.StandardKey.Quit)
+        exit_action.triggered.connect(lambda: self.close())
+
+        view_menu = menu_bar.addMenu("&View")
+        for label, page, shortcut in (
+            ("Dashboard", 0, "Ctrl+1"),
+            ("Media Library", 13, "Ctrl+L"),
+            ("Live Logs", 11, "Ctrl+Shift+L"),
+        ):
+            action = view_menu.addAction(label)
+            action.setShortcut(QKeySequence(shortcut))
+            action.triggered.connect(
+                lambda _checked=False, page_index=page: self._set_page(page_index)
+            )
+
+        help_menu = menu_bar.addMenu("&Help")
+        self.check_for_updates_action = help_menu.addAction("Check for Updates…")
+        self.check_for_updates_action.triggered.connect(
+            lambda: self._check_for_updates(interactive=True)
+        )
+        diagnostics_action = help_menu.addAction("Downloader Diagnostics…")
+        diagnostics_action.triggered.connect(self._diagnose_download_setup)
+        help_menu.addSeparator()
+        about_action = help_menu.addAction(f"About {APP_DISPLAY_NAME}")
+        about_action.triggered.connect(self._show_about)
+        self._build_settings_dialog()
+
+    def _build_settings_dialog(self) -> None:
+        self._settings_dialog = QDialog(self)
+        self._settings_dialog.setWindowTitle(f"Settings — {APP_DISPLAY_NAME}")
+        self._settings_dialog.setModal(False)
+        self._settings_dialog.setMinimumSize(960, 640)
+        self._settings_dialog.resize(1380, 850)
+
+        layout = QVBoxLayout(self._settings_dialog)
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.settings_categories = QListWidget()
+        self.settings_categories.setMinimumWidth(240)
+        self.settings_categories.setMaximumWidth(340)
+        for label, key in (
+            ("Software updates", "software_updates"),
+            ("Batch processing and network", "batch_network"),
+            ("Audio and metadata", "audio_metadata"),
+            ("Media playback", "video_playback"),
+            ("AI providers and online evidence", "ai_providers"),
+            ("Application behavior and privacy", "behavior_privacy"),
+            ("Storage and appearance", "storage_appearance"),
+        ):
+            item = QListWidgetItem(label)
+            item.setData(Qt.ItemDataRole.UserRole, key)
+            self.settings_categories.addItem(item)
+        self.settings_categories.currentRowChanged.connect(
+            self._settings_category_changed
+        )
+        splitter.addWidget(self.settings_categories)
+        splitter.addWidget(self.settings_page)
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([280, 1100])
+        layout.addWidget(splitter, 1)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(self._settings_dialog.close)
+        layout.addWidget(buttons)
+        self.settings_categories.setCurrentRow(0)
+
+    def _settings_category_changed(self, row: int) -> None:
+        item = self.settings_categories.item(row)
+        if item is None:
+            return
+        selected_key = str(item.data(Qt.ItemDataRole.UserRole) or "")
+        for key, section in self.settings_sections.items():
+            section.set_expanded(key == selected_key)
+        section = self.settings_sections.get(selected_key)
+        if section is not None:
+            QTimer.singleShot(
+                0,
+                lambda target=section: self.settings_page.ensureWidgetVisible(target),
+            )
+
+    def _open_settings_dialog(self) -> None:
+        self._settings_dialog.show()
+        self._settings_dialog.raise_()
+        self._settings_dialog.activateWindow()
+
+    def _show_about(self) -> None:
+        QMessageBox.about(
+            self,
+            f"About {APP_DISPLAY_NAME}",
+            f"{APP_DISPLAY_NAME} {application_version()}\n\n"
+            "Download, enrich, organize, and play your local media library.",
+        )
 
     def _build_sidebar(self) -> QWidget:
         sidebar = QWidget()
@@ -349,13 +462,13 @@ class MainWindow(QMainWindow):
             ("▣  Album Consolidator", 9),
             ("⌘  Utilities", 10),
             ("›_  Live Logs", 11),
-            ("⚙  Global Settings", 12),
             ("♫  Media Library", 13),
         ]
         for text, index in items:
             button = QPushButton(text)
             button.setObjectName("navButton")
             button.setCheckable(True)
+            button.setProperty("pageIndex", index)
             button.clicked.connect(lambda checked=False, page=index: self._set_page(page))
             navigation_layout.addWidget(button)
             self._nav_buttons.append(button)
@@ -395,7 +508,8 @@ class MainWindow(QMainWindow):
         self.pages.addWidget(self._build_album_consolidator_page())
         self.pages.addWidget(self._build_utilities_page())
         self.pages.addWidget(self._build_logs_page())
-        self.pages.addWidget(self._build_settings_page())
+        self.settings_page = self._build_settings_page()
+        self.pages.addWidget(QWidget())  # Reserved legacy Global Settings page index.
         self.media_library = MediaLibraryPage(self.settings, self)
         self.media_library.ai_identity_resolver = self._active_ai_identity
         self.media_library.request_search_song.connect(self._search_missing_library_song)
@@ -1223,7 +1337,7 @@ class MainWindow(QMainWindow):
             "Parallel downloads with independent randomized delays",
             "ID3 title, album, artists, year, artwork, and track numbering",
             "Safe existing-file handling and JSON result reports",
-            "Workers, delays, retries, MP3 quality, and sample rate are managed in Global Settings",
+            "Workers, delays, retries, MP3 quality, and sample rate are managed in File → Settings…",
         ]))
         layout.addStretch(1)
         return page
@@ -1271,8 +1385,8 @@ class MainWindow(QMainWindow):
         layout.addWidget(card)
         self.video_download_progress = DownloadProgressPanel()
         layout.addWidget(self.video_download_progress)
-        layout.addWidget(self._feature_card("Global Settings", [
-            "Workers, download delays, retry behavior, MP3 quality, and sample rate are configured once in Global Settings.",
+        layout.addWidget(self._feature_card("Shared settings", [
+            "Workers, download delays, retry behavior, MP3 quality, and sample rate are configured once from the Settings window.",
         ]))
         layout.addStretch(1)
         return page
@@ -1323,8 +1437,8 @@ class MainWindow(QMainWindow):
         layout.addWidget(card)
         self.album_download_progress = DownloadProgressPanel()
         layout.addWidget(self.album_download_progress)
-        layout.addWidget(self._feature_card("Global Settings", [
-            "Workers, download delays, retries, MP3 bitrate, and sample rate are configured once in Global Settings.",
+        layout.addWidget(self._feature_card("Shared settings", [
+            "Workers, download delays, retries, MP3 bitrate, and sample rate are configured once from the Settings window.",
         ]))
         layout.addStretch(1)
         return page
@@ -1369,8 +1483,8 @@ class MainWindow(QMainWindow):
         layout.addWidget(card)
         self.jukebox_download_progress = DownloadProgressPanel()
         layout.addWidget(self.jukebox_download_progress)
-        layout.addWidget(self._feature_card("Global Settings", [
-            "Workers, download delays, retries, MP3 bitrate, and sample rate are configured once in Global Settings.",
+        layout.addWidget(self._feature_card("Shared settings", [
+            "Workers, download delays, retries, MP3 bitrate, and sample rate are configured once from the Settings window.",
         ]))
         layout.addStretch(1)
         return page
@@ -2065,14 +2179,14 @@ class MainWindow(QMainWindow):
             "Search and complete metadata, then retag and rename songs recursively using verified matches.",
         )
         self.album_consolidator_source = PathPicker(
-            placeholder="Folder containing album tracks",
+            placeholder="Audio file or folder containing album tracks",
             mode="folder",
         )
         self.album_enrich_destination_enabled = self._check(
             "Enable destination path for enrichment",
             False,
         )
-        enrich_form.addRow("Source folder", self.album_consolidator_source)
+        enrich_form.addRow("Source file or folder", self.album_consolidator_source)
         enrich_form.addRow("Destination scan", self.album_enrich_destination_enabled)
         self.album_enrich_force_recheck = self._check(
             "Recheck files already marked complete (repairs a wrong year)", False
@@ -2139,7 +2253,8 @@ class MainWindow(QMainWindow):
         layout.addWidget(enrich_card)
         layout.addWidget(move_card)
         layout.addWidget(self._feature_card("Consolidation rules", [
-            "Album Enricher never moves files; Move enrichment is enabled by default",
+            "Album Enricher accepts one audio file or a folder and never moves files",
+            "A selected audio file is enriched alone; album-wide ordering is not run",
             "Disable move enrichment after stage 1 to route existing tags without repeating it",
             "Track indexing still runs when move enrichment is disabled",
             "Enable the move scope option to enrich the complete destination tree instead",
@@ -2157,7 +2272,7 @@ class MainWindow(QMainWindow):
             "Existing album folders are reused; existing files are never overwritten",
             "After moving, Wikipedia order is compressed to the downloaded subset as 1, 2, 3…",
             "Source and destination selections persist when the application closes",
-            "Workers, retries, network waits, audio defaults, and Wikipedia ordering are managed in Global Settings",
+            "Workers, retries, network waits, audio defaults, and Wikipedia ordering are managed in File → Settings…",
         ]))
         layout.addStretch(1)
         return page
@@ -2337,8 +2452,8 @@ class MainWindow(QMainWindow):
     # ---------------------------------------------------------------- settings
     def _build_settings_page(self) -> QWidget:
         page, layout = self._page_container(
-            "Global Settings",
-            "Configure application-wide defaults. Expand only the section you need.",
+            "Settings",
+            "Configure application-wide defaults. Select a category on the left.",
         )
         self.settings_workers = self._spin(
             1,
@@ -2585,6 +2700,27 @@ class MainWindow(QMainWindow):
         layout.addWidget(actions_card)
 
         self.settings_sections: dict[str, CollapsibleSection] = {}
+        updates_section, updates_body, updates_form = self._settings_group(
+            "Software updates",
+            "Check GitHub Releases and choose whether this installation follows the stable or beta channel.",
+            "software_updates",
+            expanded=True,
+        )
+        installed_version = QLabel(application_version())
+        installed_version.setObjectName("mutedLabel")
+        updates_form.addRow("Installed version", installed_version)
+        updates_form.addRow("Update channel", self.settings_beta_updates)
+        updates_form.addRow("Channel status", update_controls)
+        update_note = QLabel(
+            "Stable receives public 2.x releases. Enable beta only to receive "
+            "experimental 3.x beta releases."
+        )
+        update_note.setObjectName("mutedLabel")
+        update_note.setWordWrap(True)
+        updates_body.addWidget(update_note)
+        self.settings_sections["software_updates"] = updates_section
+        layout.addWidget(updates_section)
+
         batch_section, _batch_body, batch_form = self._settings_group(
             "Batch processing and network",
             "Concurrency, pacing, retry, and rate-limit defaults used by download workflows.",
@@ -2659,8 +2795,6 @@ class MainWindow(QMainWindow):
         behavior_form.addRow("Workspace state", self.settings_persist_state)
         behavior_form.addRow("Crash-report storage", self.settings_crash_reports)
         behavior_form.addRow("Library suggestions", self.settings_search_suggestions)
-        behavior_form.addRow("Update channel", self.settings_beta_updates)
-        behavior_form.addRow("Application updates", update_controls)
         self.settings_sections["behavior_privacy"] = behavior_section
         layout.addWidget(behavior_section)
 
@@ -2711,11 +2845,14 @@ class MainWindow(QMainWindow):
         return card
 
     def _set_page(self, index: int) -> None:
+        if index == 12:
+            self._open_settings_dialog()
+            return
         if not 0 <= index < self.pages.count():
             index = 0
         self.pages.setCurrentIndex(index)
-        for button_index, button in enumerate(self._nav_buttons):
-            button.setChecked(button_index == index)
+        for button in self._nav_buttons:
+            button.setChecked(int(button.property("pageIndex")) == index)
         self.settings.setValue("window/last_page", index)
         operation = {
             1: "search_song",
@@ -2736,6 +2873,8 @@ class MainWindow(QMainWindow):
         try:
             index = int(self.settings.value("window/last_page", 0))
         except (TypeError, ValueError):
+            index = 0
+        if index == 12:
             index = 0
         # Preserve the selected workflow as new pages are inserted.
         schema = int(self.settings.value("window/navigation_schema", 1))
@@ -2758,6 +2897,8 @@ class MainWindow(QMainWindow):
             index += 1
         if schema < 8 and index >= 8:
             index += 1
+        if index == 12:
+            index = 0
         self.settings.setValue("window/navigation_schema", 8)
         self._set_page(index)
 
@@ -3387,11 +3528,15 @@ class MainWindow(QMainWindow):
             self.open_output_button.setEnabled(
                 Path(self._last_output_folder).is_dir()
             )
+            self.menu_open_output_action.setEnabled(
+                Path(self._last_output_folder).is_dir()
+            )
 
     def _open_last_output(self) -> None:
         folder = Path(self._last_output_folder).expanduser()
         if not self._last_output_folder or not folder.is_dir():
             self.open_output_button.setEnabled(False)
+            self.menu_open_output_action.setEnabled(False)
             QMessageBox.warning(
                 self,
                 "Output folder unavailable",
@@ -3509,14 +3654,14 @@ class MainWindow(QMainWindow):
         if diagnostic.stale:
             self._append_log(
                 "[YT-DLP-WARNING] Installed yt-dlp is over 60 days old; use "
-                "Global Settings > Diagnose / Auto-fix downloads."
+                "File → Settings… → Batch processing and network → Diagnose / Auto-fix downloads."
             )
             if getattr(sys, "frozen", False):
                 QMessageBox.warning(
                     self,
                     "Downloader update recommended",
-                    f"yt-dlp {diagnostic.version} is over 60 days old. Open Global "
-                    "Settings and run Diagnose / Auto-fix downloads before downloading.",
+                    f"yt-dlp {diagnostic.version} is over 60 days old. Open File → "
+                    "Settings… and run Diagnose / Auto-fix downloads before downloading.",
                 )
 
     def _update_thread_finished(self) -> None:

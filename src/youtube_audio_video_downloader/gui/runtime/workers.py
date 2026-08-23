@@ -407,6 +407,13 @@ def _estimate_operation_total(operation: str, params: dict) -> int:
             if not text:
                 continue
             candidate = Path(text).expanduser().resolve()
+            if (
+                operation == "album_metadata_enricher"
+                and candidate.is_file()
+                and not candidate.is_symlink()
+            ):
+                roots.append(candidate)
+                continue
             if not candidate.is_dir():
                 continue
             if any(candidate == root or candidate.is_relative_to(root) for root in roots):
@@ -444,14 +451,18 @@ def _estimate_operation_total(operation: str, params: dict) -> int:
         )
 
         primary_total = sum(
-            1 for root in roots for path in root.rglob("*")
+            1
+            for root in roots
+            for path in ([root] if root.is_file() else root.rglob("*"))
             if path.is_file()
             and not path.is_symlink()
             and path.suffix.lower() in supported
         )
         if operation == "album_metadata_enricher":
             return untracked_audio_count(
-                path for root in roots for path in root.rglob("*")
+                path
+                for root in roots
+                for path in ([root] if root.is_file() else root.rglob("*"))
             )
         source_root = roots[0]
         moved_audio_estimate = untracked_audio_count(source_root.rglob("*"))

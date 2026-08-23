@@ -163,7 +163,7 @@ def recommend_library_tracks(
         raise ValueError("Describe an artist, genre, mood, or listening occasion.")
     selected_model = model.strip()
     if not selected_model:
-        raise ValueError("Configure an agentic model in Global Settings first.")
+        raise ValueError("Configure an agentic model in File → Settings… first.")
     bounded_limit = max(1, min(int(limit), MAX_RECOMMENDATIONS))
     all_items = list(items)
     if not all_items:

@@ -242,7 +242,7 @@ class LibraryRecommendationsTest(unittest.TestCase):
         ) as chat_mock:
             with self.assertRaisesRegex(ValueError, "Describe"):
                 recommend_library_tracks("", [track("x.mp3")], model="model")
-            with self.assertRaisesRegex(ValueError, "Global Settings"):
+            with self.assertRaisesRegex(ValueError, "File → Settings"):
                 recommend_library_tracks("mood", [track("x.mp3")], model="")
         chat_mock.assert_not_called()
 
