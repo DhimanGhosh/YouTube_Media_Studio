@@ -60,6 +60,33 @@ class GuiOperationsTest(unittest.TestCase):
         self.assertEqual(summary.tagged, 1)
         self.assertEqual(Path(summary.output_path), selected.parent.resolve())
 
+    def test_album_enricher_accepts_a_supported_file_already_in_tracker(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            selected = Path(temporary_directory) / "Already complete.mp3"
+            selected.write_bytes(b"audio")
+            report = MetadataEnrichmentReport(
+                scanned=0,
+                updated=(),
+                skipped=(),
+                failed=(),
+                completed=(selected,),
+                tracked=1,
+            )
+            with patch(
+                "youtube_audio_video_downloader.gui.runtime.operations.enrich_media_files",
+                return_value=report,
+            ) as file_enricher:
+                summary = execute_operation(
+                    "album_metadata_enricher",
+                    {"source_folder": str(selected)},
+                    CancellationToken(),
+                )
+
+        file_enricher.assert_called_once()
+        self.assertEqual(summary.total, 1)
+        self.assertEqual(summary.tracked, 1)
+        self.assertEqual(summary.failed, 0)
+
     def test_album_summary_completes_parent_when_all_enabled_tracks_finish(self) -> None:
         results = [
             DownloadResult(

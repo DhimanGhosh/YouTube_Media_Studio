@@ -17,7 +17,10 @@ from youtube_audio_video_downloader.core.cancellation import CancellationToken
 from youtube_audio_video_downloader.domain.models import DownloadResult
 from youtube_audio_video_downloader.gui.runtime.ai_usage import operation_ai_usage
 from youtube_audio_video_downloader.services.albums.album_splitter import YouTubeAlbumSplitter
-from youtube_audio_video_downloader.services.albums.album_consolidator import consolidate_albums
+from youtube_audio_video_downloader.services.albums.album_consolidator import (
+    SUPPORTED_AUDIO_EXTENSIONS,
+    consolidate_albums,
+)
 from youtube_audio_video_downloader.services.albums.album_metadata_enricher import (
     enrich_folder_metadata,
     enrich_media_files,
@@ -285,9 +288,9 @@ def _run_album_metadata_enricher(
         "force_recheck": bool(params.get("force_recheck", False)),
     }
     if source_is_file:
-        report = enrich_media_files([requested_source], **common_options)
-        if report.scanned == 0:
+        if requested_source.suffix.casefold() not in SUPPORTED_AUDIO_EXTENSIONS:
             raise ValueError(f"Select a supported audio file: {requested_source}")
+        report = enrich_media_files([requested_source], **common_options)
         source = requested_source
     else:
         source = resolve_album_folder_successor(requested_source)
@@ -341,7 +344,7 @@ def _run_album_metadata_enricher(
         )
     return OperationSummary(
         operation="album_metadata_enricher",
-        total=report.scanned,
+        total=1 if source_is_file else report.scanned,
         tagged=len(report.updated),
         reordered=reordered,
         skipped=len(report.skipped),
