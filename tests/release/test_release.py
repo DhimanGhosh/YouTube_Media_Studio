@@ -71,6 +71,11 @@ def test_media_player_release_tests_run_every_collected_case_in_small_batches(
     executed = [node_id for command in commands for node_id in command[6:]]
     assert executed == collected.splitlines()
 
+    commands.clear()
+    release_tool.run_media_player_tests_batched()
+    assert len(commands) == 23
+    assert all(len(command[6:]) == 1 for command in commands)
+
 
 def test_every_desktop_target_has_a_native_icon() -> None:
     assert release_tool.desktop_icon_for_target("windows").suffix == ".ico"

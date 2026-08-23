@@ -150,13 +150,13 @@ def check() -> None:
     run_media_player_tests_batched()
 
 
-def run_media_player_tests_batched(*, batch_size: int = 10) -> None:
+def run_media_player_tests_batched(*, batch_size: int = 1) -> None:
     """Run Qt Multimedia cases in fresh, bounded processes.
 
     Some headless Qt multimedia backends abort natively after enough player,
     thumbnail, and full-screen lifecycles have accumulated in one process.
-    Small deterministic batches still execute every collected test while
-    preventing an unrelated backend teardown from cancelling a release.
+    One fresh process per case still executes every collected test while
+    completely isolating multimedia backends and worker teardown.
     """
 
     test_file = "tests/gui/test_media_player.py"
