@@ -402,17 +402,17 @@ This is the complete **Auto fill album** workflow:
 7. Review every populated value. Auto-fill is a starting point, not permission to skip
    identity, boundary, artist, and artwork checks.
 
-Auto-fill can populate **Release Year**, **Album Art**, **Ytb Link**, and **Tracks**.
+Auto-fill can populate **Release Year**, **Album Art**, **Source media**, and **Tracks**.
 It does not select the final output/overwrite policy or approve the job on the user's
 behalf.
 
 #### Correct one field manually
 
+- Choose **YouTube URL** in **Source media** to paste or find an online source.
+- Choose **Local file** and **Browse…** to select audio/video already downloaded by
+  another tool. The source is never deleted or replaced.
 - **Find on YouTube** searches for the first full-album result using album name/year and
   then starts track extraction.
-- **Use local file…** selects an audio/video file already downloaded by another tool.
-  The splitter skips YouTube and uses the same timestamp, FFmpeg, metadata, artwork,
-  numbering, and output pipeline on that file.
 - **Find year** searches Wikipedia release evidence.
 - **Find cover** searches for a square cover; selecting it again excludes the current
   URL so another candidate can be found.
@@ -458,8 +458,8 @@ track can use **Find album**, **Find artists**, **Find year**, **Find cover**, a
 **Preview**. A catalog metadata lookup updates album, artists, year, and art as one
 consistent unit instead of mixing unrelated results.
 
-The Jukebox source row also accepts **Use local file…**, so manual track timings can be
-applied to an existing full compilation audio/video file without downloading it again.
+The Jukebox **Source media** row offers the same explicit **YouTube URL** and **Local
+file** choices. Local sources use manual track timings and are never deleted or replaced.
 
 Mashup, remix, and lo-fi titles are not blindly auto-enriched as ordinary releases.
 Review all boundaries and identities before selecting **Start jukebox split**.

@@ -1019,6 +1019,18 @@ class JsonBatchEditor(QWidget):
         auto_extract: bool = False,
     ) -> dict:
         values = values or {}
+        if self.kind in {"album", "jukebox"} and not values.get("ytb_link"):
+            local_source = next(
+                (
+                    values.get(alias)
+                    for alias in ("source_file", "file_path", "local_file")
+                    if values.get(alias)
+                ),
+                "",
+            )
+            if local_source:
+                values = dict(values)
+                values["ytb_link"] = local_source
         if self._incoming_entry_has_content(name, values):
             self._remove_blank_entries()
         if self.kind == "audio" and not values.get("title") and values.get("file_name"):
@@ -1076,7 +1088,7 @@ class JsonBatchEditor(QWidget):
                 )
             elif field == "ytb_link" and self.kind in {"album", "jukebox"}:
                 form.addRow(
-                    "Ytb Link",
+                    "Source media",
                     self._youtube_search_row(widget, name_edit, fields, section),
                 )
             elif field == "ytb_link" and self.kind == "video":
@@ -1155,6 +1167,10 @@ class JsonBatchEditor(QWidget):
             actions_layout.addWidget(extract_tracks)
             fields["__tracks_layout__"] = tracks_layout  # type: ignore[assignment]
             fields["__extract_button__"] = extract_tracks
+            apply_source_mode = fields.get("__apply_source_mode__")
+            source_mode = fields.get("__source_mode__")
+            if callable(apply_source_mode) and isinstance(source_mode, QComboBox):
+                apply_source_mode(source_mode.currentIndex())
             tracks_layout.addWidget(track_actions)
             fields["__tracks__"] = tracks  # type: ignore[assignment]
             form.addRow("Tracks", tracks_widget)
@@ -1906,14 +1922,20 @@ class JsonBatchEditor(QWidget):
         layout = QHBoxLayout(row)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(7)
-        link_edit.setPlaceholderText("Paste a URL or choose an existing audio/video file")
-        local_button = QPushButton("Use local file…")
+        source_mode = QComboBox()
+        source_mode.addItem("YouTube URL", "youtube")
+        source_mode.addItem("Local file", "local")
+        source_mode.setMinimumWidth(125)
+        source_mode.setAccessibleName("Source type")
+        local_button = QPushButton("Browse…")
         local_button.setObjectName("secondaryButton")
         local_button.setToolTip(
             "Use an audio/video file already downloaded outside this application"
         )
         local_button.clicked.connect(
-            lambda checked=False: self._choose_local_media_source(link_edit, section)
+            lambda checked=False: self._choose_local_media_source(
+                link_edit, section, source_mode
+            )
         )
         button = QPushButton("Find on YouTube")
         button.setObjectName("secondaryButton")
@@ -1925,12 +1947,56 @@ class JsonBatchEditor(QWidget):
                 name_edit, fields.get("release_year"), link_edit, fields, button, section
             )
         )
+        fields["__source_mode__"] = source_mode
+        fields["__source_browse__"] = local_button
+        fields["__source_search__"] = button
+        layout.addWidget(source_mode)
         layout.addWidget(link_edit, 1)
         layout.addWidget(local_button)
         layout.addWidget(button)
+
+        def apply_mode(index: int) -> None:
+            local = source_mode.itemData(index) == "local"
+            link_edit.setPlaceholderText(
+                "Choose an existing audio/video file"
+                if local
+                else "Paste a YouTube video URL"
+            )
+            local_button.setVisible(local)
+            button.setVisible(not local)
+            extract_button = fields.get("__extract_button__")
+            if isinstance(extract_button, QPushButton):
+                extract_button.setEnabled(not local)
+                extract_button.setToolTip(
+                    "For local files, import timestamps or add tracks manually. "
+                    "The original source file is preserved."
+                    if local
+                    else "Extract timestamps and singer credits from the YouTube description"
+                )
+            section.set_status("Local source" if local else "YouTube source")
+
+        source_mode.currentIndexChanged.connect(apply_mode)
+        fields["__apply_source_mode__"] = apply_mode  # type: ignore[assignment]
+        link_edit.textChanged.connect(
+            lambda text: source_mode.setCurrentIndex(source_mode.findData("youtube"))
+            if text.strip().casefold().startswith(("http://", "https://"))
+            and source_mode.currentData() != "youtube"
+            else None
+        )
+        existing = link_edit.text().strip()
+        is_url = existing.casefold().startswith(("http://", "https://"))
+        if existing and not is_url:
+            source_mode.setCurrentIndex(source_mode.findData("local"))
+        else:
+            apply_mode(source_mode.currentIndex())
         return row
 
-    def _choose_local_media_source(self, link_edit: QLineEdit, section: CollapsibleSection) -> None:
+    def _choose_local_media_source(
+        self,
+        link_edit: QLineEdit,
+        section: CollapsibleSection,
+        source_mode: QComboBox | None = None,
+    ) -> None:
         path, _selected_filter = QFileDialog.getOpenFileName(
             self,
             "Choose existing audio or video source",
@@ -1942,6 +2008,8 @@ class JsonBatchEditor(QWidget):
         )
         if path:
             link_edit.setText(str(Path(path).expanduser().resolve()))
+            if source_mode is not None:
+                source_mode.setCurrentIndex(source_mode.findData("local"))
             section.set_status("Local source ready")
             self.log_requested.emit(f"[LOCAL-SOURCE] Selected existing media: {path}")
 
