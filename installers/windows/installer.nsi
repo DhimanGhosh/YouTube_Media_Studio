@@ -9,8 +9,11 @@ Unicode true
 !ifndef VERSION
   !error "VERSION is required"
 !endif
-!ifndef GUI_PAYLOAD
-  !error "GUI_PAYLOAD is required"
+!ifndef GUI_PAYLOAD_DIR
+  !error "GUI_PAYLOAD_DIR is required"
+!endif
+!ifndef GUI_BUNDLE_EXE
+  !error "GUI_BUNDLE_EXE is required"
 !endif
 !ifndef CLI_PAYLOAD
   !error "CLI_PAYLOAD is required"
@@ -87,7 +90,8 @@ Section "${APP_NAME} (required)" SecMain
   System::Call 'Kernel32::SetEnvironmentVariable(t, t)i("YMS_UPGRADE_TARGET", "$INSTDIR\${APP_EXE}")'
   nsExec::ExecToLog 'powershell.exe -NoProfile -NonInteractive -Command "Get-CimInstance Win32_Process | Where-Object { $$_.ExecutablePath -and [StringComparer]::OrdinalIgnoreCase.Equals($$_.ExecutablePath, $$env:YMS_UPGRADE_TARGET) } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force }"'
   System::Call 'Kernel32::SetEnvironmentVariable(t, i)i("YMS_UPGRADE_TARGET", 0)'
-  File "/oname=${APP_EXE}" "${GUI_PAYLOAD}"
+  File /r "${GUI_PAYLOAD_DIR}\*"
+  Rename "$INSTDIR\${GUI_BUNDLE_EXE}" "$INSTDIR\${APP_EXE}"
   WriteUninstaller "$INSTDIR\${UNINSTALL_EXE}"
 
   WriteRegStr HKCU "${APP_REG_KEY}" "InstallDir" "$INSTDIR"

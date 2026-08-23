@@ -402,7 +402,7 @@ def build_desktop(target: str) -> Path:
             entry="run_app.py",
             output=gui_output,
             windowed=True,
-            onefile=target == "windows",
+            onefile=False,
         )
     )
     run(
@@ -437,8 +437,11 @@ def build_desktop(target: str) -> Path:
 
     if target == "windows":
         artifact = DIST / f"{EXECUTABLE_BASENAME}-{version}-windows-{machine}-Setup.exe"
+        gui_bundle = gui_output / EXECUTABLE_BASENAME
+        verify_windows_gui_bundle(gui_bundle)
+        verify_packaged_application(gui_bundle / f"{EXECUTABLE_BASENAME}.exe")
         build_windows_nsis_installer(
-            gui_output / f"{EXECUTABLE_BASENAME}.exe",
+            gui_bundle,
             cli_executable,
             icon_path,
             artifact,
@@ -534,7 +537,7 @@ def build_desktop(target: str) -> Path:
 
 
 def build_windows_nsis_installer(
-    gui_executable: Path,
+    gui_bundle: Path,
     cli_executable: Path,
     icon_path: Path,
     artifact: Path,
@@ -558,7 +561,8 @@ def build_windows_nsis_installer(
         [
             makensis,
             f"/DVERSION={version}",
-            f"/DGUI_PAYLOAD={gui_executable.resolve()}",
+            f"/DGUI_PAYLOAD_DIR={gui_bundle.resolve()}",
+            f"/DGUI_BUNDLE_EXE={EXECUTABLE_BASENAME}.exe",
             f"/DCLI_PAYLOAD={cli_executable.resolve()}",
             f"/DAPP_ICON={icon_path.resolve()}",
             f"/DOUTPUT_FILE={artifact.resolve()}",
@@ -566,6 +570,19 @@ def build_windows_nsis_installer(
         ],
         cwd=script.parent,
     )
+
+
+def verify_windows_gui_bundle(gui_bundle: Path) -> None:
+    """Require the self-contained onedir runtime before compiling its installer."""
+
+    executable = gui_bundle / f"{EXECUTABLE_BASENAME}.exe"
+    python_dlls = list(gui_bundle.rglob("python3*.dll"))
+    runtime_dlls = list(gui_bundle.rglob("VCRUNTIME140*.dll"))
+    if not executable.is_file() or not python_dlls or not runtime_dlls:
+        raise RuntimeError(
+            "Windows GUI bundle is incomplete: expected the application executable, "
+            "Python runtime DLL, and Visual C++ runtime DLLs"
+        )
 
 
 def verify_nsis_installer(installer: Path) -> None:
