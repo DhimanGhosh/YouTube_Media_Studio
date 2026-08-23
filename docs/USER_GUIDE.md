@@ -585,7 +585,7 @@ artist. Each file is written through a temporary copy; failures are listed indiv
 | Callout | Area | Use |
 | --- | --- | --- |
 | 1 | AI policy | Enables optional metadata and pre-move identity verification. |
-| 2 | Album enricher | Repair metadata recursively without moving files. |
+| 2 | Album enricher | Repair one audio file or a folder recursively without moving files. |
 | 3 | Move into album folders | Choose destination and enrichment scope, then route approved files. |
 | 4 | Consolidation rules | On-screen summary of matching, naming, duplicate, skip, and ordering rules. |
 
@@ -593,7 +593,8 @@ Album Consolidator has two intentionally separate stages.
 
 ### Stage 1: Album enricher
 
-1. Select the source folder containing incoming tracks.
+1. Select a single audio file to enrich only that track, or select a source folder to
+   enrich supported tracks recursively. Pasted file paths are accepted in the same field.
 2. **Enable destination path for enrichment** only when the destination should also be
    part of the enrichment scan.
 3. Enable **Recheck files already marked complete** to repair a previously accepted but
@@ -601,6 +602,9 @@ Album Consolidator has two intentionally separate stages.
 4. Select **Run album enricher**.
 5. Inspect `[ENRICHED]`, `[METADATA-REVIEW]`, and `[ENRICH-SKIPPED]` lines. Correct an
    unresolved file in Edit File or rerun when better evidence is available.
+
+Single-file enrichment does not run album-wide Wikipedia ordering, so sibling tracks in
+the selected file's folder are not modified.
 
 Enrichment searches built-in sources such as Wikipedia and Apple's catalog. With a
 SerpApi key, Google Search and Images are fallbacks when built-in evidence is

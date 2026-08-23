@@ -2065,14 +2065,14 @@ class MainWindow(QMainWindow):
             "Search and complete metadata, then retag and rename songs recursively using verified matches.",
         )
         self.album_consolidator_source = PathPicker(
-            placeholder="Folder containing album tracks",
+            placeholder="Audio file or folder containing album tracks",
             mode="folder",
         )
         self.album_enrich_destination_enabled = self._check(
             "Enable destination path for enrichment",
             False,
         )
-        enrich_form.addRow("Source folder", self.album_consolidator_source)
+        enrich_form.addRow("Source file or folder", self.album_consolidator_source)
         enrich_form.addRow("Destination scan", self.album_enrich_destination_enabled)
         self.album_enrich_force_recheck = self._check(
             "Recheck files already marked complete (repairs a wrong year)", False
@@ -2139,7 +2139,8 @@ class MainWindow(QMainWindow):
         layout.addWidget(enrich_card)
         layout.addWidget(move_card)
         layout.addWidget(self._feature_card("Consolidation rules", [
-            "Album Enricher never moves files; Move enrichment is enabled by default",
+            "Album Enricher accepts one audio file or a folder and never moves files",
+            "A selected audio file is enriched alone; album-wide ordering is not run",
             "Disable move enrichment after stage 1 to route existing tags without repeating it",
             "Track indexing still runs when move enrichment is disabled",
             "Enable the move scope option to enrich the complete destination tree instead",

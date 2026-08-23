@@ -303,6 +303,8 @@ for configuration, fallback order, privacy notes, and log meanings.
 Album Enricher uses Wikipedia and Apple's public catalog by default. Users may add
 their own optional [SerpApi](https://serpapi.com/) key under **Global Settings** to use
 Google Search as a fallback when those sources cannot identify an album or movie.
+Its source field accepts either one audio file (only that track is enriched) or a folder
+for recursive batch enrichment.
 
 ## Command line
 
