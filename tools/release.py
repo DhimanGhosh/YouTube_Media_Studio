@@ -842,6 +842,51 @@ def _verify_runtime_tools(tools: list[Path]) -> None:
                 f"{completed.stderr or completed.stdout}"
             )
 
+    ffmpeg = next(binary for binary in tools if binary.stem == "ffmpeg")
+    ffprobe = next(binary for binary in tools if binary.stem == "ffprobe")
+    with tempfile.TemporaryDirectory() as temporary:
+        sample = Path(temporary) / "runtime-smoke.wav"
+        render = subprocess.run(
+            [
+                str(ffmpeg),
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "anullsrc=r=8000:cl=mono",
+                "-t",
+                "0.05",
+                "-c:a",
+                "pcm_s16le",
+                str(sample),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        probe = subprocess.run(
+            [
+                str(ffprobe),
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                str(sample),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if render.returncode != 0 or probe.returncode != 0 or not probe.stdout.strip():
+            detail = render.stderr or probe.stderr or "no duration returned"
+            raise RuntimeError(f"Bundled FFmpeg media smoke check failed: {detail}")
+
 
 def verify_packaged_application(executable: Path) -> None:
     """Run the frozen artifact's doctor command with external tools removed from PATH."""
