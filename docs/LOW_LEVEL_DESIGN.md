@@ -264,7 +264,7 @@ flowchart LR
 The verifier groups compatible independent sources, checks local conflicts, and only
 returns writable values when the proposal belongs to a supported evidence group.
 
-## 9. Media Library internals
+## 9. Media Player internals
 
 ```mermaid
 classDiagram

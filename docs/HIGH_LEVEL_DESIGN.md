@@ -18,7 +18,7 @@ flowchart LR
     Desktop --> Core["YouTube Media Studio service layer"]
     CLI --> Core
 
-    Core --> LocalMedia["Local media library and output folders"]
+    Core --> LocalMedia["Local media player and output folders"]
     Core --> Settings["Per-user settings, trackers, diagnostics"]
     Core --> YouTube["YouTube via yt-dlp"]
     Core --> Catalogs["Wikipedia, Apple catalog, SerpApi, DuckDuckGo evidence"]
@@ -108,10 +108,10 @@ flowchart LR
     Result --> Worker
     Worker --> Logs["Live Logs and progress"]
     Worker --> Dashboard["Session history"]
-    Worker --> Refresh["Media Library refresh"]
+    Worker --> Refresh["Media Player refresh"]
 ```
 
-The Media Library is a persistent page with its own background scanner, search worker,
+The Media Player is a persistent page with its own background scanner, search worker,
 recommendation worker, path-based playlist store, queue, and `QMediaPlayer`. Playback
 continues while the user visits other pages. While the desktop runs, its embedded
 `ThreadingHTTPServer` publishes a path-hiding snapshot to PIN-authenticated browsers on

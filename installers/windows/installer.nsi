@@ -83,7 +83,11 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
 Section "${APP_NAME} (required)" SecMain
   SectionIn RO
   SetShellVarContext current
-  SetOutPath "$INSTDIR"
+  ; Extract the complete new onedir payload away from the live installation.
+  ; Copying over an existing _internal directory can retain old dist-info and
+  ; make the upgraded app report (or even import) the previous version.
+  RMDir /r "$INSTDIR\.update"
+  SetOutPath "$INSTDIR\.update"
 
   ; Close only the app installed at this exact path. Using an inherited
   ; environment variable avoids interpolating the path into PowerShell code.
@@ -91,24 +95,44 @@ Section "${APP_NAME} (required)" SecMain
   nsExec::ExecToLog 'powershell.exe -NoProfile -NonInteractive -Command "Get-CimInstance Win32_Process | Where-Object { $$_.ExecutablePath -and [StringComparer]::OrdinalIgnoreCase.Equals($$_.ExecutablePath, $$env:YMS_UPGRADE_TARGET) } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force }"'
   System::Call 'Kernel32::SetEnvironmentVariable(t, i)i("YMS_UPGRADE_TARGET", 0)'
   File /r "${GUI_PAYLOAD_DIR}\*"
-  ; A 2.15.0 onefile upgrade leaves this public-name executable behind. Stage
-  ; it only after unpacking succeeds, then restore it if the new verified
-  ; onedir launcher cannot be installed. This makes the replacement atomic.
+  ; Stage both the launcher and its complete runtime, then swap the new
+  ; payload into place. Restore both if either rename fails.
   Delete "$INSTDIR\${APP_EXE}.previous"
+  RMDir /r "$INSTDIR\_internal.previous"
   IfFileExists "$INSTDIR\${APP_EXE}" 0 legacy_launcher_staged
     ClearErrors
     Rename "$INSTDIR\${APP_EXE}" "$INSTDIR\${APP_EXE}.previous"
     IfErrors 0 legacy_launcher_staged
       Abort "Could not prepare ${APP_EXE} for upgrade. Close the application and run Setup again."
   legacy_launcher_staged:
-  ClearErrors
-  Rename "$INSTDIR\${GUI_BUNDLE_EXE}" "$INSTDIR\${APP_EXE}"
-  IfErrors 0 gui_executable_ready
+  IfFileExists "$INSTDIR\_internal\*" 0 old_runtime_staged
     ClearErrors
+    Rename "$INSTDIR\_internal" "$INSTDIR\_internal.previous"
+    IfErrors 0 old_runtime_staged
+      ClearErrors
+      Rename "$INSTDIR\${APP_EXE}.previous" "$INSTDIR\${APP_EXE}"
+      Abort "Could not prepare the application runtime for upgrade. Close the application and run Setup again."
+  old_runtime_staged:
+  ClearErrors
+  Rename "$INSTDIR\.update\_internal" "$INSTDIR\_internal"
+  IfErrors 0 new_runtime_ready
+    ClearErrors
+    Rename "$INSTDIR\_internal.previous" "$INSTDIR\_internal"
+    Rename "$INSTDIR\${APP_EXE}.previous" "$INSTDIR\${APP_EXE}"
+    Abort "Could not install the new application runtime. Run Setup again."
+  new_runtime_ready:
+  ClearErrors
+  Rename "$INSTDIR\.update\${GUI_BUNDLE_EXE}" "$INSTDIR\${APP_EXE}"
+  IfErrors 0 gui_executable_ready
+    RMDir /r "$INSTDIR\_internal"
+    ClearErrors
+    Rename "$INSTDIR\_internal.previous" "$INSTDIR\_internal"
     Rename "$INSTDIR\${APP_EXE}.previous" "$INSTDIR\${APP_EXE}"
     Abort "Could not replace ${APP_EXE}. Close the application and run Setup again."
   gui_executable_ready:
   Delete "$INSTDIR\${APP_EXE}.previous"
+  RMDir /r "$INSTDIR\_internal.previous"
+  RMDir /r "$INSTDIR\.update"
   WriteUninstaller "$INSTDIR\${UNINSTALL_EXE}"
 
   WriteRegStr HKCU "${APP_REG_KEY}" "InstallDir" "$INSTDIR"

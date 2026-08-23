@@ -181,7 +181,7 @@ override is blank, every file keeps its own track artist, making soundtrack and 
 folders safe to update. Titles and track numbers are preserved while filenames are rebuilt
 from the title, new shared album identity, and each resulting track artist.
 
-## 7. Media Library scan, filter, and browse
+## 7. Media Player scan, filter, and browse
 
 ```mermaid
 sequenceDiagram

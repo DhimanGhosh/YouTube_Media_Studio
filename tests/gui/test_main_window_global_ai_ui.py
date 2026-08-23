@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtCore import QSettings, Qt, QUrl  # noqa: E402
-from PyQt6.QtGui import QDesktopServices  # noqa: E402
+from PyQt6.QtGui import QDesktopServices, QKeySequence  # noqa: E402
 from PyQt6.QtTest import QTest  # noqa: E402
 from PyQt6.QtWidgets import (  # noqa: E402
     QApplication,
@@ -21,11 +21,15 @@ from PyQt6.QtWidgets import (  # noqa: E402
     QWidget,
 )
 
-from youtube_audio_video_downloader.gui.application.main_window import MainWindow  # noqa: E402
+from youtube_audio_video_downloader.gui.application.main_window import (  # noqa: E402
+    ApplicationUpdateDialog,
+    MainWindow,
+)
 from youtube_audio_video_downloader.gui.components.theme import APP_STYLE  # noqa: E402
 from youtube_audio_video_downloader.config.app_identity import APP_DISPLAY_NAME  # noqa: E402
 from youtube_audio_video_downloader.config.settings import machine_parallel_workers  # noqa: E402
 from youtube_audio_video_downloader.version import application_version  # noqa: E402
+from youtube_audio_video_downloader.services.updates import AvailableUpdate  # noqa: E402
 from youtube_audio_video_downloader.services.albums.album_editor import (  # noqa: E402
     AlbumFolderMetadata,
 )
@@ -91,6 +95,35 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         self.assertFalse(self.window.cancel_button.isEnabled())
         self.assertIn("QPushButton#dangerButton:disabled", APP_STYLE)
 
+    def test_update_dialog_renders_notes_and_keeps_install_in_one_window(self) -> None:
+        update = AvailableUpdate(
+            version="2.16.0",
+            tag="v2.16.0",
+            name="YouTube Media Studio 2.16.0",
+            notes="## What’s Changed\n\n* Better updates",
+            prerelease=False,
+            asset_name="YouTubeMediaStudio-2.16.0-windows-amd64-Setup.exe",
+            asset_url="https://example.invalid/setup.exe",
+            checksum_url="https://example.invalid/SHA256SUMS.txt",
+            page_url="https://example.invalid/release",
+        )
+        dialog = ApplicationUpdateDialog(update, self.window)
+        self.assertNotIn("##", dialog.notes.toPlainText())
+        self.assertIn("What’s Changed", dialog.notes.toPlainText())
+
+        dialog.start_download()
+        dialog.set_download_progress(63)
+        self.assertEqual(dialog.progress.value(), 63)
+        self.assertFalse(dialog.primary_button.isEnabled())
+
+        installer = self.data_directory / update.asset_name
+        installer.touch()
+        dialog.set_ready(installer)
+        self.assertEqual(dialog.primary_button.text(), "Install update")
+        self.assertTrue(dialog.primary_button.isEnabled())
+        self.assertIn("SHA-256 verified", dialog.progress.format())
+        dialog.close()
+
     def test_beta_update_toggle_immediately_updates_channel_status(self) -> None:
         self.assertEqual(self.window.update_status.text(), "Stable 2.x channel")
 
@@ -108,7 +141,10 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
             for action in self.window.menuBar().actions()
         }
 
-        self.assertEqual(set(menus), {"File", "Download", "Organize", "Edit", "View", "Help"})
+        self.assertEqual(
+            set(menus),
+            {"File", "Download", "Organize", "Edit", "View", "Media Player", "Help"},
+        )
         self.assertNotIn("&", "".join(action.text() for action in self.window.menuBar().actions()))
         workspace_labels = {
             "Search Song",
@@ -122,7 +158,6 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
             "Edit File",
             "Edit Album",
             "Dashboard",
-            "Media Library",
             "Live Logs",
         }
         workspace_actions = {
@@ -132,6 +167,8 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
             if not action.isSeparator()
         }
         self.assertEqual(set(workspace_actions), workspace_labels)
+        self.assertIsNone(menus["Media Player"])
+        self.assertEqual(self.window.media_player_action.shortcut(), QKeySequence("Ctrl+L"))
         self.assertTrue(all(not action.icon().isNull() for action in workspace_actions.values()))
         self.assertIn(
             "Check for Updates…",
@@ -306,7 +343,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
 
     def test_dashboard_quick_launch_buttons_open_the_named_workspace(self) -> None:
         expected_pages = {
-            "Open media library": 13,
+            "Open media player": 13,
             "Consolidate albums": 9,
             "Open utilities": 10,
         }
@@ -368,7 +405,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         labels = {button.text() for button in section.findChildren(QPushButton)}
         self.assertTrue(
             {
-                "Connect Google account",
+                "Sign in with Google",
                 "Back up now",
                 "Restore",
                 "Import YouTube playlist",
@@ -380,7 +417,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
             next(
                 button
                 for button in section.findChildren(QPushButton)
-                if button.text() == "Connect Google account"
+                if button.text() == "Sign in with Google"
             ).click()
         start.assert_called_once_with("connect")
 

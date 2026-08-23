@@ -105,7 +105,7 @@ class MusicVisualizer(QWidget):
         super().__init__(parent)
         self.setMinimumHeight(82)
         self.setAccessibleName("Live music spectrum")
-        self.setToolTip("Live frequency spectrum from Media Library playback")
+        self.setToolTip("Live frequency spectrum from Media Player playback")
         self._playing = False
         self._last_levels_at = 0.0
         self._levels = [IDLE_LEVEL] * BAR_COUNT

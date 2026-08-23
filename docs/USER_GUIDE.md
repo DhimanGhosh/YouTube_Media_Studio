@@ -2,7 +2,7 @@
 
 This is the complete desktop-application guide for a first-time user. It covers every
 menu-accessible workspace, the controls inside each workspace, automatic internet and AI
-assistance, the local Media Library, phone access, playback, and the checks to perform
+assistance, the local Media Player, phone access, playback, and the checks to perform
 before changing files. No Python or command-line knowledge is required.
 
 For installation packages and platform requirements, see the
@@ -26,7 +26,7 @@ For installation packages and platform requirements, see the
 - [Edit an album folder](#edit-an-album-folder)
 - [Enrich and organize an existing music folder](#enrich-and-organize-an-existing-music-folder)
 - [Use Utilities](#use-utilities)
-- [Use the local media library](#use-the-local-media-library)
+- [Use the local media player](#use-the-local-media-player)
 - [Read Live Logs](#read-live-logs)
 - [File-safety rules](#file-safety-rules)
 - [Troubleshooting](#troubleshooting)
@@ -95,8 +95,8 @@ open /Applications/YouTubeMediaStudio.app
 
 The standard top menu bar opens every workspace. **Download** contains search and
 download tools; **Organize** contains splitters, reorder, consolidation, and utilities;
-**Edit** contains file and album editors; and **View** contains Dashboard, Media Library,
-and Live Logs. Menu icons mirror each tool, and logical separators divide related
+**Edit** contains file and album editors; **View** contains Dashboard and Live Logs; and
+the dedicated **Media Player** action opens playback directly. Menu icons mirror each tool, and logical separators divide related
 commands. A selected workspace remains available while other jobs run in the background.
 The application disables only the run button for a workspace that already has a job,
 preventing that same task from being started twice.
@@ -129,7 +129,7 @@ preventing that same task from being started twice.
 | **Album Consolidator** | Enrich metadata, then route verified tracks to album folders. | [Enrich and organize](#enrich-and-organize-an-existing-music-folder) |
 | **Utilities** | Format artist credits and parse timestamp text into JSON. | [Use Utilities](#use-utilities) |
 | **Live Logs** | Inspect, copy, clear, or save detailed operation output. | [Read Live Logs](#read-live-logs) |
-| **Media Library** | Scan, filter, play, curate, queue, playlist, and serve local media. | [Use the local media library](#use-the-local-media-library) |
+| **Media Player** | Scan, filter, play, curate, queue, playlist, and serve local media. | [Use the local media player](#use-the-local-media-player) |
 
 ## Configure application Settings
 
@@ -138,7 +138,7 @@ window. Select a category on the left, edit its controls on the right, then sele
 **Save and apply defaults**. The processing workspaces remain available behind this
 non-modal window. **Reset app** clears tool forms,
 saved provider credentials/models, saved state, and restored defaults; it does not act as
-a media-library deletion command. Saved playlists and media files are preserved even
+a media-player deletion command. Saved playlists and media files are preserved even
 when configured library folders are cleared.
 
 The category list contains Software updates, Connected services, Batch processing and
@@ -149,7 +149,7 @@ Application behavior and privacy, and Storage and appearance.
 
 Google sign-in is optional and is not used for application updates. Under **Connected
 services**, select the Google OAuth desktop-client JSON supplied for the application,
-then choose **Connect Google account**. Authorization opens in the system browser; the
+then choose **Sign in with Google**. Authorization opens in the system browser; the
 refresh token is kept in the operating-system credential vault.
 
 - **Back up now** writes portable settings and playlist identities to the application's
@@ -252,7 +252,7 @@ Provider and SerpApi requests may count against the user's own plan or quota.
 | 3 | Completed | Count of completed tasks. |
 | 4 | Failed | Count of failed tasks. |
 | 5 | Default workers | Current shared parallel-worker value. |
-| 6 | Quick launch | Opens Media Library, Search Song, downloaders, splitters, Track Reorder, Edit File, Album Consolidator, or Utilities. |
+| 6 | Quick launch | Opens Media Player, Search Song, downloaders, splitters, Track Reorder, Edit File, Album Consolidator, or Utilities. |
 | 7 | Session history | Shows time, workflow, status, item count, and detail. **Clear** removes displayed session history and counters, not media. |
 
 Dashboard is a monitor and launcher. It does not contain media-job inputs. A background
@@ -537,7 +537,7 @@ destination before selecting **Redownload and edit**.
 ### Save a video playback crop / aspect profile
 
 Choose **Playback crop ratio**, **Playback aspect ratio**, or both, then select **Save
-playback settings**. These values are application metadata stored by the Media Library
+playback settings**. These values are application metadata stored by the Media Player
 for that video path. The video is not re-encoded, cropped, renamed, or written to in any
 way, and its encoded dimensions and original pixels remain unchanged.
 
@@ -546,7 +546,7 @@ how it fills the available viewing area. Other videos keep their own profiles or
 normal defaults. Opening this action from the active player copies its current Crop and
 Aspect selections into the editor. Saving both values as **Default** removes the profile.
 
-The Media Library can open a selected track directly in Edit File. A video context menu
+The Media Player can open a selected track directly in Edit File. A video context menu
 also exposes the playback crop/aspect profile action.
 
 ## Edit an album folder
@@ -663,16 +663,16 @@ Callout 1 contains the complete tab:
 6. Select **Parse timestamps** and review **Generated JSON** before importing it into a
    splitter.
 
-## Use the local media library
+## Use the local media player
 
-Media Library scans user-selected folders, derives a local index, browses artists and
+Media Player scans user-selected folders, derives a local index, browses artists and
 albums, filters all media, plays audio/video, manages a persistent queue and playlists,
 offers AI-assisted local curation, and optionally serves a phone client over trusted
 same-Wi-Fi access.
 
 ### Add, scan, search, and browse
 
-![Media Library overview](media/user-guide/media-library/overview.png)
+![Media Player overview](media/user-guide/media-library/overview.png)
 
 | Callout | Area | Use |
 | --- | --- | --- |
@@ -707,7 +707,7 @@ is extracted without modifying the video.
 
 ### Smart Library Curator
 
-![Smart Library Curator](media/user-guide/media-library/smart-curator.png)
+![Smart Library Curator](media/user-guide/media-player/smart-curator.png)
 
 | Callout | Area | Use |
 | --- | --- | --- |
@@ -751,7 +751,7 @@ After **Apply fixes**, affected metadata is updated and the library refreshes.
 
 ### Playlists
 
-![Playlist drawer](media/user-guide/media-library/playlists.png)
+![Playlist drawer](media/user-guide/media-player/playlists.png)
 
 | Callout | Area | Use |
 | --- | --- | --- |
@@ -790,7 +790,7 @@ reported separately.
 
 ### Now Playing queue
 
-![Now Playing queue](media/user-guide/media-library/now-playing-queue.png)
+![Now Playing queue](media/user-guide/media-player/now-playing-queue.png)
 
 | Callout | Area | Use |
 | --- | --- | --- |
@@ -831,7 +831,7 @@ or press Esc to return. Full-screen controls use the same theme and behavior as 
 controls. The transport controls remain horizontally centered against the complete
 screen, while the volume controls stay aligned to the right.
 
-![Full-screen video player](media/user-guide/media-library/fullscreen-player.png)
+![Full-screen video player](media/user-guide/media-player/fullscreen-player.png)
 
 | Callout | Area | What it does |
 | --- | --- | --- |
@@ -857,7 +857,7 @@ screen, while the volume controls stay aligned to the right.
 Keyboard playback controls activate only when playback—not a search/edit field—has
 focus.
 
-### Use the Media Library from a phone
+### Use the Media Player from a phone
 
 1. Connect PC and phone to the same trusted Wi-Fi.
 2. Turn **Phone access** on. Select **Details**, open a displayed address in a current

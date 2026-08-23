@@ -48,7 +48,7 @@ for:
    Drive and YouTube Data API v3, and supplies its downloaded desktop-client JSON. A
    source or development build can select that file under **File → Settings… →
    Connected services**.
-2. **Connect Google account** opens the system browser and uses Authorization Code with
+2. **Sign in with Google** opens the system browser and uses Authorization Code with
    PKCE, a random state value, and a temporary loopback redirect.
 3. The app requests `openid`, `email`, `drive.appdata`, and `youtube.readonly`. It cannot
    browse the user's normal Drive or modify YouTube data.
