@@ -4,6 +4,44 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [2.15.1] - 2026-08-23
+
+### Added
+
+- feat: add cloud profiles and menu navigation (`e57bd5f`)
+- feat: brand the Windows installer (`b6bb355`)
+- feat: add desktop menus settings and queue actions (`0096377`)
+- feat: ship resilient downloads and stable update channel (`b473a74`)
+
+### Fixed
+
+- fix: bundle Windows desktop runtime with installer (`6287b69`)
+- fix: accept tracked album enrichment files (`543196d`)
+- fix: enrich a selected album track only (`b5d490a`)
+- fix: pin Windows FFmpeg release runtime (`f6c648d`)
+- fix: clean every failed runtime download (`ea40e3c`)
+- fix: clean failed runtime staging and reject ARM (`355da98`)
+- fix: pin static Linux FFmpeg runtime (`f051899`)
+- fix: use system FFmpeg for Linux releases (`bbc3908`)
+- fix: enforce stable channel and queue position (`97b8fea`)
+- fix: retry tagging and sync update channel status (`8aee164`)
+- fix: open complete albums from player links (`eabc74a`)
+- fix: retain prepared download paths (`07d1228`)
+- fix: address release review edge cases (`6463ddb`)
+
+### Changed
+
+- Merge pull request #46 from DhimanGhosh/codex/windows-python-runtime-hotfix (`45d1ef0`)
+- chore(release): v2.15.0 [skip ci] (`b769855`)
+- Merge pull request #45 from DhimanGhosh/codex/google-cloud-profile (`03d8751`)
+- chore(release): v2.14.0 [skip ci] (`f13f362`)
+- Merge pull request #44 from DhimanGhosh/codex/single-file-album-enrichment (`5a2dbaf`)
+- chore(release): v2.13.0 [skip ci] (`6f99d22`)
+- Merge pull request #43 from DhimanGhosh/codex/windows-release-runtime-fix (`c7284f2`)
+- Merge pull request #42 from DhimanGhosh/codex/linux-release-runtime-fix (`38405fb`)
+- test: exercise staged FFmpeg media pipeline (`c178517`)
+- Merge pull request #41 from DhimanGhosh/codex/download-recovery-v2.13.0 (`994fc40`)
+- style: normalize new file endings (`17b748e`)
 ## [2.15.0] - 2026-08-23
 
 ### Added
