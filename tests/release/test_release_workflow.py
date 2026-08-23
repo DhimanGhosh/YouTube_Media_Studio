@@ -6,10 +6,14 @@ WORKFLOW = (
 )
 
 
-def test_every_successful_main_push_builds_and_publishes_a_versioned_release() -> None:
+def test_every_successful_release_line_push_builds_and_publishes_a_versioned_release() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
-    assert "push:\n    branches: [main]" in workflow
+    assert "push:\n    branches: [main, release/2.x]" in workflow
+    assert 'RELEASE_BRANCH: ${{ github.ref_name }}' in workflow
+    assert '--major-line 2' in workflow
+    assert 'prerelease_args+=(--prerelease)' in workflow
+    assert "choco install nsis" in workflow
     assert "QT_QPA_PLATFORM: offscreen" in workflow
     assert workflow.count("sudo apt-get install --yes libegl1 libpulse0") == 2
     assert "needs: [quality, prepare-version]" in workflow

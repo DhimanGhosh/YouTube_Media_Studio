@@ -19,6 +19,9 @@ from youtube_audio_video_downloader.utils.artist_name_formatter import (
 )
 
 from youtube_audio_video_downloader.core.exceptions import UserCancelledError
+from youtube_audio_video_downloader.services.downloads.youtube_resilience import (
+    download_with_fallback,
+)
 from youtube_audio_video_downloader.metadata.id3_tagger import MetadataTagger
 from youtube_audio_video_downloader.domain.models import DownloadResult, DownloadStatus, ParsedSongMetadata, Song
 from youtube_audio_video_downloader.config.settings import DownloadSettings
@@ -30,7 +33,10 @@ from youtube_audio_video_downloader.services.albums.album_folders import (
 )
 
 _URL_PREFIXES = ("http://", "https://")
-_URL_FIELDS = ("ytb_link", "video_url", "youtube_url", "url")
+_URL_FIELDS = (
+    "ytb_link", "video_url", "youtube_url", "url",
+    "source_file", "file_path", "local_file",
+)
 _TRACK_NAME_FIELDS = ("track_names", "songs", "titles")
 _UNKNOWN_ARTIST = "Unknown"
 
@@ -520,20 +526,24 @@ class YouTubeAlbumSplitter:
         self._remove_existing_individual_track_files(album_dir, structured_stem)
 
         for attempt in range(1, self.settings.max_retries + 1):
-            self._wait_before_download(song.json_key)
+            if not Path(track.ytb_link).expanduser().is_file():
+                self._wait_before_download(song.json_key)
             try:
-                if track.is_partial_range:
+                if track.is_partial_range or Path(track.ytb_link).expanduser().is_file():
                     self._download_and_trim_individual_album_track(
                         track=track,
                         final_mp3_path=final_mp3_path,
                     )
                 else:
-                    import yt_dlp
-
-                    with yt_dlp.YoutubeDL(
-                        self._build_individual_track_yt_dlp_options(album_dir, structured_stem)
-                    ) as ydl:
-                        ydl.download([track.ytb_link])
+                    download_with_fallback(
+                        track.ytb_link,
+                        self._build_individual_track_yt_dlp_options(
+                            album_dir, structured_stem
+                        ),
+                        label=song.json_key,
+                        cancellation_token=self.cancellation_token,
+                        rounds=1,
+                    )
 
                 if not final_mp3_path.exists():
                     raise FileNotFoundError(f"Expected MP3 was not created: {final_mp3_path}")
@@ -630,7 +640,12 @@ class YouTubeAlbumSplitter:
     ) -> Path:
         """Download the unconverted source audio for a standalone track."""
 
-        import yt_dlp
+        local_source = Path(track.ytb_link).expanduser()
+        if local_source.is_file():
+            resolved = local_source.resolve()
+            print(f"[LOCAL-SOURCE] {track.title}: using {resolved}")
+            return resolved
+
         from ..downloads.download_progress import accelerated_download_options
 
         output_template = str(temp_dir / "source.%(ext)s")
@@ -651,11 +666,14 @@ class YouTubeAlbumSplitter:
             ),
         }
 
-        with yt_dlp.YoutubeDL(options) as ydl:
-            info = ydl.extract_info(track.ytb_link, download=True)
-            if not isinstance(info, dict):
-                raise ValueError("yt-dlp did not return metadata for the song video")
-            prepared_path = Path(ydl.prepare_filename(info))
+        info = download_with_fallback(
+            track.ytb_link,
+            options,
+            label=track.title,
+            cancellation_token=self.cancellation_token,
+            rounds=1,
+        )
+        prepared_path = Path(str(info.get("_filename") or ""))
 
         if prepared_path.exists():
             return prepared_path
@@ -776,7 +794,8 @@ class YouTubeAlbumSplitter:
         temp_dir = Path(temp_context.name)
 
         try:
-            self._wait_before_download(job.json_key)
+            if not Path(job.ytb_link).expanduser().is_file():
+                self._wait_before_download(job.json_key)
             print(f"[ALBUM] {job.json_key}: downloading best source audio")
             source_audio_path, info = self._download_source_audio(job, temp_dir)
             album_name = self._resolve_album_name(job, info)
@@ -852,7 +871,12 @@ class YouTubeAlbumSplitter:
     ) -> tuple[Path, dict[str, Any]]:
         """Download the best available source audio with yt-dlp."""
 
-        import yt_dlp
+        local_source = Path(job.ytb_link).expanduser()
+        if local_source.is_file():
+            resolved = local_source.resolve()
+            print(f"[LOCAL-SOURCE] {job.json_key}: using {resolved}")
+            return resolved, {"title": job.json_key, "_filename": str(resolved)}
+
         from ..downloads.download_progress import accelerated_download_options
 
         output_template = str(temp_dir / "source.%(ext)s")
@@ -873,11 +897,14 @@ class YouTubeAlbumSplitter:
             ),
         }
 
-        with yt_dlp.YoutubeDL(options) as ydl:
-            info = ydl.extract_info(job.ytb_link, download=True)
-            if not isinstance(info, dict):
-                raise ValueError("yt-dlp did not return metadata for the album video")
-            prepared_path = Path(ydl.prepare_filename(info))
+        info = download_with_fallback(
+            job.ytb_link,
+            options,
+            label=job.json_key,
+            cancellation_token=self.cancellation_token,
+            rounds=self.settings.max_retries,
+        )
+        prepared_path = Path(str(info.get("_filename") or ""))
 
         if prepared_path.exists():
             return prepared_path, info
@@ -1291,6 +1318,11 @@ class YouTubeAlbumSplitter:
                 ytb_link = str(metadata.get(field) or "").strip()
                 if ytb_link:
                     break
+            if ytb_link and not ytb_link.lower().startswith(_URL_PREFIXES):
+                candidate = Path(ytb_link).expanduser()
+                if not candidate.is_absolute():
+                    candidate = json_path.parent / candidate
+                ytb_link = str(candidate.resolve())
 
             track_specs: list[AlbumTrackSpec] = []
             song_tracks: list[AlbumSongSpec] = []
@@ -1302,6 +1334,7 @@ class YouTubeAlbumSplitter:
                         metadata,
                         key_text,
                         errors,
+                        base_dir=json_path.parent,
                     )
                 else:
                     if not ytb_link:
@@ -1436,6 +1469,8 @@ class YouTubeAlbumSplitter:
         metadata: dict[str, Any],
         album_key: str,
         errors: list[str],
+        *,
+        base_dir: Path | None = None,
     ) -> list[AlbumSongSpec]:
         """Parse tracks where each album song has its own YouTube URL."""
 
@@ -1476,6 +1511,11 @@ class YouTubeAlbumSplitter:
                 ytb_link = str(payload.get(field) or "").strip()
                 if ytb_link:
                     break
+            if ytb_link and not ytb_link.lower().startswith(_URL_PREFIXES):
+                candidate = Path(ytb_link).expanduser()
+                if not candidate.is_absolute() and base_dir is not None:
+                    candidate = base_dir / candidate
+                ytb_link = str(candidate.resolve())
 
             if download and not ytb_link:
                 errors.append(f"{album_key!r}: track {title!r} is missing ytb_link/url")

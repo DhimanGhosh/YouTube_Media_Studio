@@ -13,6 +13,9 @@ from youtube_audio_video_downloader.services.downloads.audio_downloader import Y
 from youtube_audio_video_downloader.services.downloads.download_range import (
     build_download_range_options,
 )
+from youtube_audio_video_downloader.services.downloads.youtube_resilience import (
+    download_with_fallback,
+)
 from youtube_audio_video_downloader.core.exceptions import UserCancelledError
 from youtube_audio_video_downloader.loaders.json_loader import load_videos
 from youtube_audio_video_downloader.domain.models import (
@@ -523,10 +526,13 @@ class YouTubeVideoDownloader:
             "ignoreerrors": False,
         }
 
-        import yt_dlp
-
-        with yt_dlp.YoutubeDL(options) as ydl:
-            info = ydl.extract_info(url, download=False)
+        info = download_with_fallback(
+            url,
+            options,
+            label="video metadata",
+            rounds=1,
+            download=False,
+        )
 
         if not isinstance(info, dict):
             raise ValueError("yt-dlp did not return video metadata")
@@ -1057,30 +1063,13 @@ class YouTubeVideoDownloader:
     ) -> None:
         """Download one selected video quality using exact format IDs with retries."""
 
-        last_error: Exception | None = None
-        for attempt in range(1, self.settings.max_retries + 1):
-            try:
-                import yt_dlp
-
-                with yt_dlp.YoutubeDL(
-                    self._build_video_yt_dlp_options(output_dir, file_name, selected, video)
-                ) as ydl:
-                    ydl.download([video.ytb_link])
-                return
-            except UserCancelledError:
-                raise
-            except Exception as exc:  # yt-dlp can raise several runtime-specific exceptions.
-                last_error = exc
-                if attempt >= self.settings.max_retries:
-                    break
-                wait_seconds = self._get_retry_wait_seconds(str(exc), attempt)
-                print(
-                    f"[RETRY] {video.json_key}: attempt {attempt}/{self.settings.max_retries} "
-                    f"failed. Waiting {wait_seconds}s. Error: {exc}"
-                )
-                self.cancellation_token.wait(wait_seconds)
-
-        raise RuntimeError(f"Video download failed after {self.settings.max_retries} attempt(s): {last_error}")
+        download_with_fallback(
+            video.ytb_link,
+            self._build_video_yt_dlp_options(output_dir, file_name, selected, video),
+            label=video.json_key,
+            cancellation_token=self.cancellation_token,
+            rounds=self.settings.max_retries,
+        )
 
     def _build_video_yt_dlp_options(
         self,

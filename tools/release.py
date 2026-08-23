@@ -419,6 +419,20 @@ def build_desktop(target: str) -> Path:
         print(f"Created {artifact}")
         return artifact
 
+    if target == "windows":
+        artifact = DIST / f"{EXECUTABLE_BASENAME}-{version}-windows-{machine}-Setup.exe"
+        build_windows_nsis_installer(
+            gui_output / f"{EXECUTABLE_BASENAME}.exe",
+            cli_executable,
+            icon_path,
+            artifact,
+            version,
+        )
+        verify_nsis_installer(artifact)
+        shutil.rmtree(payload)
+        print(f"Created {artifact}")
+        return artifact
+
     uninstaller_name = (
         f"Uninstall {APP_DISPLAY_NAME}" if target == "windows" else f"{CLI_COMMAND}-uninstaller"
     )
@@ -501,6 +515,52 @@ def build_desktop(target: str) -> Path:
     shutil.rmtree(installer_output)
     print(f"Created {artifact}")
     return artifact
+
+
+def build_windows_nsis_installer(
+    gui_executable: Path,
+    cli_executable: Path,
+    icon_path: Path,
+    artifact: Path,
+    version: str,
+) -> None:
+    """Compile the native per-user Windows installer with NSIS Modern UI."""
+
+    script = ROOT / "installers" / "windows" / "installer.nsi"
+    makensis = shutil.which("makensis")
+    if not makensis:
+        candidates = (
+            Path(os.environ.get("PROGRAMFILES(X86)", "")) / "NSIS" / "makensis.exe",
+            Path(os.environ.get("PROGRAMFILES", "")) / "NSIS" / "makensis.exe",
+        )
+        makensis = next((str(path) for path in candidates if path.is_file()), "")
+    if not makensis:
+        raise RuntimeError("NSIS makensis was not found. Install NSIS before building Windows.")
+    if artifact.exists():
+        artifact.unlink()
+    run(
+        [
+            makensis,
+            f"/DVERSION={version}",
+            f"/DGUI_PAYLOAD={gui_executable.resolve()}",
+            f"/DCLI_PAYLOAD={cli_executable.resolve()}",
+            f"/DAPP_ICON={icon_path.resolve()}",
+            f"/DOUTPUT_FILE={artifact.resolve()}",
+            str(script),
+        ],
+        cwd=script.parent,
+    )
+
+
+def verify_nsis_installer(installer: Path) -> None:
+    """Perform a non-interactive structural smoke check on the NSIS executable."""
+
+    if not installer.is_file() or installer.stat().st_size < 64 * 1024:
+        raise RuntimeError(f"NSIS did not create a usable installer: {installer}")
+    with installer.open("rb") as executable:
+        header = executable.read(2)
+    if header != b"MZ":
+        raise RuntimeError(f"Windows installer is not a PE executable: {installer}")
 
 
 def create_macos_drag_drop_dmg(app_bundle: Path, artifact: Path) -> None:

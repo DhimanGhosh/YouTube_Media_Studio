@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import json
+import html
 import os
 import random
 import re
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 from ctypes import wintypes
 from typing import Callable
+from urllib.parse import quote, unquote
 
 from PyQt6.QtCore import (
     QEasingCurve,
@@ -745,22 +748,43 @@ class OptionalYearSpinBox(QSpinBox):
 
     def __init__(self, hint: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setRange(0, 2100)
+        self._lowest_year = 1
+        self.setRange(0, datetime.now().year)
         self.lineEdit().setPlaceholderText(hint)
         self.setAccessibleName(hint)
+
+    def set_year_limits(self, lowest_year: int, highest_year: int) -> None:
+        """Keep zero as the empty value while enforcing real library year bounds."""
+
+        self._lowest_year = max(1, int(lowest_year))
+        self.setMaximum(max(self._lowest_year, int(highest_year)))
+        if self.value() and self.value() < self._lowest_year:
+            self.setValue(self._lowest_year)
+
+    def stepBy(self, steps: int) -> None:  # noqa: N802
+        if steps > 0 and self.value() == 0:
+            self.setValue(self._lowest_year)
+            return
+        if steps < 0 and self.value() == self._lowest_year:
+            self.setValue(0)
+            return
+        super().stepBy(steps)
 
     def textFromValue(self, value: int) -> str:  # noqa: N802
         return "" if value == self.minimum() else str(value)
 
     def valueFromText(self, text: str) -> int:  # noqa: N802
         stripped = text.strip()
-        return int(stripped) if stripped.isdecimal() else self.minimum()
+        if not stripped.isdecimal():
+            return self.minimum()
+        return max(self._lowest_year, min(self.maximum(), int(stripped)))
 
 
 class AnimatedReorderList(QListWidget):
     """Internal-move list with a short visual glide after dropping."""
 
     orderChanged = pyqtSignal()
+    deletePressed = pyqtSignal()
 
     def __init__(
         self,
@@ -782,6 +806,13 @@ class AnimatedReorderList(QListWidget):
         self._drop_overlay: QLabel | None = None
         self._drop_item: QListWidgetItem | None = None
         self._drop_foreground = None
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        if event.key() == Qt.Key.Key_Delete:
+            self.deletePressed.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def clear(self) -> None:
         """Discard transient drag visuals before their source items are deleted."""
@@ -1923,7 +1954,7 @@ class MediaLibraryPage(QWidget):
         )
 
     def reset_page(self) -> bool:
-        """Clear library configuration and UI state without deleting media files."""
+        """Clear library configuration without deleting media or saved playlists."""
 
         if any(
             thread is not None
@@ -1955,8 +1986,6 @@ class MediaLibraryPage(QWidget):
         self.queue.clear()
         self._queue_source.clear()
         self.queue_index = -1
-        self.playlists.clear()
-        self._active_playlist = ""
         self._open_album_items.clear()
         self._open_album_name = ""
         self._open_album_artists.clear()
@@ -1975,7 +2004,13 @@ class MediaLibraryPage(QWidget):
         self._update_queue_status()
         self.elapsed.setText("0:00 / 0:00")
         self.now_playing_art.clear()
+        saved_playlists = encode_playlists(self.playlists)
+        active_playlist = self._active_playlist
         self.settings.remove("library")
+        if self.playlists:
+            self.settings.setValue("library/playlists", saved_playlists)
+            self.settings.setValue("library/active_playlist", active_playlist)
+        self.settings.sync()
         self._render_playlists()
         self._search_debounce.stop()
         return True
@@ -2745,6 +2780,9 @@ class MediaLibraryPage(QWidget):
         hint.setWordWrap(True)
         layout.addWidget(hint)
         self.queue_list = AnimatedReorderList()
+        self.queue_list.setSelectionMode(
+            QAbstractItemView.SelectionMode.ExtendedSelection
+        )
         self.queue_list.setAccessibleName("Current playback queue")
         self.queue_list.itemDoubleClicked.connect(self._play_queue_entry)
         self.queue_list.orderChanged.connect(self._queue_reordered)
@@ -2752,6 +2790,7 @@ class MediaLibraryPage(QWidget):
         self.queue_list.customContextMenuRequested.connect(
             lambda point: self._show_list_song_context_menu(self.queue_list, point)
         )
+        self.queue_list.deletePressed.connect(self._remove_selected_queue_entries)
         layout.addWidget(self.queue_list, 1)
         actions = QHBoxLayout()
         for text, handler in (
@@ -2801,6 +2840,13 @@ class MediaLibraryPage(QWidget):
         grid.addWidget(self.now_playing_art, 1, 0, 3, 1)
         self.now_playing = QLabel("Nothing playing")
         self.now_playing.setObjectName("sectionTitle")
+        self.now_playing.setTextFormat(Qt.TextFormat.RichText)
+        self.now_playing.setTextInteractionFlags(
+            Qt.TextInteractionFlag.LinksAccessibleByMouse
+            | Qt.TextInteractionFlag.LinksAccessibleByKeyboard
+        )
+        self.now_playing.setOpenExternalLinks(False)
+        self.now_playing.linkActivated.connect(self._now_playing_link_activated)
         self.now_playing.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.now_playing.customContextMenuRequested.connect(
             self._show_now_playing_context_menu
@@ -3744,6 +3790,15 @@ class MediaLibraryPage(QWidget):
             )
             return
         self.items = scanned_items
+        available_years = sorted(
+            item.year for item in scanned_items if isinstance(item.year, int) and item.year > 0
+        )
+        lowest_year = available_years[0] if available_years else datetime.now().year
+        current_year = datetime.now().year
+        self.year_from.set_year_limits(lowest_year, current_year)
+        self.year_to.set_year_limits(lowest_year, current_year)
+        self.year_from.lineEdit().setPlaceholderText(f"From {lowest_year}")
+        self.year_to.lineEdit().setPlaceholderText(f"To {current_year}")
         self._remote_state_dirty = True
         valid_thumbnail_keys = {
             (item.path, item.modified_ns)
@@ -4370,7 +4425,18 @@ class MediaLibraryPage(QWidget):
 
     def open_album(self, entry: QListWidgetItem) -> None:
         album = str(entry.data(Qt.ItemDataRole.UserRole) or "")
-        self._open_album_items = [item for item in self.filtered if item.album == album]
+        self._open_album_by_name(album, self.filtered)
+
+    def _open_album_by_name(
+        self, album: str, candidates: list[LibraryItem] | None = None
+    ) -> None:
+        """Open an album directly, including from the now-playing metadata link."""
+
+        pool = self.items if candidates is None else candidates
+        album_key = album.strip().casefold()
+        self._open_album_items = [
+            item for item in pool if item.album.strip().casefold() == album_key
+        ]
         if not self._open_album_items:
             return
         self._open_album_name = album
@@ -4385,6 +4451,34 @@ class MediaLibraryPage(QWidget):
         )
         self._update_album_track_context()
         self.album_stack.setCurrentIndex(1)
+
+    def _now_playing_link_activated(self, link: str) -> None:
+        """Navigate the library from album, artist, and year metadata links."""
+
+        kind, separator, encoded_value = link.partition(":")
+        if not separator:
+            return
+        value = unquote(encoded_value).strip()
+        if kind == "album":
+            self._open_album_by_name(value)
+            return
+        if kind == "artist":
+            self.search.clear()
+            self.year_from.setValue(0)
+            self.year_to.setValue(0)
+            self.media_type_filter.setCurrentIndex(0)
+            available = self._available_artists(self.items)
+            self._update_artist_facets(available, [value])
+            self.apply_filters()
+            return
+        if kind == "year" and value.isdecimal():
+            year = int(value)
+            self.search.clear()
+            self.facets.clearSelection()
+            self.media_type_filter.setCurrentIndex(0)
+            self.year_from.setValue(year)
+            self.year_to.setValue(year)
+            self.apply_filters()
 
     def _update_album_browser_context(self) -> None:
         artists = [item.text() for item in self.facets.selectedItems()]
@@ -4493,6 +4587,11 @@ class MediaLibraryPage(QWidget):
         if not items:
             return
         menu = QMenu(self)
+        play_next_action = menu.addAction("Play next")
+        play_next_action.triggered.connect(
+            lambda _checked=False, selected=list(items): self._play_next(selected)
+        )
+        menu.addSeparator()
         self._add_playlist_destinations(menu, items)
         if source_playlist:
             remove_action = menu.addAction("Remove from this playlist")
@@ -4664,6 +4763,11 @@ class MediaLibraryPage(QWidget):
             return
         menu = QMenu(self)
         menu.setTitle(album)
+        play_next_action = menu.addAction("Play album next")
+        play_next_action.triggered.connect(
+            lambda _checked=False, selected=list(tracks): self._play_next(selected)
+        )
+        menu.addSeparator()
         self._add_playlist_destinations(
             menu, tracks, label="Add album to playlist"
         )
@@ -4874,6 +4978,47 @@ class MediaLibraryPage(QWidget):
         self._update_queue_status()
         return len(selected)
 
+    def _play_next(self, selected: list[LibraryItem]) -> int:
+        """Place tracks directly after the current item, moving existing copies."""
+
+        ordered: list[LibraryItem] = []
+        seen: set[str] = set()
+        current_path = (
+            self.queue[self.queue_index].path.casefold()
+            if 0 <= self.queue_index < len(self.queue)
+            else ""
+        )
+        for item in selected:
+            key = item.path.casefold()
+            if key and key != current_path and key not in seen:
+                seen.add(key)
+                ordered.append(item)
+        if not ordered:
+            return 0
+        if not self.queue:
+            self._replace_queue(ordered)
+            return len(ordered)
+
+        moved_paths = {item.path.casefold() for item in ordered}
+        remaining = [
+            item for item in self.queue
+            if item.path.casefold() not in moved_paths
+        ]
+        current_item = self.queue[self.queue_index]
+        current_index = next(
+            index for index, item in enumerate(remaining)
+            if item.path.casefold() == current_item.path.casefold()
+        )
+        self.queue = remaining[: current_index + 1] + ordered + remaining[current_index + 1 :]
+        self._queue_source = list(self.queue)
+        self.queue_index = current_index
+        if self._shuffle_enabled:
+            self._shuffle_enabled = False
+            self.settings.setValue("library/shuffle", False)
+            self._update_playback_mode_buttons()
+        self._update_queue_status()
+        return len(ordered)
+
     def play_all_matches(self) -> None:
         self._replace_queue(list(self.filtered))
 
@@ -4994,20 +5139,34 @@ class MediaLibraryPage(QWidget):
             self._play_queue_entry(entry)
 
     def _remove_selected_queue_entry(self) -> None:
-        row = self.queue_list.currentRow()
-        if not 0 <= row < len(self.queue):
+        self._remove_selected_queue_entries()
+
+    def _remove_selected_queue_entries(self) -> None:
+        """Remove selected queue rows without deleting their media files."""
+
+        rows = sorted(
+            {index.row() for index in self.queue_list.selectionModel().selectedRows()},
+            reverse=True,
+        )
+        if not rows:
+            row = self.queue_list.currentRow()
+            rows = [row] if 0 <= row < len(self.queue) else []
+        if not rows:
             return
-        removed_current = row == self.queue_index
-        self.queue.pop(row)
+        removed_current = self.queue_index in rows
+        rows_before_current = sum(row < self.queue_index for row in rows)
+        first_removed = min(rows)
+        for row in rows:
+            if 0 <= row < len(self.queue):
+                self.queue.pop(row)
         self._queue_source = list(self.queue)
         if not self.queue:
             self.clear_playback_queue()
         elif removed_current:
-            self.queue_index = min(row, len(self.queue) - 1)
+            self.queue_index = min(first_removed, len(self.queue) - 1)
             self._load_current()
         else:
-            if row < self.queue_index:
-                self.queue_index -= 1
+            self.queue_index -= rows_before_current
             self._update_queue_status()
 
     def clear_playback_queue(self) -> None:
@@ -5092,7 +5251,20 @@ class MediaLibraryPage(QWidget):
             else None
         )
         self.player.setSource(QUrl.fromLocalFile(item.path))
-        self.now_playing.setText(f"{item.title} — {item.artists}  •  {item.album}")
+        artist_links = ", ".join(
+            f'<a href="artist:{quote(artist)}">{html.escape(artist)}</a>'
+            for artist in split_artists(item.artists)
+        ) or html.escape(item.artists)
+        album_link = (
+            f'<a href="album:{quote(item.album)}">{html.escape(item.album)}</a>'
+            if item.album else "Unknown album"
+        )
+        year_link = (
+            f'  •  <a href="year:{item.year}">{item.year}</a>' if item.year else ""
+        )
+        self.now_playing.setText(
+            f"{html.escape(item.title)} — {artist_links}  •  {album_link}{year_link}"
+        )
         self._set_now_playing_art(item)
         video_active = item.media_type == MEDIA_TYPE_VIDEO
         self.player_card.setMinimumHeight(

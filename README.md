@@ -18,6 +18,7 @@
   <a href="#command-line"><b>CLI</b></a> ·
   <a href="#develop"><b>Develop</b></a> ·
   <a href="CHANGELOG.md"><b>Changelog</b></a> ·
+  <a href="docs/UPDATES_AND_RELEASE_CHANNELS.md"><b>Updates</b></a> ·
   <a href="PRIVACY.md"><b>Privacy</b></a>
 </p>
 
@@ -107,14 +108,12 @@ Checksums for every artifact are published as `SHA256SUMS.txt` in the same relea
 
 The per-user installer does not request administrator access. Remove it later from
 **Settings → Apps → Installed apps → YouTube Media Studio**. The uninstaller can
-optionally retain or remove settings, history, and application data.
+remove application binaries and shortcuts; settings, playlists, history, and media are
+retained in application data.
 
-When a previous release is installed, Setup automatically detects its registered
-folder and offers **Upgrade**, **Repair**, and **Uninstall**. Upgrade and Repair close
-the running app if necessary, remove the old application files, and install fresh
-binaries in place while preserving settings, history, and application data. Uninstall
-can optionally remove that data. Setup matches the complete executable path, so another
-program with a similar process name is never closed.
+The native NSIS wizard detects the registered installation folder. Installing a newer
+release closes the running app if necessary and replaces its binaries in place while
+preserving settings, playlists, history, and application data.
 
 </details>
 
@@ -248,8 +247,8 @@ edit, consolidate, inspect logs, configure defaults, and play the finished libra
 | --- | --- |
 | **Audio Downloader** | Download permitted audio with an independent start/end range for each song, write tags, embed artwork, and normalize filenames |
 | **Video Downloader** | Inspect formats and download video/audio with an independent timestamp range for each batch entry |
-| **Album Splitter** | Turn a full-album source and timestamps into individual tagged tracks |
-| **Jukebox Splitter** | Split compilation videos and organize the resulting songs |
+| **Album Splitter** | Turn a YouTube or already-downloaded full-album source and timestamps into individual tagged tracks |
+| **Jukebox Splitter** | Split YouTube or local compilation audio/video and organize the resulting songs |
 | **Search Song** | Find tracks, albums, release years, performers, and cover artwork |
 | **Metadata tools** | Inspect, repair, reorder, retag, trim, rename, and consolidate local media |
 | **Edit Album** | Change album name, year, track artist(s), and optional album artwork across every supported file in a folder |
@@ -333,11 +332,13 @@ Run `youtube-media-studio <command> --help` for command-specific options.
 
 ## How the release pipeline works
 
-Every successful push to `main` produces a complete, versioned release:
+Every successful push to a release line produces a complete, versioned release. Stable
+non-built-in-AI work ships from `release/2.x`; experimental built-in-AI work ships from
+`main` as a 3.x GitHub prerelease/beta:
 
 ```mermaid
 flowchart LR
-    A[Push to main] --> B[Automated test and lint gate]
+    A[Push to release branch] --> B[Automated test and lint gate]
     B --> C[Select semantic version]
     C --> D1[Windows installer]
     C --> D2[Linux installer]
@@ -457,7 +458,8 @@ tests/                               Categorized automated test suite
   media/                             Library, playlists, remote access, and editing
   metadata/                          Evidence, tagging, verification, and tracking
   release/                           Packaging, installers, versions, and workflows
-tools/desktop_installer.py           Native graphical installer/uninstaller
+installers/windows/installer.nsi     Native Windows NSIS installer/uninstaller
+tools/desktop_installer.py           Linux graphical installer/uninstaller
 tools/release.py                     Validation, packaging, and release entry point
 ```
 

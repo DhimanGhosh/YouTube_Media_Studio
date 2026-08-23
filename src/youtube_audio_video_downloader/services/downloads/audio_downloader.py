@@ -22,6 +22,9 @@ from youtube_audio_video_downloader.core.exceptions import UserCancelledError
 from youtube_audio_video_downloader.services.downloads.download_range import (
     build_download_range_options,
 )
+from youtube_audio_video_downloader.services.downloads.youtube_resilience import (
+    download_with_fallback,
+)
 
 
 class YouTubeAudioDownloader:
@@ -265,42 +268,34 @@ class YouTubeAudioDownloader:
             self._remove_existing_download_files(output_dir, file_name, song.json_key)
 
 
-        for attempt in range(1, self.settings.max_retries + 1):
-            self._wait_before_download(song.json_key)
-
-            try:
-                import yt_dlp
-
-                with yt_dlp.YoutubeDL(
-                    self._build_yt_dlp_options(output_dir, file_name, song)
-                ) as ydl:
-                    ydl.download([song.ytb_link])
-
-                self.metadata_tagger.tag_mp3(final_mp3_path, song)
-
-                return DownloadResult(
-                    song=song.json_key,
-                    status=DownloadStatus.DOWNLOADED,
-                    file_name=final_mp3_path.name,
-                )
-
-            except UserCancelledError:
-                raise
-            except Exception as exc:  # yt-dlp/mutagen/urllib can raise varied exception types.
-                error_text = str(exc)
-                wait_seconds = self._get_retry_wait_seconds(error_text, attempt)
-                print(
-                    f"[RETRY] {song.json_key}: attempt {attempt}/{self.settings.max_retries} "
-                    f"failed. Waiting {wait_seconds}s. Error: {error_text}"
-                )
-                self.cancellation_token.wait(wait_seconds)
-
-        return DownloadResult(
-            song=song.json_key,
-            status=DownloadStatus.FAILED,
-            file_name=file_name,
-            reason="Max retries exceeded",
-        )
+        self._wait_before_download(song.json_key)
+        try:
+            download_with_fallback(
+                song.ytb_link,
+                self._build_yt_dlp_options(output_dir, file_name, song),
+                label=song.json_key,
+                cancellation_token=self.cancellation_token,
+                rounds=self.settings.max_retries,
+            )
+            if not final_mp3_path.exists():
+                raise FileNotFoundError(f"Expected MP3 was not created: {final_mp3_path}")
+            self.metadata_tagger.tag_mp3(final_mp3_path, song)
+            return DownloadResult(
+                song=song.json_key,
+                status=DownloadStatus.DOWNLOADED,
+                file_name=final_mp3_path.name,
+            )
+        except UserCancelledError:
+            raise
+        except Exception as exc:  # Report the actionable final failure in Live Logs.
+            reason = str(exc)
+            print(f"[FAILED] {song.json_key} | reason={reason}", flush=True)
+            return DownloadResult(
+                song=song.json_key,
+                status=DownloadStatus.FAILED,
+                file_name=file_name,
+                reason=reason,
+            )
 
     @staticmethod
     def _remove_existing_download_files(output_dir: Path, file_name: str, song_title: str) -> None:

@@ -130,6 +130,63 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.assertEqual(self.page.queue, [])
         self.assertEqual(self.page.playlists["List"], [])
 
+    def test_delete_key_removes_selected_queue_track_without_deleting_file(self) -> None:
+        self.page.queue = list(self.page.items)
+        self.page._queue_source = list(self.page.items)
+        self.page.queue_index = 0
+        self.page._sync_queue_drawer()
+        self.page.show()
+        self.page._toggle_queue_drawer(True)
+        self.page.queue_list.setFocus()
+        self.page.queue_list.setCurrentRow(1)
+
+        QTest.keyClick(self.page.queue_list, Qt.Key.Key_Delete)
+        QTest.qWait(10)
+
+        self.assertEqual([item.title for item in self.page.queue], ["Short"])
+        self.assertEqual(self.page.queue_index, 0)
+
+    def test_play_next_moves_existing_tracks_after_current_without_duplicates(self) -> None:
+        first, second = self.page.items
+        third = media("Third", 2010, 120_000)
+        self.page.queue = [first, second, third]
+        self.page._queue_source = list(self.page.queue)
+        self.page.queue_index = 0
+
+        added = self.page._play_next([third, second, third])
+
+        self.assertEqual(added, 2)
+        self.assertEqual(
+            [item.title for item in self.page.queue],
+            ["Short", "Third", "Long"],
+        )
+
+    def test_now_playing_links_open_album_artist_and_exact_year(self) -> None:
+        collaboration = LibraryItem(
+            path="C:/collab.mp3",
+            title="Collab",
+            album="Other Album",
+            artists="Test Artist, Guest",
+            year=2005,
+            duration_ms=1000,
+            media_type="audio",
+            modified_ns=1,
+        )
+        self.page.items.append(collaboration)
+        self.page.apply_filters()
+
+        self.page._now_playing_link_activated("album:Test%20Album")
+        self.assertEqual(self.page._open_album_name, "Test Album")
+        self.assertEqual(len(self.page._open_album_items), 2)
+
+        self.page._now_playing_link_activated("artist:Test%20Artist")
+        self.assertEqual(len(self.page.filtered), 3)
+
+        self.page._now_playing_link_activated("year:2005")
+        self.assertEqual(self.page.year_from.value(), 2005)
+        self.assertEqual(self.page.year_to.value(), 2005)
+        self.assertEqual({item.year for item in self.page.filtered}, {2005})
+
     def test_album_delete_warns_when_tracks_span_multiple_folders(self) -> None:
         paths = []
         items = []

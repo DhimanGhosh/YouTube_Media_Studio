@@ -792,6 +792,11 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         self.window.edit_file_input.set_text("C:/Music/song.mp3")
         self.window.album_consolidator_source.set_text("C:/Music/Source")
         self.window.media_library.folder_list.addItem("C:/Music")
+        self.window.media_library.playlists = {
+            "Saved forever": ["C:/Music/song.mp3"]
+        }
+        self.window.media_library._active_playlist = "Saved forever"
+        self.window.media_library._save_playlists()
 
         with (
             patch.object(
@@ -834,6 +839,11 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         self.assertEqual(self.window.album_consolidator_source.text(), "")
         self.assertTrue(self.window.album_move_perform_enrichment.isChecked())
         self.assertEqual(self.window.media_library.folder_list.count(), 0)
+        self.assertEqual(
+            self.window.media_library.playlists,
+            {"Saved forever": ["C:/Music/song.mp3"]},
+        )
+        self.assertTrue(self.window.settings.value("library/playlists"))
         self.assertIn("STATIC FALLBACK", self.window.ai_status_badge.text())
 
 if __name__ == "__main__":

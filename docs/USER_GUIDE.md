@@ -132,7 +132,8 @@ workspace that already has a job, preventing that same task from being started t
 Global Settings controls values shared by the other workspaces. Expand only the group
 being changed, then select **Save and apply defaults**. **Reset app** clears tool forms,
 saved provider credentials/models, saved state, and restored defaults; it does not act as
-a media-library deletion command.
+a media-library deletion command. Saved playlists and media files are preserved even
+when configured library folders are cleared.
 
 ![Global processing settings](media/user-guide/workspaces/global-settings-processing.png)
 
@@ -157,6 +158,9 @@ a media-library deletion command.
 - **Retries** is the bounded number of attempts for retryable work.
 - **Retry delay** is the normal wait between failed attempts.
 - **Rate-limit wait** is the longer pause used when a service asks the app to slow down.
+- **Diagnose / Auto-fix downloads** reports yt-dlp age, FFmpeg, FFprobe, Deno, and
+  detected browser-cookie support. Source installs can update yt-dlp directly; packaged
+  installs use the application updater to receive repaired binaries.
 
 ![Audio and playback settings](media/user-guide/workspaces/global-settings-audio-playback.png)
 
@@ -213,6 +217,10 @@ operation logs.
 Changing the application-data folder safely copies existing application data and takes
 effect on the next start. Crash reporting is local and opt-in. **Open data folder** opens
 the exact active location.
+
+Application updates use public GitHub Releases and require no Google sign-in. The
+stable 2.x channel is selected by default. Enable **Include 3.x beta releases** only to
+try experimental built-in-AI builds; turning it off offers the latest stable 2.x build.
 
 ## How AI and internet evidence work
 
@@ -360,7 +368,8 @@ Audio Downloader, Video Downloader, Album Splitter, Jukebox Splitter, and the Ed
 replacement action use the same activity panel. **Live Logs** simultaneously receives
 compact `[DOWNLOAD]` lines with the same values and a segment index/count when yt-dlp
 exposes fragmented progress. The panel reports “single source stream” when the selected
-source cannot use parallel fragments.
+source cannot use parallel fragments. Live Logs also show yt-dlp version age, selected
+player client, browser-cookie fallback, 403 recovery, and exponential backoff.
 
 ## Split an album or jukebox
 
@@ -406,6 +415,9 @@ behalf.
 
 - **Find on YouTube** searches for the first full-album result using album name/year and
   then starts track extraction.
+- **Use local file…** selects an audio/video file already downloaded by another tool.
+  The splitter skips YouTube and uses the same timestamp, FFmpeg, metadata, artwork,
+  numbering, and output pipeline on that file.
 - **Find year** searches Wikipedia release evidence.
 - **Find cover** searches for a square cover; selecting it again excludes the current
   URL so another candidate can be found.
@@ -450,6 +462,9 @@ Jukebox track rows contain **Start**, **End**, **Album**, **Artists**, **Album A
 track can use **Find album**, **Find artists**, **Find year**, **Find cover**, and cover
 **Preview**. A catalog metadata lookup updates album, artists, year, and art as one
 consistent unit instead of mixing unrelated results.
+
+The Jukebox source row also accepts **Use local file…**, so manual track timings can be
+applied to an existing full compilation audio/video file without downloading it again.
 
 Mashup, remix, and lo-fi titles are not blindly auto-enriched as ordinary releases.
 Review all boundaries and identities before selecting **Start jukebox split**.
@@ -674,7 +689,8 @@ same-Wi-Fi access.
 2. Select **Refresh** after external file/tag changes. The scan updates titles and column
    widths from the current metadata rather than preserving stale long values.
 3. Search across title, album, artist, year, and filename. **From year** and **To year**
-   accept digits only, and To must be greater than or equal to From.
+   accept digits only, and To must be greater than or equal to From. From starts at the
+   earliest indexed release year; To cannot exceed the current calendar year.
 4. **Clear** resets search text and both year fields but preserves the explicitly chosen
    All media/Music/Videos filter.
 5. Selecting one or several artists filters tracks and albums. Use **All tracks** or
@@ -752,6 +768,8 @@ When a path is already present, choose **Skip duplicates** to add only new selec
 - **Search all playlists** returns matching tracks across every created playlist.
 - Right-click a playlist track to Edit File, add it elsewhere, or remove it.
 - Play, queue, and remove actions operate on the selected playlist rows.
+- **Play next** on a song, selection, or album moves it directly after the current
+  track. Existing queue copies are moved into the requested order instead of duplicated.
 - Drag the divider beside the drawer to resize it; the width is remembered.
 
 ### Permanently delete library media
@@ -781,7 +799,11 @@ reported separately.
 | 7 | Current queue | Drag tracks into playback order, play a selection, remove it, or clear the queue. |
 
 The queue order is independent of playlist order. Previous/Next follow the queue. Drag
-its divider to resize the drawer; the width is remembered.
+its divider to resize the drawer; the width is remembered. Select one or several queue
+rows and press **Delete** to remove them from the queue only; no media file is deleted.
+In the Now Playing heading, select the album to open its tracks, an individual artist
+to show every solo/collaboration credit containing that artist, or the year to set both
+year filters to that exact year.
 
 ### Player controls
 
