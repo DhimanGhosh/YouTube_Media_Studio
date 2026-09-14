@@ -89,27 +89,15 @@ Start with the [high-level design](HIGH_LEVEL_DESIGN.md), then use the
 [low-level design](LOW_LEVEL_DESIGN.md) for code ownership. Refer to
 [workflow designs](WORKFLOW_DESIGNS.md) when changing a particular execution path.
 
+## Stable 2.x synchronization boundaries
 
-## Stable 2.x library and download synchronization
+The Media Player owns the index, filesystem watcher, and queue reconciliation.
+Filesystem notifications are debounced; discovery and metadata reading stay on the
+scanner thread. Scan termination is guaranteed even after an exception, and only a
+successful, uninterrupted result replaces the visible library.
 
-Filesystem notifications debounce into background scans; completed batch items also
-request scans. The 15-second backup timer skips busy scans. Manual Refresh interrupts
-the current scan cooperatively and schedules one replacement. Scanner completion is
-emitted even on error; interrupted/error results never replace the existing index.
-File disappearance during metadata reading is tolerated. Changed modification times
-invalidate artwork, and indexed queue entries receive fresh metadata. Queue deletion
-preserves the playing file identity and removes only successfully deleted paths.
-Metadata replacement retains file permissions but advances modification time.
-
-`services/downloads/parallel_http.py` customizes each yt-dlp instance's progressive
-HTTP downloader. A one-byte probe verifies Content-Range, then bounded workers write
-validated disjoint ranges to private staging. Ranges retry transient failures;
-cancellation removes staging; only a complete joined file is published. Unsupported
-ranges fall back to native HTTP. DASH/HLS, live streams, and FFmpeg timestamp ranges
-keep their native downloaders. Source transfer telemetry retains its actual mode at
-completion and displays individual progress only for measured byte ranges.
-
-Album batch concurrency uses one pool for whole-album jobs and individual-track jobs.
-Each workspace run has its own pool, bounded by the saved worker count. Operation
-summaries carry per-item failure reasons into expanded editor entries for retry.
-See [the user guide](USER_GUIDE.md) for the current menu and Settings navigation.
+Each yt-dlp instance can select the application's progressive HTTP range downloader.
+It validates server range support and stages complete output privately; native yt-dlp
+retains responsibility for extraction, segmented streams, and postprocessing. See
+[the low-level design](LOW_LEVEL_DESIGN.md#stable-2x-library-and-download-synchronization)
+for lifecycle and integrity rules.

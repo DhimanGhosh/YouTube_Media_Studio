@@ -4,6 +4,32 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [Unreleased]
+
+### Added
+
+- Parallel byte-range downloads for ordinary HTTP media, with validated ranges,
+  bounded connections, transient retries, cancellation cleanup, and safe fallback.
+- Automatic library scans after filesystem changes and completed batch items.
+- Specific album/track failure reasons with instructions for retrying unfinished work.
+
+### Fixed
+
+- Refresh stays clickable during scans and recovers from scanner errors without an app restart.
+- Album artwork updates invalidate cached covers after metadata edits or a forced refresh.
+- Deleting an earlier queue item keeps the highlight on the playing song; failed file
+  deletions retain their queue and playlist entries.
+- Queue time rounds up to whole minutes, including totals greater than an hour.
+- Download completion preserves the actual connection mode. Extra bars represent
+  measured byte-range progress, and batch results retain each album's individual status.
+
+### Changed
+
+- Updated the README and illustrated beginner guide for the current menus, separate
+  Settings window, local splitter sources, download recovery, and Media Player.
+- Regenerated the documentation screenshots and repaired broken image links.
+- Stable non-built-in-AI improvements continue on 2.x; built-in AI remains on 3.x.
+
 ## [2.17.0] - 2026-08-24
 
 ### Added

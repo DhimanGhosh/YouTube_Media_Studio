@@ -355,27 +355,23 @@ Pull requests run only the quality gate. A successful main run selects the next 
 builds all targets, promotes curated `Unreleased` changelog notes, creates a release
 commit/tag, and publishes one release with checksums.
 
+## Stable 2.x change-to-playback flow
 
-## Stable 2.x library and download synchronization
+```mermaid
+flowchart TD
+    Changes[File added, edited, or deleted] --> Debounce[Debounce filesystem notifications]
+    Finished[Batch item completed] --> Scan[Background library scan]
+    Debounce --> Scan
+    Manual[Click Refresh at any time] --> Restart[Interrupt current scan and request a fresh one]
+    Restart --> Scan
+    Scan --> Result{Scan outcome}
+    Result -->|Success| Index[Update index and invalidate changed artwork]
+    Result -->|Error or interrupted| Preserve[Keep previous index; allow retry]
+    Index --> Queue[Refresh queue metadata and preserve playing-file identity]
+```
 
-Filesystem notifications debounce into background scans; completed batch items also
-request scans. The 15-second backup timer skips busy scans. Manual Refresh interrupts
-the current scan cooperatively and schedules one replacement. Scanner completion is
-emitted even on error; interrupted/error results never replace the existing index.
-File disappearance during metadata reading is tolerated. Changed modification times
-invalidate artwork, and indexed queue entries receive fresh metadata. Queue deletion
-preserves the playing file identity and removes only successfully deleted paths.
-Metadata replacement retains file permissions but advances modification time.
-
-`services/downloads/parallel_http.py` customizes each yt-dlp instance's progressive
-HTTP downloader. A one-byte probe verifies Content-Range, then bounded workers write
-validated disjoint ranges to private staging. Ranges retry transient failures;
-cancellation removes staging; only a complete joined file is published. Unsupported
-ranges fall back to native HTTP. DASH/HLS, live streams, and FFmpeg timestamp ranges
-keep their native downloaders. Source transfer telemetry retains its actual mode at
-completion and displays individual progress only for measured byte ranges.
-
-Album batch concurrency uses one pool for whole-album jobs and individual-track jobs.
-Each workspace run has its own pool, bounded by the saved worker count. Operation
-summaries carry per-item failure reasons into expanded editor entries for retry.
-See [the user guide](USER_GUIDE.md) for the current menu and Settings navigation.
+A 15-second backup scan covers missed filesystem notifications without queuing work
+behind an active scan. HTTP downloads probe range support, stage disjoint ranges in
+parallel, validate each response, then join and publish the completed file. Invalid
+ranges fall back to native HTTP. Cancellation cleans staging before returning.
+For the current screens and retry steps, see [the user guide](USER_GUIDE.md).
