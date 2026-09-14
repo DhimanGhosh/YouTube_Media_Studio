@@ -2355,6 +2355,7 @@ class JsonBatchEditor(QWidget):
                 entry["section"].set_expanded(False)
             elif entry_failed:
                 # Keep failures visible so their inputs can be corrected and retried.
+                fields["download"].setChecked(True)
                 entry["section"].set_status("Needs attention")
                 entry["section"].set_expanded(True)
                 details = [f"{item}: {reason}" for item, reason in (failure_details or {}).items()
@@ -2389,6 +2390,7 @@ class JsonBatchEditor(QWidget):
                     for item in failed
                 )
                 if track_failed:
+                    track["fields"]["download"].setChecked(True)
                     track["section"].set_status("Needs attention")
                     track["section"].set_expanded(True)
                     details = [f"{item}: {reason}" for item, reason in (failure_details or {}).items()

@@ -25,6 +25,21 @@ from youtube_audio_video_downloader.services.downloads.video_downloader import Y
 
 
 class GuiOperationsTest(unittest.TestCase):
+    def test_enrichment_failures_keep_exact_album_identity_and_reason(self):
+        from youtube_audio_video_downloader.gui.runtime.operations import _summarize_results
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            results = [DownloadResult("Album A / Song", DownloadStatus.DOWNLOADED, "A/song.mp3"),
+                       DownloadResult("Album B / Song", DownloadStatus.DOWNLOADED, "B/song.mp3")]
+            report = MetadataEnrichmentReport(
+                2, (), (), ("song.mp3: lookup failed",),
+                failure_details=((root / "B/song.mp3", "lookup failed"),),
+            )
+            summary = _summarize_results("album", results, report, output_roots=[root])
+        self.assertEqual(summary.failed_items, ("Album B / Song",))
+        self.assertEqual(summary.completed_items, ("Album A / Song",))
+        self.assertEqual(summary.failure_details["Album B / Song"], "Metadata enrichment: lookup failed")
+
     def test_album_enricher_accepts_one_file_without_touching_siblings(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             folder = Path(temporary_directory)

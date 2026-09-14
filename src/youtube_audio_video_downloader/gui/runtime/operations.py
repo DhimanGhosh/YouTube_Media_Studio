@@ -602,6 +602,9 @@ def _run_album(params: dict[str, Any], token: CancellationToken) -> OperationSum
         "album", results, enrichment, output_roots=[enrichment_root]
     )
     completed_albums = _completed_album_entries(params.get("input_data"), results)
+    completed_albums = tuple(name for name in completed_albums
+                             if not any(item == name or item.startswith(name + " / ")
+                                        for item in summary.failed_items))
     if completed_albums:
         summary = replace(
             summary,
@@ -658,6 +661,9 @@ def _run_jukebox(params: dict[str, Any], token: CancellationToken) -> OperationS
     completed_jukeboxes = _completed_album_entries(
         params.get("input_data"), results
     )
+    completed_jukeboxes = tuple(name for name in completed_jukeboxes
+                                if not any(item == name or item.startswith(name + " / ")
+                                           for item in summary.failed_items))
     if completed_jukeboxes:
         summary = replace(
             summary,
@@ -888,10 +894,34 @@ def _summarize_results(
     )
     if enrichment is None:
         return summary
+    failure_details = dict(summary.failure_details)
+    detailed = getattr(enrichment, "failure_details", ())
+    failures = detailed or tuple((Path(message.split(": ", 1)[0]), message)
+                                 for message in enrichment.failed)
+    for path, reason in failures:
+        matches = []
+        for result in results:
+            for raw_name in str(result.file_name or "").split(" + "):
+                candidate = Path(raw_name)
+                if detailed:
+                    candidates = ([candidate] if candidate.is_absolute() else
+                                  [root / candidate for root in output_roots or []])
+                    matched = any(value.resolve() == path.resolve() for value in candidates)
+                else:
+                    matched = candidate.name == path.name
+                if matched:
+                    matches.append(result.song)
+                    break
+        for name in matches or [str(path)]:
+            failure_details[name] = f"Metadata enrichment: {reason}"
+    failed_items = tuple(dict.fromkeys((*summary.failed_items, *failure_details)))
     return replace(
         summary,
         tagged=summary.tagged + len(enrichment.updated),
         failed=summary.failed + len(enrichment.failed),
+        failed_items=failed_items,
+        failure_details=failure_details,
+        completed_items=tuple(item for item in summary.completed_items if item not in failed_items),
     )
 
 
