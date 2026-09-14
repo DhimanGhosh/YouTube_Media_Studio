@@ -21,7 +21,7 @@ os.environ.setdefault("QT_SCALE_FACTOR", "1")
 os.environ["YMS_DISABLE_REMOTE_ACCESS"] = "1"
 
 from PyQt6.QtCore import QPoint, QRect, QSettings, Qt
-from PyQt6.QtGui import QColor, QFont, QPainter, QPalette, QPen
+from PyQt6.QtGui import QColor, QFont, QFontDatabase, QPainter, QPalette, QPen
 from PyQt6.QtWidgets import (
     QApplication,
     QDialogButtonBox,
@@ -124,12 +124,6 @@ def _save_annotated(root: QWidget, path: Path, regions: Iterable[QRect]) -> None
 
 def _show_page(window: MainWindow, app: QApplication, index: int) -> QScrollArea | QWidget:
     window._set_page(index)
-    button = window._nav_buttons[index]
-    parent = button.parentWidget()
-    while parent is not None and not isinstance(parent, QScrollArea):
-        parent = parent.parentWidget()
-    if isinstance(parent, QScrollArea):
-        parent.ensureWidgetVisible(button, 8, 8)
     page = window.pages.currentWidget()
     if isinstance(page, QScrollArea):
         page.verticalScrollBar().setValue(0)
@@ -163,6 +157,8 @@ def _capture_download_activity(window: MainWindow, app: QApplication) -> None:
         "connections_configured": 8,
         "connections_used": 8,
         "fragmented": True,
+        "parallel_ranges": 8,
+        "range_progress": [55, 42, 31, 49, 28, 46, 38, 45],
     })
     _settle(app)
     _save_annotated(
@@ -172,24 +168,44 @@ def _capture_download_activity(window: MainWindow, app: QApplication) -> None:
     )
 
 
+def _capture_album_states(window: MainWindow, app: QApplication) -> None:
+    page = _show_page(window, app, 4)
+    editor = window.album_input
+    entry = editor.entries[0]
+    entry["fields"]["__source_mode__"].setCurrentIndex(1)
+    _settle(app)
+    _save_annotated(window, WORKSPACES / "album-local-file.png", _card_regions(page, window))
+    entry["fields"]["__name__"].setText("Example album")
+    editor.disable_completed((), ("Example album",), {
+        "Example album": "The source file could not be opened. Choose an existing audio/video file with Browse."
+    })
+    _settle(app)
+    _save_annotated(window, WORKSPACES / "album-needs-attention.png", _card_regions(page, window))
+
+
 def _capture_settings(window: MainWindow, app: QApplication) -> None:
-    page = _show_page(window, app, 12)
+    window._open_settings_dialog()
+    page = window.settings_page
+    dialog = window._settings_dialog
     captures = (
-        ("global-settings-processing.png", ("batch_network",)),
-        ("global-settings-audio-playback.png", ("audio_metadata", "video_playback")),
-        ("global-settings-ai.png", ("ai_providers",)),
-        (
-            "global-settings-behavior-storage.png",
-            ("behavior_privacy", "storage_appearance"),
-        ),
+        ("global-settings-processing.png", "batch_network"),
+        ("global-settings-audio-playback.png", "audio_metadata"),
+        ("global-settings-playback.png", "video_playback"),
+        ("global-settings-ai.png", "ai_providers"),
+        ("global-settings-behavior-storage.png", "behavior_privacy"),
+        ("global-settings-storage.png", "storage_appearance"),
+        ("global-settings-services.png", "connected_services"),
+        ("global-settings-updates.png", "software_updates"),
     )
     for filename, expanded in captures:
-        for key, section in window.settings_sections.items():
-            section.set_expanded(key in expanded)
+        for index in range(window.settings_categories.count()):
+            if window.settings_categories.item(index).data(Qt.ItemDataRole.UserRole) == expanded:
+                window.settings_categories.setCurrentRow(index)
         if isinstance(page, QScrollArea):
             page.verticalScrollBar().setValue(0)
         _settle(app)
-        _save_annotated(window, WORKSPACES / filename, _card_regions(page, window))
+        _save_annotated(dialog, WORKSPACES / filename, _card_regions(page, dialog))
+    dialog.close()
 
 
 def _capture_utilities(window: MainWindow, app: QApplication) -> None:
@@ -240,6 +256,9 @@ def _capture_library(window: MainWindow, app: QApplication) -> None:
 
     library.queue_toggle_button.click()
     _settle(app)
+    _save_annotated(window, LIBRARY / "now-playing-queue.png", _library_regions(window))
+    library.queue_toggle_button.click()
+    _settle(app)
 
     fullscreen = library._ensure_fullscreen_window()
     library._player_fullscreen = True
@@ -271,9 +290,6 @@ def _capture_library(window: MainWindow, app: QApplication) -> None:
         fullscreen_regions,
     )
     library.exit_video_fullscreen()
-    _settle(app)
-    _save_annotated(window, LIBRARY / "now-playing-queue.png", _library_regions(window))
-    library.queue_toggle_button.click()
     _settle(app)
 
 
@@ -321,6 +337,12 @@ def main() -> int:
         directory.mkdir(parents=True, exist_ok=True)
 
     app = QApplication.instance() or QApplication(sys.argv[:1])
+    if sys.platform == "win32" and os.environ.get("QT_QPA_PLATFORM") == "offscreen":
+        # Qt's offscreen Windows backend does not discover system fonts itself.
+        font_root = Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts"
+        for name in ("segoeui.ttf", "segoeuib.ttf", "seguisb.ttf", "consola.ttf"):
+            QFontDatabase.addApplicationFont(str(font_root / name))
+        app.setFont(QFont("Segoe UI", 10))
     app.setStyle("Fusion")
     palette = QPalette()
     palette.setColor(QPalette.ColorRole.Window, QColor(8, 12, 26))
@@ -367,6 +389,7 @@ def main() -> int:
         ):
             _capture_workspace(window, app, index, filename)
         _capture_download_activity(window, app)
+        _capture_album_states(window, app)
         _capture_utilities(window, app)
         _capture_settings(window, app)
         _capture_library(window, app)

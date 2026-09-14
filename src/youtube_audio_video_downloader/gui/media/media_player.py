@@ -19,6 +19,7 @@ from PyQt6.QtCore import (
     QEasingCurve,
     QAbstractNativeEventFilter,
     QEvent,
+    QFileSystemWatcher,
     QItemSelectionModel,
     QModelIndex,
     QObject,
@@ -213,6 +214,8 @@ def _video_mode_index(
 
 class LibraryScanner(QObject):
     finished = pyqtSignal(object)
+    failed = pyqtSignal(str)
+    directories_found = pyqtSignal(object)
 
     def __init__(self, folders: list[str]) -> None:
         super().__init__()
@@ -221,9 +224,19 @@ class LibraryScanner(QObject):
     @pyqtSlot()
     def run(self) -> None:
         thread = QThread.currentThread()
-        self.finished.emit(
-            scan_library(self.folders, cancelled=thread.isInterruptionRequested)
-        )
+        items = None
+        try:
+            directories: list[str] = []
+            items = scan_library(self.folders, cancelled=thread.isInterruptionRequested,
+                                 directories=directories)
+            if thread.isInterruptionRequested():
+                items = None
+            else:
+                self.directories_found.emit(directories)
+        except Exception as exc:
+            self.failed.emit(str(exc))
+        finally:
+            self.finished.emit(items)
 
 
 class VideoViewport(QWidget):
@@ -1033,6 +1046,8 @@ class MediaLibraryPage(QWidget):
         self._scanner_thread: QThread | None = None
         self._scanner_worker: LibraryScanner | None = None
         self._scan_refresh_pending = False
+        self._scan_force = False
+        self._library_directories: list[str] = []
         self._shutting_down = False
         self._scan_started_at = 0.0
         self._search_thread: QThread | None = None
@@ -1118,10 +1133,17 @@ class MediaLibraryPage(QWidget):
         self._load_folders()
         if self.phone_access_switch.isChecked():
             self._start_remote_access()
+        self.library_watcher = QFileSystemWatcher(self)
+        self.library_change_timer = QTimer(self)
+        self.library_change_timer.setSingleShot(True)
+        self.library_change_timer.setInterval(200)
+        self.library_change_timer.timeout.connect(lambda: self.refresh_library(force=False))
+        self.library_watcher.directoryChanged.connect(lambda _path: self.library_change_timer.start())
+        self.library_watcher.fileChanged.connect(lambda _path: self.library_change_timer.start())
         self.refresh_library()
         self.refresh_timer = QTimer(self)
         self.refresh_timer.setInterval(15000)
-        self.refresh_timer.timeout.connect(self.refresh_library)
+        self.refresh_timer.timeout.connect(self._periodic_library_refresh)
         self.refresh_timer.start()
         self.remote_sync_timer = QTimer(self)
         self.remote_sync_timer.setInterval(1000)
@@ -3816,24 +3838,44 @@ class MediaLibraryPage(QWidget):
         else:
             QMessageBox.information(self, "Artist fixes complete", message)
 
-    def refresh_library(self) -> None:
+    def _periodic_library_refresh(self) -> None:
+        if self._scanner_thread is None:
+            self.refresh_library(force=False)
+
+    def _update_library_watches(self, items: list[LibraryItem]) -> None:
+        paths = {str(Path(folder).expanduser().resolve()) for folder in self.folders()}
+        paths.update(self._library_directories)
+        paths.update(item.path for item in items)
+        watched = set(self.library_watcher.files() + self.library_watcher.directories())
+        if watched - paths:
+            self.library_watcher.removePaths(sorted(watched - paths))
+        if paths - watched:
+            self.library_watcher.addPaths(sorted(paths - watched))
+
+    def _scan_directories_found(self, directories: object) -> None:
+        self._library_directories = list(directories)
+
+    def refresh_library(self, *, force: bool = True) -> None:
         if self._shutting_down:
             return
         if self._scanner_thread is not None:
             self._scan_refresh_pending = True
-            self.library_refresh_button.setText("Refresh queued")
+            if force:
+                self._scanner_thread.requestInterruption()
+            self.library_refresh_button.setText("Refresh")
             self.library_refresh_button.setToolTip(
                 "Another rescan will run as soon as the current scan finishes"
             )
             return
         if not self.folders():
-            self.items = []
-            self.apply_filters()
-            self._render_playlist_tracks()
+            self._library_directories = []
+            self._scan_finished([])
             return
         self._scan_refresh_pending = False
-        self.library_refresh_button.setEnabled(False)
-        self.library_refresh_button.setText("Scanning…")
+        self._scan_force = force
+        self.library_refresh_button.setEnabled(True)
+        self.library_refresh_button.setText("Refresh")
+        self.library_refresh_button.setToolTip("Scanning library… Click to restart the scan")
         self._scan_started_at = time.monotonic()
         log_diagnostic(
             "LIBRARY", f"Background scan started; folders={self.folders()!r}"
@@ -3843,6 +3885,8 @@ class MediaLibraryPage(QWidget):
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.finished.connect(self._scan_finished)
+        worker.failed.connect(self._scan_failed)
+        worker.directories_found.connect(self._scan_directories_found)
         worker.finished.connect(thread.quit)
         worker.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
@@ -3850,6 +3894,10 @@ class MediaLibraryPage(QWidget):
         self._scanner_thread = thread
         self._scanner_worker = worker
         thread.start()
+
+    def _scan_failed(self, message: str) -> None:
+        log_diagnostic("LIBRARY", f"Scan failed: {message}")
+        self.queue_status.setText(f"Library scan failed: {message}. Click Refresh to retry.")
 
     def _scanner_thread_finished(self) -> None:
         self._scanner_thread = None
@@ -3864,17 +3912,29 @@ class MediaLibraryPage(QWidget):
 
     def _scan_finished(self, items: object) -> None:
         self._scanner_worker = None
+        if items is None:
+            return
         scanned_items = list(items) if isinstance(items, list) else []
+        self._update_library_watches(scanned_items)
         log_diagnostic(
             "LIBRARY",
             f"Background scan finished; items={len(scanned_items)} "
             f"elapsed={time.monotonic() - self._scan_started_at:.3f}s",
         )
-        if scanned_items == self.items:
+        if scanned_items == self.items and not self._scan_force:
             log_diagnostic(
                 "LIBRARY", "Scan contents unchanged; preserving current browser UI"
             )
             return
+        previous = {item.path: item.modified_ns for item in self.items}
+        if self._scan_force:
+            self._artwork_cache.clear()
+        self._artwork_cache = {
+            item.path: self._artwork_cache[item.path]
+            for item in scanned_items
+            if item.path in self._artwork_cache
+            and previous.get(item.path) == item.modified_ns
+        }
         self.items = scanned_items
         current_year = datetime.now().year
         available_years = sorted(
@@ -3904,11 +3964,11 @@ class MediaLibraryPage(QWidget):
             if 0 <= self.queue_index < len(self.queue)
             else ""
         )
-        self.queue = [
-            item for item in self.queue if item.path.casefold() in available_paths
-        ]
+        indexed = {item.path.casefold(): item for item in scanned_items}
+        self.queue = [indexed[item.path.casefold()] for item in self.queue
+                      if item.path.casefold() in available_paths]
         self._queue_source = [
-            item
+            indexed[item.path.casefold()]
             for item in self._queue_source
             if item.path.casefold() in available_paths
         ]
@@ -3921,6 +3981,10 @@ class MediaLibraryPage(QWidget):
             0 if self.queue else -1,
         )
         self._update_queue_status()
+        if current_path and current_path.casefold() not in available_paths:
+            self.stop()
+        if 0 <= self.queue_index < len(self.queue):
+            self._set_now_playing_art(self.queue[self.queue_index])
         self.apply_filters()
         self._render_playlist_tracks()
         log_diagnostic(
@@ -4964,23 +5028,32 @@ class MediaLibraryPage(QWidget):
         targets = {path.casefold() for path in paths}
         if 0 <= self.queue_index < len(self.queue) and self.queue[self.queue_index].path.casefold() in targets:
             self.stop()
-        self.queue = [item for item in self.queue if item.path.casefold() not in targets]
-        self._queue_source = [item for item in self._queue_source if item.path.casefold() not in targets]
-        self.queue_index = min(self.queue_index, len(self.queue) - 1)
-        for name, playlist_paths in self.playlists.items():
-            self.playlists[name] = [path for path in playlist_paths if str(Path(path).expanduser().resolve()).casefold() not in targets]
-        self._save_playlists()
+        current_path = self.queue[self.queue_index].path if 0 <= self.queue_index < len(self.queue) else ""
         failures: list[str] = []
         deleted = 0
+        removed: set[str] = set()
         for path_text in paths:
             path = Path(path_text)
             try:
                 if path.exists():
                     path.unlink()
                 deleted += 1
+                removed.add(path_text.casefold())
                 self._video_display_profiles.pop(self._video_profile_key(path), None)
             except OSError as exc:
                 failures.append(f"{path.name}: {exc}")
+        self.queue = [item for item in self.queue if item.path.casefold() not in removed]
+        self._queue_source = [item for item in self._queue_source if item.path.casefold() not in removed]
+        self.queue_index = next((index for index, item in enumerate(self.queue)
+                                 if item.path == current_path), -1)
+        for name, playlist_paths in self.playlists.items():
+            self.playlists[name] = [path for path in playlist_paths
+                                   if str(Path(path).expanduser().resolve()).casefold() not in removed]
+        self._save_playlists()
+        self.items = [item for item in self.items if item.path.casefold() not in removed]
+        self._artwork_cache = {path: icon for path, icon in self._artwork_cache.items()
+                               if path.casefold() not in removed}
+        self.apply_filters()
         self.settings.setValue(
             "library/video_display_profiles",
             json.dumps(self._video_display_profiles, sort_keys=True),
@@ -5457,10 +5530,8 @@ class MediaLibraryPage(QWidget):
             return
         known_ms = sum(max(0, int(item.duration_ms)) for item in self.queue)
         unknown = sum(int(item.duration_ms) <= 0 for item in self.queue)
-        total_seconds = known_ms // 1000
-        hours, remainder = divmod(total_seconds, 3600)
-        minutes = remainder // 60
-        duration = f"{hours} hr {minutes} min" if hours else f"{minutes} min"
+        minutes = (known_ms + 59_999) // 60_000
+        duration = f"{minutes} min"
         suffix = f" • {unknown} unknown" if unknown else ""
         self.queue_duration_label.setText(
             f"{len(self.queue)} track{'s' if len(self.queue) != 1 else ''} • {duration}{suffix}"
@@ -5719,6 +5790,7 @@ class MediaLibraryPage(QWidget):
             self._remote_server = None
         self._scan_refresh_pending = False
         self.refresh_timer.stop()
+        self.library_change_timer.stop()
         application = QApplication.instance()
         if application is not None and self._application_event_filter_installed:
             application.removeEventFilter(self)

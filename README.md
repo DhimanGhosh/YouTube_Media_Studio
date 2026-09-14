@@ -31,6 +31,23 @@ and manage a local playback library.
 > FFmpeg, FFprobe, Deno, yt-dlp, and application dependencies are bundled—no developer
 > environment and no administrator access are required.
 
+## Start with the desktop app
+
+Use the menus along the top: **Download** for songs/videos, **Organize** for albums
+and jukeboxes, **Edit** for tags and artwork, and **View** for Dashboard and Live Logs.
+**Media Player** is at the top right; **File → Settings…** opens a separate settings
+window. No coding is needed.
+
+Start with [your first album in five steps](docs/USER_GUIDE.md#your-first-album-in-five-steps),
+or follow the [illustrated screen-by-screen guide](docs/USER_GUIDE.md).
+
+The 2.x line includes automatic library updates, an always-clickable Refresh button,
+artwork refresh after editing, stable queue selection after deletion, and total queue
+time rounded up in minutes. Download acceleration uses validated parallel HTTP byte
+ranges as well as segmented streams. Set **Parallel workers** and **Connections per
+download** in Settings. Album errors explain what needs attention and how to retry.
+Built-in AI development remains on the separate 3.x line.
+
 ## See it running
 
 <p align="center">

@@ -31,6 +31,7 @@ def test_unknown_size_finished_download_is_authoritatively_complete() -> None:
     assert panel.overall.format() == "Download complete"
     assert len(panel.connection_bars) == 1
     assert panel.connection_bars[0].value() == 100
+    assert panel.connection_bars[0].isHidden()
     assert "ETA" not in panel.stats.text()
 
 
@@ -50,3 +51,12 @@ def test_fragmented_transfer_shows_configured_lanes_until_finished() -> None:
 
     assert len(panel.connection_bars) == 4
     assert [bar.value() for bar in panel.connection_bars] == [50, 50, 0, 0]
+
+
+def test_byte_range_strip_shows_individual_measured_progress():
+    _app = QApplication.instance() or QApplication([])
+    panel = DownloadProgressPanel()
+    panel.update_download({"parallel_ranges": 3, "connections_used": 3,
+                           "range_progress": [10, 60, 90], "total": 100, "percent": 53})
+    assert [bar.value() for bar in panel.connection_bars] == [10, 60, 90]
+    assert all(not bar.isHidden() for bar in panel.connection_bars)

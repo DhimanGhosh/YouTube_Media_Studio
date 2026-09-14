@@ -230,3 +230,17 @@ independent evidence can safely establish the requested property.
 - Ollama CPU/GPU placement is controlled by the Ollama runtime and available VRAM; the
   app limits context allocation but does not override the runtime's device scheduler.
 - GUI state is local to a user profile and is not a multi-user database.
+
+## Stable 2.x responsiveness and recovery
+
+A completed download or changed library file becomes visible without restarting the
+application. Refresh remains available while scanning and requests a fresh scan.
+Playback retains the current song when earlier queue entries disappear. Metadata
+edits update cached artwork, and displayed total time rounds up to whole minutes.
+
+Downloads have two independent concurrency controls: workers for albums/tracks and
+connections for pieces of one source. Progressive sources use validated byte ranges
+where supported; segmented sources retain native fragment downloading. Download
+completion and the later split/tag phase remain distinct. Failures identify the
+specific album or track and explain how to retry. The illustrated [user guide](USER_GUIDE.md)
+covers these controls and the current menu/Settings navigation.

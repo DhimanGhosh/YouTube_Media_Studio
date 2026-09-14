@@ -354,3 +354,24 @@ flowchart TD
 Pull requests run only the quality gate. A successful main run selects the next version,
 builds all targets, promotes curated `Unreleased` changelog notes, creates a release
 commit/tag, and publishes one release with checksums.
+
+## Stable 2.x change-to-playback flow
+
+```mermaid
+flowchart TD
+    Changes[File added, edited, or deleted] --> Debounce[Debounce filesystem notifications]
+    Finished[Batch item completed] --> Scan[Background library scan]
+    Debounce --> Scan
+    Manual[Click Refresh at any time] --> Restart[Interrupt current scan and request a fresh one]
+    Restart --> Scan
+    Scan --> Result{Scan outcome}
+    Result -->|Success| Index[Update index and invalidate changed artwork]
+    Result -->|Error or interrupted| Preserve[Keep previous index; allow retry]
+    Index --> Queue[Refresh queue metadata and preserve playing-file identity]
+```
+
+A 15-second backup scan covers missed filesystem notifications without queuing work
+behind an active scan. HTTP downloads probe range support, stage disjoint ranges in
+parallel, validate each response, then join and publish the completed file. Invalid
+ranges fall back to native HTTP. Cancellation cleans staging before returning.
+For the current screens and retry steps, see [the user guide](USER_GUIDE.md).

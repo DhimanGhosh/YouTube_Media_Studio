@@ -88,3 +88,16 @@ mindmap
 Start with the [high-level design](HIGH_LEVEL_DESIGN.md), then use the
 [low-level design](LOW_LEVEL_DESIGN.md) for code ownership. Refer to
 [workflow designs](WORKFLOW_DESIGNS.md) when changing a particular execution path.
+
+## Stable 2.x synchronization boundaries
+
+The Media Player owns the index, filesystem watcher, and queue reconciliation.
+Filesystem notifications are debounced; discovery and metadata reading stay on the
+scanner thread. Scan termination is guaranteed even after an exception, and only a
+successful, uninterrupted result replaces the visible library.
+
+Each yt-dlp instance can select the application's progressive HTTP range downloader.
+It validates server range support and stages complete output privately; native yt-dlp
+retains responsibility for extraction, segmented streams, and postprocessing. See
+[the low-level design](LOW_LEVEL_DESIGN.md#stable-2x-library-and-download-synchronization)
+for lifecycle and integrity rules.

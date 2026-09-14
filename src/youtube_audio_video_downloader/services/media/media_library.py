@@ -39,6 +39,7 @@ def scan_library(
     folders: Iterable[str | Path],
     *,
     cancelled: Callable[[], bool] | None = None,
+    directories: list[str] | None = None,
 ) -> list[LibraryItem]:
     """Recursively index supported media in the selected folders."""
 
@@ -49,9 +50,15 @@ def scan_library(
         root = Path(folder).expanduser()
         if not root.is_dir():
             continue
+        if directories is not None:
+            directories.append(str(root.resolve()))
         for path in root.rglob("*"):
             if cancelled and cancelled():
                 return []
+            if path.is_dir() and directories is not None:
+                directories.append(str(path.resolve()))
+            if path.name.startswith(".") or any(part.startswith(".yms-") for part in path.parts):
+                continue
             if path.is_file() and path.suffix.casefold() in MEDIA_EXTENSIONS:
                 resolved = path.resolve()
                 paths[str(resolved).casefold()] = resolved
@@ -59,7 +66,11 @@ def scan_library(
     for path in paths.values():
         if cancelled and cancelled():
             return []
-        items.append(_read_item(path))
+        try:
+            items.append(_read_item(path))
+        except OSError:
+            # A downloader/editor may replace or remove a file during discovery.
+            continue
     return sorted(items, key=lambda item: (item.artists.casefold(), item.album.casefold(), item.title.casefold()))
 
 

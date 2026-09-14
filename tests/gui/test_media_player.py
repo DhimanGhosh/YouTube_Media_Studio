@@ -7,6 +7,7 @@ import os
 import tempfile
 import time
 import unittest
+from dataclasses import replace
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
@@ -685,12 +686,84 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.page.refresh_library()
 
         self.assertTrue(self.page._scan_refresh_pending)
-        self.assertEqual(self.page.library_refresh_button.text(), "Refresh queued")
+        self.assertTrue(self.page.library_refresh_button.isEnabled())
+        self.page._scanner_thread.requestInterruption.assert_called_once()
+        self.assertEqual(self.page.library_refresh_button.text(), "Refresh")
         with patch.object(QTimer, "singleShot") as single_shot:
             self.page._scanner_thread_finished()
         single_shot.assert_called_once_with(0, self.page.refresh_library)
         self.assertIsNone(self.page._scanner_thread)
         self.assertTrue(self.page.library_refresh_button.isEnabled())
+
+    def test_scan_exception_releases_worker_and_refresh_can_retry(self) -> None:
+        with patch.object(self.page, "folders", return_value=[self.temporary.name]), patch(
+            "youtube_audio_video_downloader.gui.media.media_player.scan_library",
+            side_effect=RuntimeError("Unreadable folder"),
+        ):
+            original = list(self.page.items)
+            self.page.refresh_library()
+            self.assertTrue(wait_until(lambda: self.page._scanner_thread is None))
+            self.assertEqual(self.page.items, original)
+            self.assertTrue(self.page.library_refresh_button.isEnabled())
+            self.assertIn("Unreadable folder", self.page.queue_status.text())
+        with patch.object(self.page, "folders", return_value=[self.temporary.name]):
+            self.page.library_refresh_button.click()
+            self.assertTrue(wait_until(lambda: self.page._scanner_thread is None))
+            self.assertEqual(self.page.items, [])
+
+    def test_scan_replaces_stale_queue_metadata_and_artwork(self) -> None:
+        old = self.page.items[0]
+        updated = replace(old, modified_ns=2, title="Edited title")
+        self.page.queue = [old]
+        self.page._queue_source = [old]
+        self.page.queue_index = 0
+        self.page._artwork_cache[old.path] = QIcon()
+        with patch.object(self.page, "_set_now_playing_art") as art:
+            self.page._scan_finished([updated])
+        self.assertNotIn(old.path, self.page._artwork_cache)
+        self.assertEqual(self.page.queue, [updated])
+        art.assert_called_once_with(updated)
+
+    def test_filesystem_watcher_syncs_new_and_deleted_tracks_without_manual_refresh(self) -> None:
+        self.page.refresh_timer.stop()
+        folder = Path(self.temporary.name) / "album"
+        folder.mkdir()
+        with patch.object(self.page, "folders", return_value=[self.temporary.name]):
+            self.page.refresh_library()
+            self.assertTrue(wait_until(lambda: self.page._scanner_thread is None))
+            song = folder / "new.mp3"
+            song.write_bytes(b"test media")
+            self.assertTrue(wait_until(lambda: any(item.path == str(song.resolve())
+                                                 for item in self.page.items)))
+            song.unlink()
+            self.assertTrue(wait_until(lambda: not self.page.items))
+
+
+    def test_queue_duration_rounds_up_to_minutes_even_above_one_hour(self) -> None:
+        for milliseconds, expected in [(240000, 4), (247000, 5), (1739000, 29),
+                                       (3600000, 60), (3600001, 61)]:
+            self.page.queue = [media("Song", 2020, milliseconds)]
+            self.page._update_queue_duration_label()
+            self.assertEqual(self.page.queue_duration_label.text(), f"1 track • {expected} min")
+
+    def test_permanent_delete_before_current_track_preserves_playing_identity(self) -> None:
+        tracks = []
+        for index in range(5):
+            path = Path(self.temporary.name) / f"{index}.mp3"
+            path.write_bytes(b"media")
+            tracks.append(replace(media(str(index), 2020, 1000), path=str(path.resolve())))
+        self.page.items = tracks
+        self.page.queue = list(tracks)
+        self.page._queue_source = list(tracks)
+        self.page.queue_index = 3
+        with patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes), \
+                patch.object(QMessageBox, "information"), patch.object(self.page, "refresh_library"), \
+                patch.object(self.page, "stop") as stop:
+            self.page._permanently_delete_media([tracks[1]])
+        self.assertEqual(self.page.queue_index, 2)
+        self.assertEqual(self.page.queue[2], tracks[3])
+        self.assertFalse(Path(tracks[1].path).exists())
+        stop.assert_not_called()
 
     def test_refresh_without_folders_clears_stale_library_rows(self) -> None:
         self.assertTrue(self.page.items)

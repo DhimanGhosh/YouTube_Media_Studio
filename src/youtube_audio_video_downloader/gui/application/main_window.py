@@ -2762,8 +2762,8 @@ class MainWindow(QMainWindow):
         self.settings_min_delay = self._spin(0, 600, self._default_value("min_delay", 10), " s")
         self.settings_connections = self._spin(1, 32, self._default_value("connections", 8))
         self.settings_connections.setToolTip(
-            "Maximum connections inside one download. Fragmented DASH/HLS sources use "
-            "parallel transfers; progressive sources accurately fall back to one stream."
+            "Maximum connections inside one download. HTTP sources use validated parallel "
+            "byte ranges; DASH/HLS uses parallel fragments. Unsupported ranges use one connection."
         )
         self.settings_max_delay = self._spin(0, 600, self._default_value("max_delay", 25), " s")
         self.settings_retries = self._spin(1, 20, self._default_value("retries", 3))
@@ -3467,13 +3467,13 @@ class MainWindow(QMainWindow):
             editor.disable_completed(
                 summary.get("completed_items", ()),
                 summary.get("failed_items", ()),
+                summary.get("failure_details", {}),
             )
         details = self._summary_text(summary)
         self._append_log(f"[PARALLEL-COMPLETE] {operation}: {details}")
         self._add_history(operation, "Completed", summary.get("total", 0), details)
         if operation == "album":
-            status = "Partial" if int(summary.get("failed", 0) or 0) else "Completed"
-            self._set_parallel_album_status(thread, status)
+            self._record_album_result_statuses(summary)
         self._save_workspace_state()
         self.media_library.refresh_library()
 
@@ -3609,6 +3609,7 @@ class MainWindow(QMainWindow):
     def _mark_parallel_batch_item_finished(
         self, operation: str, item: str, successful: bool
     ) -> None:
+        self.media_library.refresh_library(force=False)
         editor = self._batch_editor_for_operation(operation)
         if editor is None:
             return
@@ -3636,6 +3637,7 @@ class MainWindow(QMainWindow):
             editor.disable_completed(
                 summary.get("completed_items", ()),
                 summary.get("failed_items", ()),
+                summary.get("failure_details", {}),
             )
         details = self._summary_text(summary)
         self._append_log(f"[COMPLETE] {details}")
@@ -3643,8 +3645,7 @@ class MainWindow(QMainWindow):
             summary.get("operation", "Job"), "Completed", summary.get("total", 0), details
         )
         if self._active_operation_name == "album":
-            status = "Partial" if int(summary.get("failed", 0) or 0) else "Completed"
-            self._set_active_album_status(status)
+            self._record_album_result_statuses(summary)
         self._save_workspace_state()
         self.media_library.refresh_library()
 
@@ -3687,6 +3688,16 @@ class MainWindow(QMainWindow):
         for name in self._active_entry_names:
             self._album_statuses[name] = status
         self.album_input.set_statuses(self._album_statuses)
+
+    def _record_album_result_statuses(self, summary: dict[str, Any]) -> None:
+        """Keep each album's actual result instead of labelling the whole batch Partial."""
+        self.album_input.disable_completed(
+            summary.get("completed_items", ()), summary.get("failed_items", ()),
+            summary.get("failure_details", {}),
+        )
+        for entry in self.album_input.entries:
+            name = self.album_input._field_value(entry["fields"]["__name__"])
+            self._album_statuses[name] = entry["section"].status_label.text().title()
 
     def _set_parallel_album_status(self, thread: QThread, status: str) -> None:
         for name in self._parallel_entry_names.get(thread, []):
