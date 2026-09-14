@@ -118,7 +118,8 @@ class DownloadProgressPanel(QFrame):
         percent = max(0.0, min(100.0, float(event.get("percent") or 0)))
         finished = event.get("status") == "finished"
         fragmented = bool(event.get("fragmented"))
-        configured = max(1, int(event.get("connections_configured") or 1)) if fragmented else 1
+        ranges = int(event.get("parallel_ranges") or 0)
+        configured = ranges or (max(1, int(event.get("connections_configured") or 1)) if fragmented else 1)
         used = max(1, int(event.get("connections_used") or 1))
         self.title.setText(label)
         used = min(configured, used)
@@ -153,13 +154,19 @@ class DownloadProgressPanel(QFrame):
                 self.connection_row.addWidget(bar, 1)
                 self.connection_bars.append(bar)
         for index, bar in enumerate(self.connection_bars):
-            bar.setValue(100 if finished else round(percent) if index < used else 0)
+            progress = event.get("range_progress") or []
+            bar.setValue(progress[index] if index < len(progress) else
+                         100 if finished else round(percent) if index < used else 0)
+            bar.setVisible(bool(ranges))
         downloaded = self._size(int(event.get("downloaded") or 0))
         total_text = self._size(total) if total else "unknown"
         speed = self._size(int(event.get("speed") or 0)) + "/s" if event.get("speed") else "--"
         eta = int(event.get("eta") or 0)
         eta_text = f"{eta // 60:02d}:{eta % 60:02d}" if eta else "--:--"
-        source_note = "parallel fragments" if fragmented else "single source stream"
+        source_note = (f"{ranges} parallel byte ranges" if ranges else
+                       "parallel fragments" if fragmented else "single connection")
+        if event.get("fallback_reason"):
+            source_note += f" — {event['fallback_reason']}"
         if finished:
             completed_size = int(event.get("downloaded") or 0) or total
             self.stats.setText(
@@ -731,6 +738,11 @@ class CollapsibleSection(QFrame):
         self.status_label = QLabel()
         self.status_label.setObjectName("statusBadge")
         self.status_label.setVisible(False)
+        self.failure_detail = QLabel()
+        self.failure_detail.setWordWrap(True)
+        self.failure_detail.setTextFormat(Qt.TextFormat.PlainText)
+        self.failure_detail.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.failure_detail.hide()
         self.body = QWidget()
 
         header = QHBoxLayout()
@@ -740,6 +752,7 @@ class CollapsibleSection(QFrame):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.addLayout(header)
+        layout.addWidget(self.failure_detail)
         layout.addWidget(self.body)
 
     def set_title(self, title: str) -> None:
@@ -753,6 +766,17 @@ class CollapsibleSection(QFrame):
     def set_status(self, status: str) -> None:
         self.status_label.setText(status.upper())
         self.status_label.setVisible(bool(status))
+        attention = status.casefold() in {"needs attention", "failed", "partial"}
+        if attention and not self.failure_detail.text():
+            self.failure_detail.setText(
+                "Some files could not finish. Open Live Logs for the error. "
+                "Correct the link or settings, leave Download checked, then use the start button to retry."
+            )
+        self.failure_detail.setVisible(attention)
+
+    def set_failure_detail(self, detail: str) -> None:
+        self.failure_detail.setText(detail + "\nCorrect the issue, then use the start button to retry unfinished items.")
+        self.failure_detail.show()
 
     def set_expanded(self, expanded: bool) -> None:
         """Expand or collapse the section while keeping its toggle in sync."""
@@ -2312,6 +2336,7 @@ class JsonBatchEditor(QWidget):
         self,
         completed_items: list[str] | tuple[str, ...],
         failed_items: list[str] | tuple[str, ...] = (),
+        failure_details: dict[str, str] | None = None,
     ) -> None:
         """Turn off Download for successfully completed entries and tracks."""
         completed = {str(item) for item in completed_items}
@@ -2332,6 +2357,10 @@ class JsonBatchEditor(QWidget):
                 # Keep failures visible so their inputs can be corrected and retried.
                 entry["section"].set_status("Needs attention")
                 entry["section"].set_expanded(True)
+                details = [f"{item}: {reason}" for item, reason in (failure_details or {}).items()
+                           if item == name or item.startswith(prefix)]
+                if details:
+                    entry["section"].set_failure_detail("\n".join(details))
             for track in fields.get("__tracks__", []):
                 track_name = self._field_value(track["fields"]["__name__"])
                 if entry_completed and not entry_failed:
@@ -2362,6 +2391,11 @@ class JsonBatchEditor(QWidget):
                 if track_failed:
                     track["section"].set_status("Needs attention")
                     track["section"].set_expanded(True)
+                    details = [f"{item}: {reason}" for item, reason in (failure_details or {}).items()
+                               if item.startswith(prefix)
+                               and re.sub(r"^\d+\.\s*", "", item[len(prefix):]) == track_name]
+                    if details:
+                        track["section"].set_failure_detail("\n".join(details))
             tracks = fields.get("__tracks__", [])
             if (
                 tracks

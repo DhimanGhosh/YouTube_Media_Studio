@@ -52,6 +52,16 @@ def _emit_download_lifecycle(
         "fragment": 0,
         "fragment_count": 0,
     }
+    if status == "finished":
+        for hook in options.get("progress_hooks", []):
+            previous = getattr(hook, "last_payload", None)
+            if isinstance(previous, dict) and previous:
+                payload.update(previous)
+        payload.update(status=status, percent=percent)
+    else:
+        for hook in options.get("progress_hooks", []):
+            if hasattr(hook, "last_payload"):
+                hook.last_payload = {}
     print(DOWNLOAD_EVENT_PREFIX + json.dumps(payload), flush=True)
 
 
@@ -215,6 +225,10 @@ def download_with_fallback(
                 if download:
                     _emit_download_lifecycle(label, options, "downloading", 0.0)
                 with yt_dlp.YoutubeDL(options) as downloader:
+                    from .parallel_http import enable_parallel_http
+
+                    if download and int(options.get("concurrent_fragment_downloads") or 1) > 1:
+                        enable_parallel_http(downloader)
                     result = downloader.extract_info(url, download=download)
                     if download and isinstance(result, dict) and not result.get("_filename"):
                         try:

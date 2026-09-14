@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import tempfile
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -94,6 +94,7 @@ class OperationSummary:
     output_path: str = ""
     completed_items: tuple[str, ...] = ()
     failed_items: tuple[str, ...] = ()
+    failure_details: dict[str, str] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -882,6 +883,8 @@ def _summarize_results(
         failed_items=tuple(
             result.song for result in results if result.status.value == "failed"
         ),
+        failure_details={result.song: result.reason or "Download failed; see Live Logs."
+                         for result in results if result.status.value == "failed"},
     )
     if enrichment is None:
         return summary

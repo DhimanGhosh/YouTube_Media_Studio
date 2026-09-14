@@ -181,6 +181,10 @@ def _download_source(
         "no_warnings": False,
     }
     with yt_dlp.YoutubeDL(options) as downloader:
+        from .parallel_http import enable_parallel_http
+
+        if segment_connections > 1:
+            enable_parallel_http(downloader)
         downloader.download([url])
     candidates = [
         path

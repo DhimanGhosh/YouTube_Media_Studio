@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+import os
 import subprocess
 import tempfile
 import unittest
@@ -45,6 +46,9 @@ class MediaMetadataTest(unittest.TestCase):
             self.assertEqual(loaded.album_artist, "Existing album artist")
             self.assertTrue(loaded.artwork_present)
 
+            os.utime(source, (1_000_000, 1_000_000))
+            original_modified = source.stat().st_mtime_ns
+
             replace_media_metadata(
                 source,
                 {
@@ -55,6 +59,7 @@ class MediaMetadataTest(unittest.TestCase):
             )
 
             updated = read_media_metadata(source)
+            self.assertGreater(source.stat().st_mtime_ns, original_modified)
             self.assertEqual(updated.title, "New title")
             self.assertEqual(updated.track_number, "2")
             self.assertEqual(updated.track_total, "9")

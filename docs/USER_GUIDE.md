@@ -47,6 +47,25 @@ borders so the application's own labels remain visible. The numbered table immed
 after an image explains the matching area. A screenshot shows where a control is; the
 text remains the authoritative description of what it does.
 
+## Your first album in five steps
+
+1. Open **Organize → Album Splitter** from the menu at the top.
+2. Enter the album name and use **Auto fill album**; review the songs it finds. For a
+   jukebox URL, choose **YouTube URL** under Source media. For a file already on your
+   computer, choose **Local file** and use **Browse**.
+3. Choose an output folder with **Browse**. Check the songs you want and start the job
+   with **Start album split**. You can open another workspace while it works.
+4. Click **Media Player** at the top right. Add the output folder with **+** (add folder)
+   if it is not already listed. Completed songs appear automatically; **Refresh**
+   forces another scan at any time.
+5. Open an album, select songs, and use the play or queue actions. The queue drawer
+   lets you reorder songs while the current song continues playing.
+
+If an album says **Needs attention**, read the error shown directly below that album's header.
+It means one or more downloads or processing steps failed. Successful songs remain
+available. Fix the named link or setting, leave unfinished songs checked, then run
+again. **View → Live Logs** contains the detailed error and recovery attempts.
+
 ## First-time setup
 
 1. Install and start **YouTube Media Studio** from the Windows Start menu, macOS
@@ -145,6 +164,39 @@ The category list contains Software updates, Connected services, Batch processin
 network, Audio and metadata, Media playback, AI providers and online evidence,
 Application behavior and privacy, and Storage and appearance.
 
+### Settings screen tour
+
+The left category list switches between these screens. In every Settings screenshot,
+**1** is the reset/save area and **2** is the selected category's controls. Choose
+**Save and apply defaults** after editing. Close the window to return to your job.
+
+| Category | What to use it for |
+| --- | --- |
+| Software updates | Check the installed version, choose the stable 2.x channel, and install an update. |
+| Connected services | Optional Google sign-in, backup, restore, and playlist import. |
+| Batch processing and network | Parallel workers, per-download connections, delays, and retries. |
+| Audio and metadata | Sound quality, album ordering, and silence-splitting defaults. |
+| Media playback | Seek distance and remembered video framing. |
+| AI providers and online evidence | Optional provider, model, and credentials. |
+| Application behavior and privacy | Save workspace state and control optional diagnostics. |
+| Storage and appearance | Application data location and appearance preferences. |
+
+![Batch processing and network](media/user-guide/workspaces/global-settings-processing.png)
+
+![Audio and metadata](media/user-guide/workspaces/global-settings-audio-playback.png)
+
+![Media playback](media/user-guide/workspaces/global-settings-playback.png)
+
+![AI providers](media/user-guide/workspaces/global-settings-ai.png)
+
+![Application behavior and privacy](media/user-guide/workspaces/global-settings-behavior-storage.png)
+
+![Storage and appearance](media/user-guide/workspaces/global-settings-storage.png)
+
+![Connected services](media/user-guide/workspaces/global-settings-services.png)
+
+![Software updates](media/user-guide/workspaces/global-settings-updates.png)
+
 ### Google Cloud Profile
 
 Google sign-in is optional and is not used for application updates. Under **Connected
@@ -170,11 +222,14 @@ multiple machines while keeping each machine's media storage independent.
 
 - **Parallel workers** controls how many independent items can run together, up to the
   safe machine-specific maximum shown by the control.
-- **Connections per download** controls how many fragments one media item may transfer
-  concurrently (1–32, default 8). DASH/HLS sources use genuine parallel fragment
-  connections; a progressive source that cannot be segmented accurately uses one
-  stream. This is separate from Parallel workers, so their product is the potential
-  upper bound on simultaneous network connections.
+- **Connections per download** sets the maximum connections for each source (1–32,
+  default 8). Ordinary HTTP media uses parallel byte ranges after the server proves
+  it supports them; DASH/HLS uses parallel fragments. Small files, live streams,
+  timestamp-only downloads, and servers that reject ranges can use one connection.
+  The transfer panel explains a range fallback. Parallel workers controls separate
+  albums/tracks; connections controls pieces of each source. For example, 3 workers
+  and 4 connections can transfer 3 independent items with up to 12 connections.
+  Separate workspace jobs each have their own worker pool.
 - **Minimum delay / Maximum delay** define randomized pacing between download requests.
 - **Retries** is the bounded number of attempts for retryable work.
 - **Retry delay** is the normal wait between failed attempts.
@@ -370,9 +425,35 @@ percentages.
 Audio Downloader, Video Downloader, Album Splitter, Jukebox Splitter, and the Edit File
 replacement action use the same activity panel. **Live Logs** simultaneously receives
 compact `[DOWNLOAD]` lines with the same values and a segment index/count when yt-dlp
-exposes fragmented progress. The panel reports “single source stream” when the selected
-source cannot use parallel fragments. Live Logs also show yt-dlp version age, selected
+exposes fragmented progress. There is one main bar for the source download. Thin bars
+appear only for real HTTP byte ranges and show each range's own progress. The bottom
+application bar describes the overall job, which can still be splitting or tagging
+after the source download reaches 100%. Completion keeps the actual transfer mode;
+it no longer replaces parallel-transfer information with a generic single-stream message. Live Logs also show yt-dlp version age, selected
 player client, browser-cookie fallback, 403 recovery, and exponential backoff.
+
+### Local files and errors, illustrated
+
+![Local album source](media/user-guide/workspaces/album-local-file.png)
+
+Choose **Local file** in **Source media**, then **Browse** to select audio or video
+already on your computer. You do not need a YouTube URL. In this screenshot, **1** is
+the optional AI switch, **2** is the job/output area, and **3** is the album editor.
+
+![An album needing attention](media/user-guide/workspaces/album-needs-attention.png)
+
+This example shows an unavailable local source. The same numbered areas apply; the
+reason and retry instruction appear directly under the album header in **3**. Choose
+a valid source with Browse, then select **Start album split**. Your successful downloads
+are unchecked automatically, so you can concentrate on the unfinished items.
+
+### Parallel albums and individual-song links
+
+Album Splitter shares one worker pool across the submitted batch. A full jukebox album
+occupies one worker while it downloads, splits, and tags. Individual-song albums put
+each selected song into that same pool, so several songs—even from different albums—
+can run together. **File → Settings… → Batch processing and network → Parallel workers**
+sets this limit. The UI runs separately from these workers.
 
 ## Split an album or jukebox
 
@@ -692,7 +773,12 @@ same-Wi-Fi access.
 
 1. Select `+` and add one or more library folders. Folder chips use 30% of the compact
    top row and scroll horizontally; the search area uses the remaining 70%.
-2. Select **Refresh** after external file/tag changes. The scan updates titles and column
+2. Additions, deletions, and metadata edits automatically request a background scan.
+   **Refresh** stays clickable during scanning: click it to restart a scan of all
+   configured folders. Playback continues and the current queue is retained. A failed
+   scan displays an error and can be retried without restarting the app. A backup scan
+   runs every 15 seconds for changes missed by the filesystem watcher.
+   The scan updates titles and column
    widths from the current metadata rather than preserving stale long values.
 3. Search across title, album, artist, year, and filename. **From year** and **To year**
    accept digits only, and To must be greater than or equal to From. From starts at the
@@ -714,13 +800,14 @@ is extracted without modifying the video.
 
 ### Smart Library Curator
 
-![Smart Library Curator](media/user-guide/media-player/smart-curator.png)
+![Smart Library Curator](media/user-guide/media-library/smart-curator.png)
 
 | Callout | Area | Use |
 | --- | --- | --- |
 | 1–2 | Folder and broad filters | Define the locally indexed/filterable scope. |
-| 3 | Curator request | Enable AI, describe a mix, set result count, find locally, start a mix, search YouTube explicitly, or clear. |
-| 4–7 | Browser, albums, and player | Curator results feed the same selection, playlist, queue, and playback controls. |
+| 3 | Curator toggle | Open or close the request area. |
+| 4 | Curator request | Enable AI, describe a mix, set result count, find locally, start a mix, search YouTube explicitly, or clear. |
+| 5–7 | Browser, albums, and player | Curator results feed the same selection, playlist, queue, and playback controls. |
 
 Enter a request such as `latest Arijit Singh Hindi dance songs`, `old Bengali songs`, or
 `return 5 calm tracks`. With AI on, the desktop model plans constraints and ranks only
@@ -758,7 +845,7 @@ After **Apply fixes**, affected metadata is updated and the library refreshes.
 
 ### Playlists
 
-![Playlist drawer](media/user-guide/media-player/playlists.png)
+![Playlist drawer](media/user-guide/media-library/playlists.png)
 
 | Callout | Area | Use |
 | --- | --- | --- |
@@ -797,12 +884,17 @@ reported separately.
 
 ### Now Playing queue
 
-![Now Playing queue](media/user-guide/media-player/now-playing-queue.png)
+![Now Playing queue](media/user-guide/media-library/now-playing-queue.png)
 
 | Callout | Area | Use |
 | --- | --- | --- |
-| 1–6 | Main library | Browse and add more media without stopping playback. |
-| 7 | Current queue | Drag tracks into playback order, play a selection, remove it, or clear the queue. |
+| 1 | Current queue | Read total minutes, drag tracks into playback order, play a selection, remove it, or clear the queue. |
+| 2–7 | Main library | Browse and add more media without stopping playback. |
+
+The total time rounds **up to the next whole minute**: 4:00 shows 4 min, 4:07 shows
+5 min, and 28:59 shows 29 min. Totals above an hour stay in minutes (61:01 shows
+62 min). Unknown lengths are marked separately. Deleting a song before the currently
+playing song keeps the highlight on the song you are actually hearing.
 
 The queue order is independent of playlist order. Previous/Next follow the queue. Drag
 its divider to resize the drawer; the width is remembered. Select one or several queue
@@ -838,7 +930,7 @@ or press Esc to return. Full-screen controls use the same theme and behavior as 
 controls. The transport controls remain horizontally centered against the complete
 screen, while the volume controls stay aligned to the right.
 
-![Full-screen video player](media/user-guide/media-player/fullscreen-player.png)
+![Full-screen video player](media/user-guide/media-library/fullscreen-player.png)
 
 | Callout | Area | What it does |
 | --- | --- | --- |
@@ -924,6 +1016,16 @@ actions. Clear affects displayed log text only.
   is recorded.
 
 ## Troubleshooting
+
+| What you see | What to do |
+| --- | --- |
+| A completed download is missing from Media Player | Add its output folder to the player, clear search/year filters, then click Refresh. |
+| A scan reports an error | Check that the folder or external drive is accessible, then click Refresh. No restart is needed. |
+| Old album artwork | Save the album edit and let the scan finish, or click Refresh. Artwork is reloaded when the file changes. |
+| Needs attention | Read the reason directly below the album header; open View → Live Logs for details, correct the problem, and retry unfinished items. |
+| Download is at 100% but the job is still running | Source transfer is complete; splitting, conversion, or tagging may still be running. Read the bottom job status. |
+| Only one download connection | Check Connections per download. Some sources cannot support ranges, and timestamp-only transfers use FFmpeg. Read the panel's fallback reason. |
+
 
 1. Open Live Logs and copy the block from `[START]` through `[COMPLETE]` or `[FAILED]`.
 2. Distinguish an intentional skip/review from an actual error.

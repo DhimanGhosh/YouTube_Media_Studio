@@ -15,6 +15,17 @@ from youtube_audio_video_downloader.gui.components.widgets import JsonBatchEdito
 
 
 class BatchEditorCompletionTest(unittest.TestCase):
+    def test_failed_album_shows_specific_reason_and_retry_instruction(self):
+        editor = JsonBatchEditor("album")
+        entry = editor.entries[0]
+        entry["fields"]["__name__"].setText("Example")
+        editor.disable_completed((), ("Example",), {"Example": "Source video is unavailable"})
+        self.assertIn("Source video is unavailable", entry["section"].failure_detail.text())
+        self.assertIn("retry", entry["section"].failure_detail.text())
+        self.assertFalse(entry["section"].failure_detail.isHidden())
+        editor.disable_completed(("Example",))
+        self.assertTrue(entry["section"].failure_detail.isHidden())
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.app = QApplication.instance() or QApplication([])
