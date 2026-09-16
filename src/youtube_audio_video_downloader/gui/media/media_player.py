@@ -57,6 +57,7 @@ from PyQt6.QtMultimediaWidgets import QGraphicsVideoItem
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
+    QBoxLayout,
     QCompleter,
     QCheckBox,
     QComboBox,
@@ -168,6 +169,7 @@ EMBEDDED_VIDEO_MAX_HEIGHT = 16_777_215
 FULLSCREEN_VIDEO_MAX_HEIGHT = 16_777_215
 AUDIO_PLAYER_CARD_MIN_HEIGHT = 166
 VIDEO_PLAYER_CARD_MIN_HEIGHT = 482
+COMPACT_PLAYER_EXTRA_HEIGHT = 48
 VIDEO_THUMBNAIL_SIZE = QSize(144, 81)
 VIDEO_GRID_THUMBNAIL_SIZE = QSize(240, 135)
 VIDEO_THUMBNAIL_CACHE_SIZE = QSize(320, 180)
@@ -175,6 +177,9 @@ VIDEO_TABLE_ROW_HEIGHT = 90
 VIDEO_TABLE_ARTWORK_WIDTH = round(VIDEO_TABLE_ROW_HEIGHT * 16 / 9)
 ARTWORK_COLUMN_INDEX = 1
 COMPACT_TABLE_ROW_HEIGHT = 30
+COMPACT_LIBRARY_WIDTH = 1_050
+MIN_LIBRARY_CENTER_WIDTH = 760
+MIN_DRAWER_WIDTH = 300
 PLAYLIST_POSITION_ROLE = int(Qt.ItemDataRole.UserRole) + 1
 PLAYLIST_NAME_ROLE = int(Qt.ItemDataRole.UserRole) + 2
 VIDEO_ASPECT_MODES: tuple[tuple[str, float | None], ...] = (
@@ -1073,6 +1078,9 @@ class MediaLibraryPage(QWidget):
         self._fullscreen_controls_overlay: QFrame | None = None
         self._fullscreen_controls_animation: QPropertyAnimation | None = None
         self._fullscreen_controls_visible = False
+        self._last_opened_drawer = "queue"
+        self._compact_library_layout = False
+        self._compact_player_layout = False
         self._fullscreen_hide_timer = QTimer(self)
         self._fullscreen_hide_timer.setSingleShot(True)
         self._fullscreen_hide_timer.setInterval(2600)
@@ -1155,6 +1163,10 @@ class MediaLibraryPage(QWidget):
         layout.setContentsMargins(6, 3, 8, 12)
         layout.setSpacing(10)
         main = QWidget()
+        main.setSizePolicy(
+            QSizePolicy.Policy.Ignored,
+            QSizePolicy.Policy.Expanding,
+        )
         main_layout = QVBoxLayout(main)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(10)
@@ -1267,6 +1279,46 @@ class MediaLibraryPage(QWidget):
         self._sync_queue_drawer()
         self._render_playlists()
         self._sync_media_type_layout()
+        QTimer.singleShot(0, self._apply_responsive_layout)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        """Reflow the library workspace before narrow displays can clip controls."""
+
+        super().resizeEvent(event)
+        if hasattr(self, "drawer_splitter"):
+            QTimer.singleShot(0, self._apply_responsive_layout)
+
+    def _apply_responsive_layout(self) -> None:
+        """Keep the center workspace usable on portrait and split-screen displays."""
+
+        if not hasattr(self, "drawer_splitter"):
+            return
+        compact = self.drawer_splitter.widget(1).width() < COMPACT_LIBRARY_WIDTH
+        if compact != self._compact_library_layout:
+            self._compact_library_layout = compact
+            self.library_controls_layout.setDirection(
+                QBoxLayout.Direction.TopToBottom
+                if compact
+                else QBoxLayout.Direction.LeftToRight
+            )
+            self.library_controls_layout.setStretch(0, 1 if compact else 3)
+            self.library_controls_layout.setStretch(1, 1 if compact else 7)
+        self._keep_drawers_from_squeezing_center()
+        self._layout_track_actions()
+        self._layout_player_controls(compact)
+
+    def _keep_drawers_from_squeezing_center(self) -> None:
+        """Allow two drawers only when their minimums leave a useful center pane."""
+
+        if not (self.playlist_drawer.isVisible() and self.queue_drawer.isVisible()):
+            return
+        required = MIN_LIBRARY_CENTER_WIDTH + (2 * MIN_DRAWER_WIDTH)
+        if self.drawer_splitter.width() >= required:
+            return
+        if self._last_opened_drawer == "playlist":
+            self.queue_toggle_button.setChecked(False)
+        else:
+            self.playlist_toggle_button.setChecked(False)
 
     def _save_player_panel_height(self, _position: int, _index: int) -> None:
         sizes = self.browser_player_splitter.sizes()
@@ -1571,6 +1623,7 @@ class MediaLibraryPage(QWidget):
 
         controls = QWidget()
         row = QHBoxLayout(controls)
+        self.library_controls_layout = row
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(8)
         self.folder_controls = self._build_folder_card()
@@ -2111,23 +2164,28 @@ class MediaLibraryPage(QWidget):
         artist_layout.addWidget(self.facets, 1)
 
         track_pane = QWidget()
+        track_pane.setSizePolicy(
+            QSizePolicy.Policy.Ignored,
+            QSizePolicy.Policy.Expanding,
+        )
         track_layout = QVBoxLayout(track_pane)
         track_layout.setContentsMargins(0, 0, 0, 0)
 
-        actions = QHBoxLayout()
+        actions = QGridLayout()
         actions.setSpacing(8)
+        self.track_actions_layout = actions
+        self.track_action_widgets: list[QWidget] = []
         self.media_results_label = QLabel("Songs and videos")
-        actions.addWidget(self.media_results_label)
+        self.track_action_widgets.append(self.media_results_label)
         self.all_tracks_button = QPushButton("‹ All tracks")
         self.all_tracks_button.setObjectName("secondaryButton")
         self.all_tracks_button.setToolTip("Clear artist selection and show all tracks")
         self.all_tracks_button.clicked.connect(self._show_all_albums)
         self.all_tracks_button.setVisible(False)
-        actions.addWidget(self.all_tracks_button)
+        self.track_action_widgets.append(self.all_tracks_button)
         self.match_status = QLabel()
         self.match_status.setObjectName("mutedLabel")
-        actions.addWidget(self.match_status)
-        actions.addStretch(1)
+        self.track_action_widgets.append(self.match_status)
         self.video_view_toggle = QPushButton("Thumbnails view")
         self.video_view_toggle.setObjectName("secondaryButton")
         self.video_view_toggle.setCheckable(True)
@@ -2139,7 +2197,7 @@ class MediaLibraryPage(QWidget):
         )
         self.video_view_toggle.toggled.connect(self._toggle_video_view)
         self.video_view_toggle.setVisible(False)
-        actions.addWidget(self.video_view_toggle)
+        self.track_action_widgets.append(self.video_view_toggle)
         self.add_selected_to_playlist_button = QPushButton("Add to playlist")
         self.add_selected_to_playlist_button.setObjectName("secondaryButton")
         self.add_selected_to_playlist_button.setToolTip(
@@ -2148,7 +2206,7 @@ class MediaLibraryPage(QWidget):
         self.add_selected_to_playlist_button.clicked.connect(
             self.add_selected_tracks_to_playlist
         )
-        actions.addWidget(self.add_selected_to_playlist_button)
+        self.track_action_widgets.append(self.add_selected_to_playlist_button)
         for text, handler, primary in (
             ("Play selected", self.play_selected, True),
             ("Play selected next", self.play_next_selected, False),
@@ -2159,7 +2217,7 @@ class MediaLibraryPage(QWidget):
             button = QPushButton(text)
             button.setObjectName("primaryButton" if primary else "secondaryButton")
             button.clicked.connect(handler)
-            actions.addWidget(button)
+            self.track_action_widgets.append(button)
         track_layout.addLayout(actions)
 
         self.table = self._new_media_table(
@@ -2194,6 +2252,7 @@ class MediaLibraryPage(QWidget):
         self.artist_track_splitter.addWidget(track_pane)
         self.artist_track_splitter.setStretchFactor(0, 1)
         self.artist_track_splitter.setStretchFactor(1, 4)
+        self._layout_track_actions()
         self.artist_track_splitter.setSizes(
             [
                 max(180, int(self.settings.value("library/artist_pane_width", 240))),
@@ -2207,6 +2266,29 @@ class MediaLibraryPage(QWidget):
         )
         layout.addWidget(self.artist_track_splitter, 1)
         return widget
+
+    def _layout_track_actions(self) -> None:
+        """Wrap browser actions instead of shrinking their labels into fragments."""
+
+        if not hasattr(self, "track_actions_layout"):
+            return
+        layout = self.track_actions_layout
+        while layout.count():
+            layout.takeAt(0)
+        width = self.artist_track_splitter.widget(1).width()
+        compact = width < 900
+        metadata = self.track_action_widgets[:4]
+        commands = self.track_action_widgets[4:]
+        for column, widget in enumerate(metadata):
+            layout.addWidget(widget, 0, column)
+        layout.setColumnStretch(len(metadata), 1)
+        if not compact:
+            for offset, widget in enumerate(commands, start=len(metadata) + 1):
+                layout.addWidget(widget, 0, offset)
+            return
+        columns = 3 if width < 720 else len(commands)
+        for index, widget in enumerate(commands):
+            layout.addWidget(widget, 1 + (index // columns), index % columns)
 
     def _build_album_section(self) -> QWidget:
         self.album_stack = QStackedWidget()
@@ -2327,7 +2409,7 @@ class MediaLibraryPage(QWidget):
     def _build_playlist_drawer(self) -> QWidget:
         drawer = GlassCard()
         drawer.setObjectName("playlistDrawer")
-        drawer.setMinimumWidth(300)
+        drawer.setMinimumWidth(MIN_DRAWER_WIDTH)
         layout = QVBoxLayout(drawer)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(8)
@@ -2433,22 +2515,38 @@ class MediaLibraryPage(QWidget):
         sizes = self.drawer_splitter.sizes()
         total = max(sum(sizes), self.drawer_splitter.width())
         playlist = (
-            max(300, int(self.settings.value("library/playlist_drawer_width", 340)))
+            max(MIN_DRAWER_WIDTH, int(self.settings.value("library/playlist_drawer_width", 340)))
             if self.playlist_drawer.isVisible()
             else 0
         )
         queue = (
-            max(300, int(self.settings.value("library/queue_drawer_width", 330)))
+            max(MIN_DRAWER_WIDTH, int(self.settings.value("library/queue_drawer_width", 330)))
             if self.queue_drawer.isVisible()
             else 0
         )
-        center = max(320, total - playlist - queue)
+        visible_drawers = int(playlist > 0) + int(queue > 0)
+        if visible_drawers:
+            available_for_drawers = max(
+                MIN_DRAWER_WIDTH * visible_drawers,
+                total - MIN_LIBRARY_CENTER_WIDTH,
+            )
+            requested = playlist + queue
+            if requested > available_for_drawers:
+                scale = available_for_drawers / requested
+                if playlist:
+                    playlist = max(MIN_DRAWER_WIDTH, round(playlist * scale))
+                if queue:
+                    queue = max(MIN_DRAWER_WIDTH, round(queue * scale))
+        center = max(MIN_LIBRARY_CENTER_WIDTH, total - playlist - queue)
         self.drawer_splitter.setSizes([playlist, center, queue])
 
     def _toggle_playlist_drawer(self, visible: bool) -> None:
         self.playlist_drawer.setVisible(bool(visible))
         if visible:
+            self._last_opened_drawer = "playlist"
+            self._keep_drawers_from_squeezing_center()
             QTimer.singleShot(0, self._restore_drawer_widths)
+            QTimer.singleShot(0, self._apply_responsive_layout)
         self.playlist_toggle_button.setText(f"Playlists ({len(self.playlists)})")
         self.playlist_toggle_button.setIcon(
             _chevron_icon("right" if visible else "left")
@@ -2861,7 +2959,7 @@ class MediaLibraryPage(QWidget):
     def _build_queue_drawer(self) -> QWidget:
         drawer = GlassCard()
         drawer.setObjectName("playbackQueueDrawer")
-        drawer.setMinimumWidth(300)
+        drawer.setMinimumWidth(MIN_DRAWER_WIDTH)
         layout = QVBoxLayout(drawer)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(8)
@@ -3066,9 +3164,11 @@ class MediaLibraryPage(QWidget):
         self._update_playback_mode_buttons()
         self._apply_video_display_modes()
         grid.addWidget(controls, 3, 1, 1, 9)
-        volume_label = QLabel("Volume")
-        volume_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        grid.addWidget(volume_label, 3, 10)
+        self.volume_label = QLabel("Volume")
+        self.volume_label.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        grid.addWidget(self.volume_label, 3, 10)
         self.volume = AnimatedSeekSlider()
         self.volume.setRange(0, 100)
         self.volume.setValue(int(self.settings.value("library/volume", 75)))
@@ -3130,6 +3230,36 @@ class MediaLibraryPage(QWidget):
         self._sync_video_shortcuts()
         self._player_host_layout.addWidget(card)
         return self._player_host
+
+    def _layout_player_controls(self, compact: bool) -> None:
+        """Give transport and volume controls separate rows in compact mode."""
+
+        if not hasattr(self, "player_grid") or compact == self._compact_player_layout:
+            return
+        self._compact_player_layout = compact
+        if compact:
+            self.player_grid.addWidget(self.player_controls, 3, 1, 1, 12)
+            self.player_grid.addWidget(self.volume_label, 4, 1, 1, 2)
+            self.player_grid.addWidget(self.volume, 4, 3, 1, 8)
+            self.player_grid.addWidget(self.volume_percent, 4, 11, 1, 2)
+        else:
+            self.player_grid.addWidget(self.player_controls, 3, 1, 1, 9)
+            self.player_grid.addWidget(self.volume_label, 3, 10)
+            self.player_grid.addWidget(self.volume, 3, 11)
+            self.player_grid.addWidget(self.volume_percent, 3, 12)
+        self._update_player_minimum_height()
+
+    def _update_player_minimum_height(self, video_active: bool | None = None) -> None:
+        if video_active is None:
+            video_active = not self.video_viewport.isHidden()
+        base = (
+            VIDEO_PLAYER_CARD_MIN_HEIGHT
+            if video_active
+            else AUDIO_PLAYER_CARD_MIN_HEIGHT
+        )
+        self.player_card.setMinimumHeight(
+            base + (COMPACT_PLAYER_EXTRA_HEIGHT if self._compact_player_layout else 0)
+        )
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
         if (
@@ -5223,7 +5353,10 @@ class MediaLibraryPage(QWidget):
     def _toggle_queue_drawer(self, visible: bool) -> None:
         self.queue_drawer.setVisible(bool(visible))
         if visible:
+            self._last_opened_drawer = "queue"
+            self._keep_drawers_from_squeezing_center()
             QTimer.singleShot(0, self._restore_drawer_widths)
+            QTimer.singleShot(0, self._apply_responsive_layout)
         self.queue_toggle_button.setText(f"Queue ({len(self.queue)})")
         self.queue_toggle_button.setIcon(
             _chevron_icon("left" if visible else "right")
@@ -5367,7 +5500,7 @@ class MediaLibraryPage(QWidget):
         self.now_playing.setText("Nothing playing")
         self._set_now_playing_art(None)
         self.video_viewport.setVisible(False)
-        self.player_card.setMinimumHeight(AUDIO_PLAYER_CARD_MIN_HEIGHT)
+        self._update_player_minimum_height(False)
         self.aspect_button.setEnabled(False)
         self.crop_button.setEnabled(False)
         self.fullscreen_button.setEnabled(False)
@@ -5455,11 +5588,7 @@ class MediaLibraryPage(QWidget):
         )
         self._set_now_playing_art(item)
         video_active = item.media_type == MEDIA_TYPE_VIDEO
-        self.player_card.setMinimumHeight(
-            VIDEO_PLAYER_CARD_MIN_HEIGHT
-            if video_active
-            else AUDIO_PLAYER_CARD_MIN_HEIGHT
-        )
+        self._update_player_minimum_height(video_active)
         self.video_viewport.setVisible(video_active)
         self.aspect_button.setEnabled(video_active)
         self.crop_button.setEnabled(video_active)

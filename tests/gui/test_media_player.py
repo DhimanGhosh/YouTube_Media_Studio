@@ -371,6 +371,41 @@ class MediaPlayerPageTest(unittest.TestCase):
             sizes[2],
         )
 
+    def test_portrait_layout_keeps_only_the_last_opened_drawer_and_wraps_controls(self) -> None:
+        self.page.resize(1200, 1600)
+        self.page.show()
+        self.page.playlist_toggle_button.setChecked(True)
+        self.page.queue_toggle_button.setChecked(True)
+        QTest.qWait(20)
+
+        self.assertFalse(self.page.playlist_toggle_button.isChecked())
+        self.assertTrue(self.page.queue_toggle_button.isChecked())
+        self.assertTrue(self.page._compact_library_layout)
+        self.assertLess(
+            self.page.folder_controls.mapTo(self.page, QPoint(0, 0)).y(),
+            self.page.search_controls.mapTo(self.page, QPoint(0, 0)).y(),
+        )
+        action_index = self.page.track_actions_layout.indexOf(
+            self.page.add_selected_to_playlist_button
+        )
+        row, _column, _row_span, _column_span = (
+            self.page.track_actions_layout.getItemPosition(action_index)
+        )
+        self.assertGreater(row, 0)
+        volume_row, *_rest = self.page.player_grid.getItemPosition(
+            self.page.player_grid.indexOf(self.page.volume)
+        )
+        controls_row, *_rest = self.page.player_grid.getItemPosition(
+            self.page.player_grid.indexOf(self.page.player_controls)
+        )
+        self.assertGreater(volume_row, controls_row)
+        self.assertGreater(self.page.player_card.minimumHeight(), 166)
+
+        self.page.playlist_toggle_button.setChecked(True)
+        QTest.qWait(20)
+        self.assertTrue(self.page.playlist_toggle_button.isChecked())
+        self.assertFalse(self.page.queue_toggle_button.isChecked())
+
     def test_artist_and_track_sections_are_horizontally_resizable(self) -> None:
         self.assertIs(
             self.page.artist_track_splitter.widget(0).findChild(QListWidget),
