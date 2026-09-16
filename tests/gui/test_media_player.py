@@ -376,7 +376,12 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.page.show()
         self.page.playlist_toggle_button.setChecked(True)
         self.page.queue_toggle_button.setChecked(True)
-        QTest.qWait(20)
+        self.assertTrue(
+            wait_until(
+                lambda: not self.page.playlist_toggle_button.isChecked()
+                and self.page._compact_library_layout
+            )
+        )
 
         self.assertFalse(self.page.playlist_toggle_button.isChecked())
         self.assertTrue(self.page.queue_toggle_button.isChecked())
@@ -402,9 +407,21 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.assertGreater(self.page.player_card.minimumHeight(), 166)
 
         self.page.playlist_toggle_button.setChecked(True)
-        QTest.qWait(20)
+        self.assertTrue(
+            wait_until(lambda: not self.page.queue_toggle_button.isChecked())
+        )
         self.assertTrue(self.page.playlist_toggle_button.isChecked())
         self.assertFalse(self.page.queue_toggle_button.isChecked())
+
+        self.page.playlist_toggle_button.setChecked(False)
+        self.assertTrue(wait_until(lambda: not self.page._compact_library_layout))
+        volume_row, *_rest = self.page.player_grid.getItemPosition(
+            self.page.player_grid.indexOf(self.page.volume)
+        )
+        controls_row, *_rest = self.page.player_grid.getItemPosition(
+            self.page.player_grid.indexOf(self.page.player_controls)
+        )
+        self.assertEqual(volume_row, controls_row)
 
     def test_artist_and_track_sections_are_horizontally_resizable(self) -> None:
         self.assertIs(

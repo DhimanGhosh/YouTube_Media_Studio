@@ -1293,6 +1293,9 @@ class MediaLibraryPage(QWidget):
 
         if not hasattr(self, "drawer_splitter"):
             return
+        if self._keep_drawers_from_squeezing_center():
+            QTimer.singleShot(0, self._apply_responsive_layout)
+            return
         compact = self.drawer_splitter.widget(1).width() < COMPACT_LIBRARY_WIDTH
         if compact != self._compact_library_layout:
             self._compact_library_layout = compact
@@ -1303,22 +1306,22 @@ class MediaLibraryPage(QWidget):
             )
             self.library_controls_layout.setStretch(0, 1 if compact else 3)
             self.library_controls_layout.setStretch(1, 1 if compact else 7)
-        self._keep_drawers_from_squeezing_center()
         self._layout_track_actions()
         self._layout_player_controls(compact)
 
-    def _keep_drawers_from_squeezing_center(self) -> None:
+    def _keep_drawers_from_squeezing_center(self) -> bool:
         """Allow two drawers only when their minimums leave a useful center pane."""
 
         if not (self.playlist_drawer.isVisible() and self.queue_drawer.isVisible()):
-            return
+            return False
         required = MIN_LIBRARY_CENTER_WIDTH + (2 * MIN_DRAWER_WIDTH)
         if self.drawer_splitter.width() >= required:
-            return
+            return False
         if self._last_opened_drawer == "playlist":
             self.queue_toggle_button.setChecked(False)
         else:
             self.playlist_toggle_button.setChecked(False)
+        return True
 
     def _save_player_panel_height(self, _position: int, _index: int) -> None:
         sizes = self.browser_player_splitter.sizes()
@@ -2546,7 +2549,7 @@ class MediaLibraryPage(QWidget):
             self._last_opened_drawer = "playlist"
             self._keep_drawers_from_squeezing_center()
             QTimer.singleShot(0, self._restore_drawer_widths)
-            QTimer.singleShot(0, self._apply_responsive_layout)
+        QTimer.singleShot(0, self._apply_responsive_layout)
         self.playlist_toggle_button.setText(f"Playlists ({len(self.playlists)})")
         self.playlist_toggle_button.setIcon(
             _chevron_icon("right" if visible else "left")
@@ -5356,7 +5359,7 @@ class MediaLibraryPage(QWidget):
             self._last_opened_drawer = "queue"
             self._keep_drawers_from_squeezing_center()
             QTimer.singleShot(0, self._restore_drawer_widths)
-            QTimer.singleShot(0, self._apply_responsive_layout)
+        QTimer.singleShot(0, self._apply_responsive_layout)
         self.queue_toggle_button.setText(f"Queue ({len(self.queue)})")
         self.queue_toggle_button.setIcon(
             _chevron_icon("left" if visible else "right")
