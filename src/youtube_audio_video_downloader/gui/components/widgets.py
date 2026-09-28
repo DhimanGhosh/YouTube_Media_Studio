@@ -367,7 +367,7 @@ class CoverImageLoader(RetryingThread):
 
 
 class YouTubeAlbumSearcher(RetryingThread):
-    """Find the first full-album/jukebox YouTube result in the background."""
+    """Find a timestamped jukebox or individual album tracks in the background."""
 
     found = pyqtSignal(str, object)
     failed = pyqtSignal(str, str)
@@ -379,25 +379,36 @@ class YouTubeAlbumSearcher(RetryingThread):
         parent: QWidget | None = None,
         *,
         retry_attempts: int = 3,
-        exclude_url: str = "",
+        exclude_urls: set[str] | None = None,
+        individual_tracks: bool = False,
     ) -> None:
         super().__init__(parent, retry_attempts=retry_attempts)
         self.album_name = album_name
         self.release_year = release_year
-        self.exclude_url = exclude_url
+        self.exclude_urls = set(exclude_urls or ())
+        self.individual_tracks = individual_tracks
 
     def run(self) -> None:
         try:
-            self.found.emit(
-                self.album_name,
-                self.retry_call(
+            if self.individual_tracks:
+                result = {
+                    "individual_tracks": self.retry_call(
+                        lambda: find_individual_album_tracks(
+                            self.album_name,
+                            self.release_year,
+                            self.isInterruptionRequested,
+                        )
+                    )
+                }
+            else:
+                result = self.retry_call(
                     lambda: find_album_jukebox_video(
                         self.album_name,
                         self.release_year,
-                        exclude_url=self.exclude_url,
+                        exclude_urls=self.exclude_urls,
                     )
-                ),
-            )
+                )
+            self.found.emit(self.album_name, result)
         except Exception as exc:  # yt-dlp/network errors are shown inline.
             self.failed.emit(self.album_name, str(exc))
 
@@ -530,9 +541,11 @@ class AlbumMetadataAutoFiller(RetryingThread):
         parent: QWidget | None = None,
         *,
         retry_attempts: int = 3,
+        individual_tracks: bool = False,
     ) -> None:
         super().__init__(parent, retry_attempts=retry_attempts)
         self.album_name = album_name
+        self.individual_tracks = individual_tracks
         explicit_match = re.search(r"\b(19\d{2}|20\d{2})\b", album_name)
         # A year deliberately included in the album name is the strongest signal,
         # even if a previous failed lookup left a different value in the year field.
@@ -565,11 +578,7 @@ class AlbumMetadataAutoFiller(RetryingThread):
         if self.isInterruptionRequested():
             return
         try:
-            result["youtube"] = self.retry_call(
-                lambda: find_album_jukebox_video(self.lookup_name, str(result.get("year") or ""))
-            )
-        except Exception as exc:
-            try:
+            if self.individual_tracks:
                 result["individual_tracks"] = self.retry_call(
                     lambda: find_individual_album_tracks(
                         self.lookup_name,
@@ -577,11 +586,15 @@ class AlbumMetadataAutoFiller(RetryingThread):
                         self.isInterruptionRequested,
                     )
                 )
-                result["fallback_reason"] = str(exc)
-            except Exception as fallback_exc:
-                result["errors"].append(  # type: ignore[union-attr]
-                    f"YouTube jukebox: {exc}; individual tracks: {fallback_exc}"
+            else:
+                result["youtube"] = self.retry_call(
+                    lambda: find_album_jukebox_video(
+                        self.lookup_name, str(result.get("year") or "")
+                    )
                 )
+        except Exception as exc:
+            source = "individual tracks" if self.individual_tracks else "YouTube jukebox"
+            result["errors"].append(f"{source}: {exc}")  # type: ignore[union-attr]
         if not self.isInterruptionRequested():
             self.completed.emit(self.album_name, result)
 
@@ -963,6 +976,7 @@ class JsonBatchEditor(QWidget):
         self._release_year_searchers: set[ReleaseYearSearcher] = set()
         self._track_metadata_searchers: set[TrackMetadataSearcher] = set()
         self._album_auto_fillers: set[AlbumMetadataAutoFiller] = set()
+        self._album_youtube_history: dict[tuple[str, str], set[str]] = {}
         self.entries_layout = QVBoxLayout()
         self.entries_layout.setContentsMargins(0, 0, 0, 0)
         self.entries_layout.setSpacing(9)
@@ -1313,6 +1327,7 @@ class JsonBatchEditor(QWidget):
             supplied_year,
             self,
             retry_attempts=self.retry_attempts,
+            individual_tracks=self._individual_track_search_enabled(fields),
         )
         self._album_auto_fillers.add(filler)
 
@@ -1398,45 +1413,10 @@ class JsonBatchEditor(QWidget):
                     return
             individual_tracks = result.get("individual_tracks")
             if isinstance(individual_tracks, list) and individual_tracks:
-                if isinstance(link_edit, QLineEdit):
-                    if link_edit.text().strip():
-                        changed.append("cleared YouTube link")
-                    link_edit.clear()
-                    link_edit.setToolTip(
-                        "No suitable audio jukebox was found; using individual track links."
-                    )
-                tracks_layout = fields.get("__tracks_layout__")
-                tracks = fields.get("__tracks__")
-                if isinstance(tracks_layout, QVBoxLayout) and isinstance(tracks, list):
-                    existing_count = len(tracks)
-                    for record in list(tracks):
-                        self._remove_track(tracks_layout, tracks, record)
-                    for track in individual_tracks:
-                        if isinstance(track, dict) and track:
-                            track_name, values = next(iter(track.items()))
-                            self._add_track(tracks_layout, tracks, str(track_name), values)
-                    if len(tracks) != existing_count or tracks:
-                        changed.append(f"{len(tracks)} track rows")
-                    matched_count = sum(
-                        1
-                        for track in individual_tracks
-                        if isinstance(track, dict)
-                        and track
-                        and next(iter(track.values())).get("ytb_link")
-                    )
-                    section.set_status(
-                        f"{matched_count}/{len(individual_tracks)} individual tracks matched"
-                    )
-                    button.setToolTip(
-                        "No suitable audio jukebox was found. Wikipedia tracks were matched "
-                        "to close-duration YouTube audio/lyrical videos."
-                    )
-                    self.log_requested.emit(
-                        "[ALBUM-AUTO-FILL] Filled "
-                        f"{len(individual_tracks)} individual tracks for "
-                        f'"{searched_name}" ({matched_count} with links).'
-                    )
-                    return
+                self._apply_individual_album_tracks(
+                    searched_name, individual_tracks, fields, section, button
+                )
+                return
             errors = result.get("errors", [])
             if changed:
                 section.set_status("Partially filled" if errors else "Metadata found")
@@ -1459,6 +1439,57 @@ class JsonBatchEditor(QWidget):
             self.log_requested.emit(
                 f'[ALBUM-AUTO-FILL] Failed to apply metadata for "{searched_name}": {exc}'
             )
+
+    @staticmethod
+    def _individual_track_search_enabled(fields: dict) -> bool:
+        switch = fields.get("__individual_track_search__")
+        return isinstance(switch, QCheckBox) and switch.isChecked()
+
+    def _apply_individual_album_tracks(
+        self,
+        album_name: str,
+        individual_tracks: list[dict],
+        fields: dict,
+        section: CollapsibleSection,
+        button: QPushButton,
+    ) -> None:
+        """Replace an album's rows with Wikipedia-matched individual sources."""
+        link_edit = fields.get("ytb_link")
+        if isinstance(link_edit, QLineEdit):
+            link_edit.clear()
+            link_edit.setToolTip(
+                "Individual-track mode is active; each track uses its own YouTube link."
+            )
+        source_mode = fields.get("__source_mode__")
+        if isinstance(source_mode, QComboBox):
+            youtube_index = source_mode.findData("youtube")
+            if youtube_index >= 0:
+                source_mode.setCurrentIndex(youtube_index)
+        tracks_layout = fields.get("__tracks_layout__")
+        tracks = fields.get("__tracks__")
+        if not isinstance(tracks_layout, QVBoxLayout) or not isinstance(tracks, list):
+            return
+        for record in list(tracks):
+            self._remove_track(tracks_layout, tracks, record)
+        for track in individual_tracks:
+            if isinstance(track, dict) and track:
+                track_name, values = next(iter(track.items()))
+                self._add_track(tracks_layout, tracks, str(track_name), values)
+        matched_count = sum(
+            1
+            for track in individual_tracks
+            if isinstance(track, dict)
+            and track
+            and next(iter(track.values())).get("ytb_link")
+        )
+        section.set_status(f"{matched_count}/{len(individual_tracks)} individual tracks matched")
+        button.setToolTip(
+            "Wikipedia album tracks were matched to close-duration YouTube audio/lyrical videos."
+        )
+        self.log_requested.emit(
+            f'[ALBUM-TRACK-SEARCH] Filled {len(individual_tracks)} tracks for "{album_name}" '
+            f"({matched_count} with links)."
+        )
 
     def _scan_video_link(
         self,
@@ -1943,7 +1974,10 @@ class JsonBatchEditor(QWidget):
         section: CollapsibleSection,
     ) -> QWidget:
         row = QWidget()
-        layout = QHBoxLayout(row)
+        outer_layout = QVBoxLayout(row)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(5)
+        layout = QHBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(7)
         source_mode = QComboBox()
@@ -1963,9 +1997,26 @@ class JsonBatchEditor(QWidget):
         )
         button = QPushButton("Find on YouTube")
         button.setObjectName("secondaryButton")
-        button.setToolTip(
-            "Search YouTube for '<album name> full album audio jukebox' and use the first result"
+        individual_switch = QCheckBox(
+            "Search individual full songs (from Wikipedia track list)"
         )
+        individual_switch.setChecked(False)
+        individual_switch.setToolTip(
+            "Off: find a timestamped full-album jukebox to split. "
+            "On: find a separate YouTube audio source for every Wikipedia track."
+        )
+        individual_switch.setVisible(self.kind == "album")
+        fields["__individual_track_search__"] = individual_switch
+
+        def update_search_help(enabled: bool = False) -> None:
+            button.setToolTip(
+                "Find and fill separate YouTube audio links for the album's Wikipedia tracks"
+                if enabled and self.kind == "album"
+                else "Find a new timestamped full-album YouTube jukebox and split its tracks"
+            )
+
+        individual_switch.toggled.connect(update_search_help)
+        update_search_help(individual_switch.isChecked())
         button.clicked.connect(
             lambda checked=False: self._find_youtube_album(
                 name_edit, fields.get("release_year"), link_edit, fields, button, section
@@ -1978,6 +2029,8 @@ class JsonBatchEditor(QWidget):
         layout.addWidget(link_edit, 1)
         layout.addWidget(local_button)
         layout.addWidget(button)
+        outer_layout.addLayout(layout)
+        outer_layout.addWidget(individual_switch)
 
         def apply_mode(index: int) -> None:
             local = source_mode.itemData(index) == "local"
@@ -1988,6 +2041,7 @@ class JsonBatchEditor(QWidget):
             )
             local_button.setVisible(local)
             button.setVisible(not local)
+            individual_switch.setVisible(not local and self.kind == "album")
             extract_button = fields.get("__extract_button__")
             if isinstance(extract_button, QPushButton):
                 extract_button.setEnabled(not local)
@@ -2055,19 +2109,38 @@ class JsonBatchEditor(QWidget):
         button.setText("Searching…")
         section.set_status("Searching YouTube")
         release_year = self._field_value(year_edit) if year_edit is not None else ""
+        individual_tracks = self._individual_track_search_enabled(fields)
+        history_key = (album_name.casefold(), release_year.casefold())
+        excluded_urls = set(self._album_youtube_history.get(history_key, set()))
+        current_url = link_edit.text().strip()
+        if current_url.lower().startswith(("http://", "https://")):
+            excluded_urls.add(current_url)
+        # Do not leave the rejected source displayed while looking for a replacement.
+        # If no fresh candidate exists, the empty field makes that outcome unambiguous.
+        link_edit.clear()
         searcher = YouTubeAlbumSearcher(
             album_name,
             release_year,
             self,
             retry_attempts=self.retry_attempts,
-            exclude_url=link_edit.text().strip(),
+            exclude_urls=excluded_urls,
+            individual_tracks=individual_tracks,
         )
         self._youtube_searchers.add(searcher)
 
         def apply_result(searched_name: str, result: dict) -> None:
             if name_edit.text().strip() != searched_name:
                 return
-            link_edit.setText(str(result.get("url") or ""))
+            found_tracks = result.get("individual_tracks")
+            if isinstance(found_tracks, list) and found_tracks:
+                self._apply_individual_album_tracks(
+                    searched_name, found_tracks, fields, section, button
+                )
+                return
+            result_url = str(result.get("url") or "")
+            if result_url:
+                self._album_youtube_history.setdefault(history_key, set()).add(result_url)
+            link_edit.setText(result_url)
             details = str(result.get("title") or "YouTube result found")
             if result.get("channel"):
                 details += f"\nChannel: {result['channel']}"
