@@ -11,7 +11,10 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PyQt6.QtWidgets import QApplication  # noqa: E402
 from PyQt6.QtWidgets import QPushButton  # noqa: E402
 
-from youtube_audio_video_downloader.gui.components.widgets import JsonBatchEditor  # noqa: E402
+from youtube_audio_video_downloader.gui.components.widgets import (  # noqa: E402
+    AlbumMetadataAutoFiller,
+    JsonBatchEditor,
+)
 
 
 class BatchEditorCompletionTest(unittest.TestCase):
@@ -242,6 +245,90 @@ class BatchEditorCompletionTest(unittest.TestCase):
         self.assertEqual(fields["__source_mode__"].currentData(), "youtube")
         self.assertTrue(fields["__extract_button__"].isEnabled())
         self.assertEqual(fields["ytb_link"].text(), "https://youtu.be/abcdefghijk")
+
+    def test_each_album_has_default_off_individual_track_search_switch(self) -> None:
+        editor = JsonBatchEditor("album")
+        first = editor.add_entry("First album")
+        second = editor.add_entry("Second album")
+
+        self.assertFalse(first["fields"]["__individual_track_search__"].isChecked())
+        self.assertFalse(second["fields"]["__individual_track_search__"].isChecked())
+        self.assertIn(
+            "timestamped full-album",
+            first["fields"]["__source_search__"].toolTip(),
+        )
+
+    def test_individual_track_results_replace_jukebox_source_and_track_rows(self) -> None:
+        editor = JsonBatchEditor("album")
+        entry = editor.add_entry(
+            "Album",
+            {
+                "ytb_link": "https://youtu.be/oldjukebox",
+                "tracks": [{"Old row": {"start": "00:00"}}],
+            },
+        )
+        fields = entry["fields"]
+        fields["__individual_track_search__"].setChecked(True)
+
+        editor._apply_album_auto_fill_result(
+            "Album",
+            {
+                "individual_tracks": [
+                    {"First song": {"ytb_link": "https://youtu.be/firsttrack"}},
+                    {"Second song": {"ytb_link": "https://youtu.be/secondtrk"}},
+                ]
+            },
+            fields,
+            entry["section"],
+            QPushButton(),
+        )
+
+        self.assertFalse(fields["ytb_link"].text())
+        self.assertEqual(
+            [track["fields"]["__name__"].text() for track in fields["__tracks__"]],
+            ["First song", "Second song"],
+        )
+
+    def test_default_auto_fill_does_not_fall_back_to_individual_tracks(self) -> None:
+        filler = AlbumMetadataAutoFiller("Album", "2001")
+
+        with (
+            patch(
+                "youtube_audio_video_downloader.gui.components.widgets.find_album_art",
+                return_value="cover",
+            ),
+            patch(
+                "youtube_audio_video_downloader.gui.components.widgets.find_album_jukebox_video",
+                side_effect=LookupError("not found"),
+            ),
+            patch(
+                "youtube_audio_video_downloader.gui.components.widgets.find_individual_album_tracks"
+            ) as individual_search,
+        ):
+            filler.run()
+
+        individual_search.assert_not_called()
+
+    def test_enabled_auto_fill_searches_individual_tracks_without_jukebox_lookup(self) -> None:
+        filler = AlbumMetadataAutoFiller("Album", "2001", individual_tracks=True)
+
+        with (
+            patch(
+                "youtube_audio_video_downloader.gui.components.widgets.find_album_art",
+                return_value="cover",
+            ),
+            patch(
+                "youtube_audio_video_downloader.gui.components.widgets.find_album_jukebox_video"
+            ) as jukebox_search,
+            patch(
+                "youtube_audio_video_downloader.gui.components.widgets.find_individual_album_tracks",
+                return_value=[{"Song": {"ytb_link": "https://youtu.be/abcdefghijk"}}],
+            ) as individual_search,
+        ):
+            filler.run()
+
+        individual_search.assert_called_once()
+        jukebox_search.assert_not_called()
 
     def test_populated_entry_keeps_existing_nonblank_entries(self) -> None:
         editor = JsonBatchEditor("jukebox")

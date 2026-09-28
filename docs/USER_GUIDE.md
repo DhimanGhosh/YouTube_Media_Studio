@@ -478,17 +478,19 @@ This is the complete **Auto fill album** workflow:
 1. Enter the album name. Include a four-digit year in the name when two releases share
    the same title; an explicitly entered year is treated as strong evidence.
 2. Select **Auto fill album**.
-3. The app searches online release evidence for the year, searches for square cover art,
-   and searches YouTube for a suitable full-album/jukebox source.
-4. When a full-album source is found, the app immediately extracts timestamped tracks
+3. Leave **Search individual full songs** off (the default) to find a suitable
+   timestamped full-album/jukebox source. Turn it on to read the Wikipedia track list
+   and find a separate full-length YouTube audio source for every song.
+4. The app also searches online release evidence for the year and square cover art.
+5. When a full-album source is found, the app immediately extracts timestamped tracks
    and singer credits from its description. With the workspace AI switch on, the
    configured model assists extraction and the result is independently validated. With
    AI off, internet metadata and deterministic parsing are used.
-5. If no suitable full-album video is found, the app searches for individual album-track
-   links and builds per-track rows instead of inventing a jukebox URL.
-6. The album row reports the stage—finding metadata, extracting tracks, completed, or a
-   specific failure. Live Logs lists each source and fallback.
-7. Review every populated value. Auto-fill is a starting point, not permission to skip
+6. In individual-song mode, the single source field is cleared and the app builds one
+   row per Wikipedia track. Only close-duration audio/lyrical matches are enabled.
+7. The album row reports the stage—finding metadata, extracting tracks, completed, or a
+   specific failure. Live Logs lists each source.
+8. Review every populated value. Auto-fill is a starting point, not permission to skip
    identity, boundary, artist, and artwork checks.
 
 Auto-fill can populate **Release Year**, **Album Art**, **Source media**, and **Tracks**.
@@ -500,8 +502,11 @@ behalf.
 - Choose **YouTube URL** in **Source media** to paste or find an online source.
 - Choose **Local file** and **Browse…** to select audio/video already downloaded by
   another tool. The source is never deleted or replaced.
-- **Find on YouTube** searches for the first full-album result using album name/year and
-  then starts track extraction.
+- **Find on YouTube** normally finds a timestamped full-album result and starts track
+  extraction. Repeated presses exclude every result already returned for that album.
+- Turn on **Search individual full songs (from Wikipedia track list)** before using
+  **Find on YouTube** or **Auto fill album** to populate separate full-song links instead
+  of searching for a jukebox. This switch is off by default on every album card.
 - **Find year** searches Wikipedia release evidence.
 - **Find cover** searches for a square cover; selecting it again excludes the current
   URL so another candidate can be found.
