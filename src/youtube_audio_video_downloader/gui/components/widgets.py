@@ -853,7 +853,12 @@ class CollapsibleSection(QFrame):
         layout.addWidget(self.failure_detail)
         layout.addWidget(self.body)
 
-    def add_collapsed_control(self, control: QWidget) -> None:
+    def add_collapsed_download(self, download: QCheckBox, tooltip: str) -> None:
+        control = QCheckBox("Download")
+        control.setToolTip(tooltip)
+        control.setChecked(download.isChecked())
+        control.toggled.connect(download.setChecked)
+        download.toggled.connect(control.setChecked)
         self._header_layout.insertWidget(self._header_layout.indexOf(self.toggle) + 1, control)
         control.setVisible(not self.toggle.isChecked())
         self.toggle.toggled.connect(lambda expanded: control.setVisible(not expanded))
@@ -1266,6 +1271,8 @@ class JsonBatchEditor(QWidget):
         download = self._bool_field(values.get("download", True))
         fields["download"] = download
         form.addRow("Download", download)
+        if self.kind == "album":
+            section.add_collapsed_download(download, "Include this album in Start album split")
         if self.kind in {"album", "jukebox"}:
             numbering = self._bool_field(values.get("track_numbering", True))
             fields["track_numbering"] = numbering
@@ -1715,12 +1722,7 @@ class JsonBatchEditor(QWidget):
         fields["download"] = download
         form.addRow("Download", download)
         if self.kind == "album":
-            header_download = QCheckBox("Download")
-            header_download.setToolTip("Include this track when its album is enabled")
-            header_download.setChecked(download.isChecked())
-            header_download.toggled.connect(download.setChecked)
-            download.toggled.connect(header_download.setChecked)
-            section.add_collapsed_control(header_download)
+            section.add_collapsed_download(download, "Include this track when its album is enabled")
         if section.length_badge is not None:
             name_edit.textChanged.connect(section.length_badge.hide)
             fields["ytb_link"].textChanged.connect(section.length_badge.hide)

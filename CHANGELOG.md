@@ -4,6 +4,12 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [Unreleased]
+
+### Fixed
+
+- Enable or disable an entire album directly from its collapsed header.
+
 ## [2.19.3] - 2026-11-10
 
 ### Fixed
