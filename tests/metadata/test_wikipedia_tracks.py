@@ -69,24 +69,30 @@ class WikipediaTracksTest(unittest.TestCase):
             + "<h3>Bangla edition</h3>" + table("Bengali song")
             + "<h3>English</h3>" + table("English song")
             + "<h3>Tamil</h3>" + table("Tamil song")
-            + "<h2>Bonus tracks</h2>" + table("Unlabelled song")
+            + "<h3>Swahili</h3>" + table("Swahili song")
+            + "<h3>Hindi and Telugu versions</h3>" + table("Mixed editions")
+            + "<h3>Hindi and English</h3>" + table("Preferred editions")
+            + "<h2>Original language</h2>" + table("Unlabelled song"),
+            preferred_languages_only=True,
         )
         self.assertEqual(
             [track["title"] for track in tracks],
-            ["Jai Jai Ram", "Main Ram", "Bengali song", "English song", "Unlabelled song"],
+            ["Jai Jai Ram", "Main Ram", "Bengali song", "English song", "Preferred editions",
+             "Unlabelled song"],
         )
 
     def test_filters_explicit_track_languages_and_uses_single_language_infobox(self) -> None:
         tracks = extract_tracks_from_html(
-            '<table class="infobox"><tr><th>Language</th><td>Telugu</td></tr></table>'
+            '<table class="infobox"><tr><th>Languages</th><td>Telugu</td></tr></table>'
             "<h2>Soundtrack</h2><table>"
-            "<tr><th>Title</th><th>Singers</th><th>Language</th></tr>"
+            "<tr><th>Title</th><th>Singers</th><th>Language(s)</th></tr>"
             "<tr><td>Default language</td><td>Singer</td><td>—</td></tr>"
             "<tr><td>Explicit French</td><td>Singer</td><td>French</td></tr>"
-            "<tr><td>Explicit Hindi</td><td>Singer</td><td>Hindi<sup>[1]</sup></td></tr>"
+            "<tr><td>Explicit Hindi</td><td>Singer</td><td>Hindi (original)<sup>[1]</sup></td></tr>"
             "<tr><td>Hindi and English</td><td>Singer</td><td>Hindi and English</td></tr>"
             "<tr><td>Hindi and French</td><td>Singer</td><td>Hindi and French</td></tr>"
-            "</table>"
+            "</table>",
+            preferred_languages_only=True,
         )
         self.assertEqual([track["title"] for track in tracks], ["Explicit Hindi", "Hindi and English"])
 
@@ -96,9 +102,17 @@ class WikipediaTracksTest(unittest.TestCase):
             "<table><caption>Tamil version</caption>"
             "<tr><th>Title</th><th>Artist(s)</th></tr><tr><td>Tamil song</td><td>Singer</td></tr></table>"
             "<table><caption>Hindi version</caption>"
-            "<tr><th>Title</th><th>Artist(s)</th></tr><tr><td>Hindi song</td><td>Singer</td></tr></table>"
+            "<tr><th>Title</th><th>Artist(s)</th></tr><tr><td>Hindi song</td><td>Singer</td></tr></table>",
+            preferred_languages_only=True,
         )
         self.assertEqual([track["title"] for track in tracks], ["Hindi song"])
+
+    def test_metadata_lookups_keep_tracks_from_all_editions(self) -> None:
+        tracks = extract_tracks_from_html(
+            "<h3>Tamil</h3><table><tr><th>Title</th><th>Singers</th></tr>"
+            "<tr><td>Tamil song</td><td>Singer</td></tr></table>"
+        )
+        self.assertEqual([track["title"] for track in tracks], ["Tamil song"])
 
     def test_removes_featured_artist_but_keeps_version_labels(self) -> None:
         self.assertEqual(

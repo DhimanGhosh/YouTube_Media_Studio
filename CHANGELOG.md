@@ -8,7 +8,7 @@ abbreviated hashes to the next version section.
 
 ### Fixed
 
-- Limit Wikipedia soundtrack imports to Hindi, Bengali, and English when the source labels track languages.
+- Limit individual-song imports from Wikipedia to Hindi, Bengali, and English when the source labels track languages.
 
 ## [2.19.1] - 2026-11-10
 
