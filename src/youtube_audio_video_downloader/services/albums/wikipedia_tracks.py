@@ -19,6 +19,17 @@ from youtube_audio_video_downloader.services.albums.album_names import normalize
 _API_LOCK = threading.Lock()
 _NEXT_API_REQUEST = 0.0
 _MIN_API_INTERVAL = 0.35
+_IMPORT_LANGUAGES = {"hindi", "bengali", "english"}
+_LANGUAGE_ALIASES = {
+    "bangla": "bengali", "bn": "bengali", "বাংলা": "bengali",
+    "hi": "hindi", "हिंदी": "hindi", "हिन्दी": "hindi", "en": "english",
+}
+_OTHER_LANGUAGE_HEADINGS = {
+    "arabic", "assamese", "bhojpuri", "chinese", "french", "german", "gujarati",
+    "italian", "japanese", "kannada", "korean", "malayalam", "marathi", "nepali",
+    "odia", "oriya", "persian", "portuguese", "punjabi", "russian", "sanskrit",
+    "spanish", "tamil", "telugu", "thai", "urdu",
+}
 
 
 def _api(params: dict[str, str], timeout: float = 12.0) -> dict:
@@ -57,8 +68,15 @@ def _api(params: dict[str, str], timeout: float = 12.0) -> dict:
 class _TableParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
-        self.tables: list[list[list[str]]] = []
+        self.tables: list[tuple[str, list[list[str]]]] = []
+        self.page_language = ""
+        self._headings: dict[int, str] = {}
+        self._heading_level = 0
+        self._heading_text: list[str] = []
         self._table: list[list[str]] | None = None
+        self._table_language = ""
+        self._caption_text: list[str] | None = None
+        self._infobox = False
         self._row: list[tuple[str, int, int]] | None = None
         self._cell: list[str] | None = None
         self._cell_rowspan = 1
@@ -66,9 +84,16 @@ class _TableParser(HTMLParser):
         self._rowspans: dict[int, tuple[int, str]] = {}
 
     def handle_starttag(self, tag: str, attrs) -> None:
-        if tag == "table" and self._table is None:
+        if tag in {"h2", "h3", "h4", "h5", "h6"} and self._table is None:
+            self._heading_level = int(tag[1])
+            self._heading_text = []
+        elif tag == "table" and self._table is None:
             self._table = []
             self._rowspans = {}
+            self._infobox = "infobox" in (dict(attrs).get("class") or "").split()
+            self._table_language = next(reversed(self._headings.values()), "")
+        elif tag == "caption" and self._table is not None:
+            self._caption_text = []
         elif tag == "tr" and self._table is not None:
             self._row = []
         elif tag in {"th", "td"} and self._row is not None:
@@ -88,9 +113,26 @@ class _TableParser(HTMLParser):
     def handle_data(self, data: str) -> None:
         if self._cell is not None:
             self._cell.append(data)
+        elif self._heading_level:
+            self._heading_text.append(data)
+        elif self._caption_text is not None:
+            self._caption_text.append(data)
 
     def handle_endtag(self, tag: str) -> None:
-        if tag in {"th", "td"} and self._cell is not None and self._row is not None:
+        if self._heading_level and tag == f"h{self._heading_level}":
+            level = self._heading_level
+            self._heading_level = 0
+            self._headings = {
+                depth: language for depth, language in self._headings.items() if depth < level
+            }
+            language = _heading_language("".join(self._heading_text))
+            if language:
+                self._headings[level] = language
+        elif tag == "caption" and self._caption_text is not None:
+            language = _heading_language("".join(self._caption_text))
+            self._table_language = language or self._table_language
+            self._caption_text = None
+        elif tag in {"th", "td"} and self._cell is not None and self._row is not None:
             self._row.append(
                 (
                     " ".join("".join(self._cell).split()),
@@ -130,8 +172,41 @@ class _TableParser(HTMLParser):
             self._row = None
         elif tag == "table" and self._table is not None:
             if self._table:
-                self.tables.append(self._table)
+                self.tables.append((self._table_language, self._table))
+                if self._infobox and not self.page_language:
+                    labels = next(
+                        (_language_labels(row[1]) for row in self._table
+                         if len(row) >= 2 and _key(row[0]) == "language"),
+                        [],
+                    )
+                    if len(labels) == 1:
+                        self.page_language = labels[0]
             self._table = None
+
+
+def _single_language(value: str) -> str:
+    label = " ".join(re.sub(r"\[(?:\d+|[a-z])\]", "", value.casefold()).split())
+    if label in {"-", "–", "—", "n/a", "unknown"}:
+        return ""
+    return _LANGUAGE_ALIASES.get(label, label)
+
+
+def _language_labels(value: str) -> list[str]:
+    if not _single_language(value):
+        return []
+    return [
+        label for part in re.split(r"[,;/&]|\band\b", value, flags=re.I)
+        if (label := _single_language(part))
+    ]
+
+
+def _heading_language(value: str) -> str:
+    text = re.sub(r"\s*\[edit\]\s*$", "", value, flags=re.I).strip().casefold()
+    label = re.sub(r"\s+(?:version|edition|soundtrack|track listing)$", "", text)
+    language = _single_language(label)
+    if language in _IMPORT_LANGUAGES | _OTHER_LANGUAGE_HEADINGS:
+        return language
+    return _single_language(label.removesuffix(" language")) if label.endswith(" language") else ""
 
 
 def _key(value: str) -> str:
@@ -198,11 +273,11 @@ def extract_track_artists_from_html(html: str) -> dict[str, str]:
 
 
 def extract_tracks_from_html(html: str) -> list[dict[str, object]]:
-    """Return ordered title, artists, and duration metadata from soundtrack tables."""
+    """Return tracks in preferred languages and tables with no language label."""
     parser = _TableParser()
     parser.feed(html)
     found: list[dict[str, object]] = []
-    for table in parser.tables:
+    for section_language, table in parser.tables:
         if not table:
             continue
         headers = [_key(cell) for cell in table[0]]
@@ -212,10 +287,16 @@ def extract_tracks_from_html(html: str) -> list[dict[str, object]]:
             -1,
         )
         length_index = next((i for i, h in enumerate(headers) if h in {"length", "duration"}), -1)
+        language_index = next((i for i, h in enumerate(headers) if h == "language"), -1)
         if title_index < 0 or artist_index < 0:
             continue
+        table_language = section_language or parser.page_language
         for row in table[1:]:
             if max(title_index, artist_index) >= len(row):
+                continue
+            row_languages = _language_labels(row[language_index]) if 0 <= language_index < len(row) else []
+            languages = row_languages or ([table_language] if table_language else [])
+            if not _IMPORT_LANGUAGES.issuperset(languages):
                 continue
             title = re.sub(r'"\s*(?=\()', " ", row[title_index]).strip().strip('"')
             title_key = _key(title)
@@ -394,7 +475,7 @@ def _extract_discography_song_metadata(
 
     parser = _TableParser()
     parser.feed(html)
-    for table in parser.tables:
+    for _, table in parser.tables:
         if not table:
             continue
         headers = [_key(cell) for cell in table[0]]

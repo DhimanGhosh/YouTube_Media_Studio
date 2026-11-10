@@ -41,7 +41,9 @@ def find_individual_album_tracks(
 
     wikipedia_tracks = find_wikipedia_tracks(album_name, release_year)
     if not wikipedia_tracks:
-        raise LookupError(f'Wikipedia has no usable soundtrack table for "{album_name}".')
+        raise LookupError(
+            f'Wikipedia has no usable Hindi, Bengali, or English soundtrack tracks for "{album_name}".'
+        )
     results: list[dict] = []
     options: dict[str, Any] = {
         "quiet": True, "no_warnings": True, "skip_download": True,

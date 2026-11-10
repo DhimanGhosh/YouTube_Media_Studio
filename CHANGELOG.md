@@ -4,6 +4,12 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [Unreleased]
+
+### Fixed
+
+- Limit Wikipedia soundtrack imports to Hindi, Bengali, and English when the source labels track languages.
+
 ## [2.19.1] - 2026-11-10
 
 ### Added
