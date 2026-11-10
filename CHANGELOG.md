@@ -12,6 +12,7 @@ abbreviated hashes to the next version section.
 - Explain that packaged downloader tools are updated through the in-app software updater.
 - Show release notes for every eligible version between the installed version and the available update.
 - Restore collapsed and expanded album rows when reopening the workspace, including albums that need attention.
+- Show a moving album-row preview, a closed-hand cursor, and an insertion line while reordering collapsed albums.
 
 ## [2.19.2] - 2026-11-10
 

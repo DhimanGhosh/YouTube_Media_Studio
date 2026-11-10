@@ -172,10 +172,14 @@ class BatchEditorCompletionTest(unittest.TestCase):
         event.source.return_value = section.drag_handle
         event.position.return_value = QPointF(0, editor.entries[0]["section"].geometry().top())
         editor.dragEnterEvent(event)
+        editor.dragMoveEvent(event)
+        self.assertFalse(editor._album_drop_marker.isHidden())
+        self.assertEqual(list(editor.data()), ["First", "Second", "Third"])
         editor.dropEvent(event)
 
         self.assertEqual(order_changes, [["Third", "First", "Second"]])
-        self.assertEqual(event.acceptProposedAction.call_count, 2)
+        self.assertEqual(event.acceptProposedAction.call_count, 3)
+        self.assertTrue(editor._album_drop_marker.isHidden())
         self.assertIs(editor.entries_layout.itemAt(0).widget(), section)
         self.assertFalse(section.toggle.isChecked())
         self.assertEqual(section.status_label.text(), "NEEDS ATTENTION")
@@ -183,6 +187,32 @@ class BatchEditorCompletionTest(unittest.TestCase):
         editor.load_data(payload)
         self.assertEqual(list(editor.data()), ["Third", "First", "Second"])
         self.assertEqual(editor.data()["Third"]["download"], "false")
+
+    def test_album_drag_sets_a_row_preview_and_closed_hand_cursor(self) -> None:
+        editor = JsonBatchEditor("album")
+        section = editor.entries[0]["section"]
+        section.set_expanded(False)
+        editor.show()
+        self.app.processEvents()
+        handle = section.drag_handle
+        press = Mock()
+        press.button.return_value = Qt.MouseButton.LeftButton
+        press.position.return_value = QPointF(8, 8)
+        move = Mock()
+        move.buttons.return_value = Qt.MouseButton.LeftButton
+        move.position.return_value = QPointF(8, 8 + QApplication.startDragDistance())
+
+        with patch("youtube_audio_video_downloader.gui.components.widgets.QDrag") as drag:
+            handle.mousePressEvent(press)
+            handle.mouseMoveEvent(move)
+
+        preview = drag.return_value.setPixmap.call_args.args[0]
+        self.assertEqual(preview.deviceIndependentSize().toSize(), section.size())
+        self.assertEqual(drag.return_value.setHotSpot.call_args.args[0], handle.mapTo(section, press.position().toPoint()))
+        cursor, action = drag.return_value.setDragCursor.call_args.args
+        self.assertFalse(cursor.isNull())
+        self.assertEqual(action, Qt.DropAction.MoveAction)
+        drag.return_value.exec.assert_called_once_with(Qt.DropAction.MoveAction, Qt.DropAction.MoveAction)
 
     def test_length_notice_survives_completion_and_clears_when_link_changes(self) -> None:
         editor = JsonBatchEditor("album")
