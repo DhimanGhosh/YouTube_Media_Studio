@@ -325,6 +325,9 @@ class GuiWorkerProgressTest(unittest.TestCase):
             _item_result_from_log("album", "[FAILED] Album / Track | reason=locked"),
             ("Album / Track", False),
         )
+        self.assertIsNone(
+            _item_result_from_log("album", "[SKIPPED] The Body | reason=download=false")
+        )
 
 
 if __name__ == "__main__":

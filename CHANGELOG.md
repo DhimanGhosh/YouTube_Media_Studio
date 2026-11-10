@@ -4,6 +4,18 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [Unreleased]
+
+### Added
+
+- Drag collapsed albums by the left-hand grip to rearrange the workspace and save the new order.
+- Show a “Wiki length differs” badge beside tracks with a duration mismatch. Hover to see both lengths.
+
+### Fixed
+
+- Use verified recording credits and catalog durations to find standalone songs when Wikipedia lists a different length.
+- Keep disabled albums and tracks out of subsequent downloads, including after a batch reports skipped items.
+
 ## [2.19.0] - 2026-09-28
 
 ### Added

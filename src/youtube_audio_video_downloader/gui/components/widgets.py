@@ -11,6 +11,7 @@ from PyQt6 import sip
 from PyQt6.QtCore import (
     QEasingCurve,
     QEvent,
+    QMimeData,
     QModelIndex,
     QObject,
     QPropertyAnimation,
@@ -21,12 +22,13 @@ from PyQt6.QtCore import (
     pyqtProperty,
     pyqtSignal,
 )
-from PyQt6.QtGui import QColor, QLinearGradient, QPainter, QPixmap, QRadialGradient
+from PyQt6.QtGui import QColor, QDrag, QLinearGradient, QPainter, QPixmap, QRadialGradient
 from PyQt6.QtWidgets import (
     QAbstractButton,
     QAbstractItemView,
     QAbstractSlider,
     QAbstractSpinBox,
+    QApplication,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -724,6 +726,41 @@ class GlassCard(QFrame):
         self.setObjectName("heroCard" if hero else "glassCard")
 
 
+class AlbumDragHandle(QPushButton):
+    """Start an internal move only after the pointer crosses the drag threshold."""
+
+    MIME_TYPE = "application/x-media-studio-album-order"
+
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__("☰", parent)
+        self.setObjectName("secondaryButton")
+        self.setAccessibleName("Reorder album")
+        self.setToolTip("Drag to reorder this album")
+        self.setCursor(Qt.CursorShape.OpenHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._press_position = None
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._press_position = event.position().toPoint()
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:
+        if self._press_position is None or not event.buttons() & Qt.MouseButton.LeftButton:
+            return
+        distance = (event.position().toPoint() - self._press_position).manhattanLength()
+        if distance < QApplication.startDragDistance():
+            return
+        self._press_position = None
+        mime = QMimeData()
+        mime.setData(self.MIME_TYPE, b"album")
+        drag = QDrag(self)
+        drag.setMimeData(mime)
+        drag.exec(Qt.DropAction.MoveAction)
+
+
 class CollapsibleSection(QFrame):
     """Compact, removable editor section whose body can be collapsed."""
 
@@ -733,6 +770,8 @@ class CollapsibleSection(QFrame):
         *,
         removable: bool = True,
         collapsible: bool = True,
+        reorderable: bool = False,
+        length_notice: str = "",
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -759,8 +798,18 @@ class CollapsibleSection(QFrame):
         self.body = QWidget()
 
         header = QHBoxLayout()
+        self.drag_handle = AlbumDragHandle(self) if reorderable else None
+        if self.drag_handle is not None:
+            header.addWidget(self.drag_handle)
+            self.drag_handle.hide()
         header.addWidget(self.toggle, 1)
         header.addWidget(self.status_label)
+        self.length_badge = None
+        if length_notice:
+            self.length_badge = QLabel("Wiki length differs")
+            self.length_badge.setObjectName("statusBadge")
+            self.length_badge.setToolTip(length_notice)
+            header.addWidget(self.length_badge)
         header.addWidget(self.remove_button)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
@@ -801,6 +850,8 @@ class CollapsibleSection(QFrame):
 
     def _toggle_body(self, expanded: bool) -> None:
         self.body.setVisible(expanded)
+        if self.drag_handle is not None:
+            self.drag_handle.setVisible(not expanded)
         text = self.toggle.text().split("  ", 1)[-1]
         self.toggle.setText(f"{'▾' if expanded else '▸'}  {text}")
 
@@ -928,6 +979,7 @@ class JsonBatchEditor(QWidget):
     """Form-based editor that emits the same dictionaries as the CLI JSON files."""
 
     log_requested = pyqtSignal(str)
+    order_changed = pyqtSignal()
 
     FLAT_FIELDS = {
         "audio": [
@@ -964,6 +1016,7 @@ class JsonBatchEditor(QWidget):
     ) -> None:
         super().__init__(parent)
         self.kind = kind
+        self.setAcceptDrops(kind == "album")
         self.retry_attempts = max(1, int(retry_attempts))
         self._audio_mode = "download"
         self.entries: list[dict] = []
@@ -1046,7 +1099,9 @@ class JsonBatchEditor(QWidget):
     @staticmethod
     def _bool_field(value: object = True) -> QCheckBox:
         box = QCheckBox("Enabled")
-        box.setChecked(str(value).lower() not in {"false", "0", "no"})
+        box.setChecked(str(value).strip().lower() not in {
+            "false", "0", "no", "n", "disable", "disabled", "off",
+        })
         return box
 
     def add_entry(
@@ -1078,7 +1133,9 @@ class JsonBatchEditor(QWidget):
             if len(parts) == 3 and all(parts):
                 values = dict(values)
                 values.update(title=parts[0], album=parts[1], artists=parts[2])
-        section = CollapsibleSection(f"New {self._entry_label()}")
+        section = CollapsibleSection(
+            f"New {self._entry_label()}", reorderable=self.kind == "album"
+        )
         if self.kind == "album":
             display_name = values.get("album", name)
         elif self.kind == "video":
@@ -1482,9 +1539,11 @@ class JsonBatchEditor(QWidget):
             and track
             and next(iter(track.values())).get("ytb_link")
         )
+        if not matched_count:
+            fields["download"].setChecked(False)
         section.set_status(f"{matched_count}/{len(individual_tracks)} individual tracks matched")
         button.setToolTip(
-            "Wikipedia album tracks were matched to close-duration YouTube audio/lyrical videos."
+            "YouTube matches use Wikipedia lengths and verified recording metadata."
         )
         self.log_requested.emit(
             f'[ALBUM-TRACK-SEARCH] Filled {len(individual_tracks)} tracks for "{album_name}" '
@@ -1548,7 +1607,9 @@ class JsonBatchEditor(QWidget):
         values: dict | None = None,
     ) -> dict:
         values = values if isinstance(values, dict) else {}
-        section = CollapsibleSection("New track")
+        section = CollapsibleSection(
+            "New track", length_notice=str(values.get("length_notice") or ""),
+        )
         name_edit = self._text_field(name)
         name_edit.setPlaceholderText("Track title")
         fields: dict[str, QWidget] = {"__name__": name_edit}
@@ -1607,6 +1668,9 @@ class JsonBatchEditor(QWidget):
             )
         fields["download"] = download
         form.addRow("Download", download)
+        if section.length_badge is not None:
+            name_edit.textChanged.connect(section.length_badge.hide)
+            fields["ytb_link"].textChanged.connect(section.length_badge.hide)
         record = {"section": section, "fields": fields}
         tracks.append(record)
         section.remove_button.clicked.connect(lambda: self._remove_track(layout, tracks, record))
@@ -2337,7 +2401,43 @@ class JsonBatchEditor(QWidget):
 
     def _remove_entry(self, record: dict) -> None:
         self.entries.remove(record)
+        self.entries_layout.removeWidget(record["section"])
         record["section"].deleteLater()
+
+    def dragEnterEvent(self, event) -> None:
+        if self._dragged_album(event) is not None:
+            event.acceptProposedAction()
+
+    def dropEvent(self, event) -> None:
+        section = self._dragged_album(event)
+        if section is None:
+            return
+        self._move_album(section, event.position().y())
+        event.acceptProposedAction()
+
+    def _dragged_album(self, event) -> CollapsibleSection | None:
+        source = event.source()
+        if not isinstance(source, AlbumDragHandle) or not event.mimeData().hasFormat(
+            AlbumDragHandle.MIME_TYPE
+        ):
+            return None
+        section = source.parentWidget()
+        if section.parentWidget() is self and not section.toggle.isChecked():
+            return section
+        return None
+
+    def _move_album(self, section: CollapsibleSection, drop_y: float) -> None:
+        current = self.entries_layout.indexOf(section)
+        destination = sum(
+            record["section"] is not section and record["section"].geometry().center().y() < drop_y
+            for record in self.entries
+        )
+        if current == destination:
+            return
+        self.entries.insert(destination, self.entries.pop(current))
+        self.entries_layout.removeWidget(section)
+        self.entries_layout.insertWidget(destination, section)
+        self.order_changed.emit()
 
     @staticmethod
     def _remove_track(layout: QVBoxLayout, tracks: list[dict], record: dict) -> None:
@@ -2428,7 +2528,6 @@ class JsonBatchEditor(QWidget):
                 entry["section"].set_expanded(False)
             elif entry_failed:
                 # Keep failures visible so their inputs can be corrected and retried.
-                fields["download"].setChecked(True)
                 entry["section"].set_status("Needs attention")
                 entry["section"].set_expanded(True)
                 details = [f"{item}: {reason}" for item, reason in (failure_details or {}).items()
@@ -2463,7 +2562,6 @@ class JsonBatchEditor(QWidget):
                     for item in failed
                 )
                 if track_failed:
-                    track["fields"]["download"].setChecked(True)
                     track["section"].set_status("Needs attention")
                     track["section"].set_expanded(True)
                     details = [f"{item}: {reason}" for item, reason in (failure_details or {}).items()
@@ -2500,6 +2598,9 @@ class JsonBatchEditor(QWidget):
                 if value:
                     values[field] = value
             values["download"] = "true" if fields["download"].isChecked() else "false"
+            badge = track["section"].length_badge
+            if badge is not None and not badge.isHidden():
+                values["length_notice"] = badge.toolTip()
             result.append({name: values})
         return result
 
