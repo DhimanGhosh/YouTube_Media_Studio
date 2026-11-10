@@ -71,13 +71,18 @@ def find_individual_album_tracks(
             title_key = _key(title)
             wanted_tokens = set(title_key.split()) - {"ft", "feat", "featuring"}
             variant_words = wanted_tokens & _VARIANT_TERMS
+            search_error = None
             for query in (
                 f"{album_name} {title} {artists} full song audio lyrical",
                 f"{title} {album_name} full audio",
             ):
                 if is_cancelled is not None and is_cancelled():
                     return []
-                search = downloader.extract_info(f"ytsearch8:{query}", download=False)
+                try:
+                    search = downloader.extract_info(f"ytsearch8:{query}", download=False)
+                except DownloadError as exc:
+                    search_error = exc
+                    continue
                 entries = (search.get("entries") or []) if isinstance(search, dict) else []
                 for entry in entries:
                     if not isinstance(entry, dict) or not entry.get("id"):
@@ -108,7 +113,7 @@ def find_individual_album_tracks(
                             )
                         except DownloadError:
                             continue
-                        if _matches_topic_release(metadata, album_key, artists):
+                        if _matches_topic_release(metadata, title_key, album_key, artists):
                             topic_candidates.append((duration, entry))
                         continue
                     candidates.append((duration, entry))
@@ -117,26 +122,20 @@ def find_individual_album_tracks(
                 chosen = _closest_match(topic_candidates, expected, check_duration=False)
                 if chosen is not None:
                     break
-                chosen = _closest_match(candidates, expected)
-                if chosen is not None:
-                    break
-            if chosen is None and candidates and artists:
+            if chosen is None and not candidates and search_error is not None:
+                raise search_error
+            if chosen is None and candidates:
                 if is_cancelled is not None and is_cancelled():
                     return []
-                # Wikipedia sometimes lists the video edit's length for a soundtrack track.
-                catalog = find_catalog_song_metadata(title, artists, timeout=5)
-                if (
-                    _key(catalog.get("title", "")) == title_key
-                    and _key(catalog.get("album", "")) == album_key
-                    and (not release_year or catalog.get("year") == release_year)
-                ):
-                    catalog_duration = round(float(catalog.get("duration_seconds") or 0))
-                    if catalog_duration > 0:
-                        album_candidates = [
-                            (duration, entry) for duration, entry in candidates
-                            if f" {album_key} " in f" {_key(entry['title'])} "
-                        ]
-                        chosen = _closest_match(album_candidates, catalog_duration)
+                catalog_duration = _catalog_duration(title, artists, album_key, release_year)
+                if catalog_duration and not _duration_matches(catalog_duration, expected):
+                    credited_candidates = [
+                        (duration, entry) for duration, entry in candidates
+                        if _has_recording_credits(entry["title"], album_key, artists)
+                    ]
+                    chosen = _closest_match(credited_candidates, catalog_duration)
+                else:
+                    chosen = _closest_match(candidates, catalog_duration or expected)
             if chosen is None:
                 closest = _closest_match(candidates, expected, check_duration=False)
                 results.append({title: {
@@ -171,16 +170,60 @@ def _video_url(entry: dict) -> str:
     return f"https://www.youtube.com/watch?v={entry['id']}"
 
 
-def _matches_topic_release(metadata: dict | None, album_key: str, artists: str) -> bool:
-    if not metadata or not metadata.get("track"):
+def _catalog_duration(title: str, artists: str, album_key: str, release_year: str) -> int:
+    if not artists:
+        return 0
+    try:
+        catalog = find_catalog_song_metadata(title, artists, timeout=5)
+        if (
+            _key(catalog.get("title", "")) == _key(title)
+            and _key(catalog.get("album", "")) == album_key
+            and (not release_year or catalog.get("year") == release_year)
+        ):
+            return round(float(catalog.get("duration_seconds") or 0))
+    except (ValueError, TypeError, OverflowError):
+        # A malformed catalog response should not discard YouTube search results.
+        pass
+    return 0
+
+
+def _artist_keys(artists: str) -> set[str]:
+    return {_key(artist) for artist in format_artist_names(artists).split(",") if artist.strip()}
+
+
+def _has_recording_credits(video_title: str, album_key: str, artists: str) -> bool:
+    title = f" {_key(video_title)} "
+    credits = _artist_keys(artists)
+    return (
+        bool(credits)
+        and f" {album_key} " in title
+        and all(f" {credit} " in title for credit in credits)
+    )
+
+
+def _matches_topic_release(
+    metadata: dict | None, title_key: str, album_key: str, artists: str,
+) -> bool:
+    if not metadata:
         return False
     if _key(normalize_album_name(metadata.get("album"))) != album_key:
         return False
-    expected = format_artist_names(artists).split(",")
-    available = format_artist_names(", ".join(metadata.get("artists") or [])).split(",")
-    expected_keys = {_key(artist).replace(" ", "") for artist in expected if artist.strip()}
-    available_keys = {_key(artist).replace(" ", "") for artist in available if artist.strip()}
-    return bool(expected_keys) and expected_keys <= available_keys
+    wanted = title_key.split()
+    available = _key(str(metadata.get("track") or "")).split()
+    variants = set(wanted) & _VARIANT_TERMS
+    if not _variant_compatible(variants, set(available) & _VARIANT_TERMS):
+        return False
+    # The catalog sometimes expands a short Wikipedia title, such as
+    # "Kabhi Aayine (Remix)" to "Kabhi Aayine Pe Likha Tujhe (Remix)".
+    wanted_title = [word for word in wanted if word not in _VARIANT_TERMS]
+    available_title = [word for word in available if word not in _VARIANT_TERMS]
+    if wanted_title != available_title and (
+        len(wanted_title) < 2 or wanted_title != available_title[:len(wanted_title)]
+    ):
+        return False
+    expected_credits = _artist_keys(artists)
+    available_credits = _artist_keys(", ".join(metadata.get("artists") or []))
+    return bool(expected_credits) and expected_credits <= available_credits
 
 
 def _closest_match(

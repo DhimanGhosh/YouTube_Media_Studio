@@ -9,12 +9,14 @@ abbreviated hashes to the next version section.
 ### Added
 
 - Drag collapsed albums by the left-hand grip to rearrange the workspace and save the new order.
+- Enable or disable a track directly from its collapsed header.
 - Show a “Wiki length differs” badge beside tracks with a duration mismatch. Hover to see both lengths.
 
 ### Fixed
 
 - Use verified recording credits and catalog durations to find standalone songs when Wikipedia lists a different length.
 - Keep disabled albums and tracks out of subsequent downloads, including after a batch reports skipped items.
+- Exclude Wikipedia's soundtrack duration totals from imported track lists.
 
 ## [2.19.0] - 2026-09-28
 

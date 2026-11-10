@@ -11,6 +11,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtCore import QPointF, Qt  # noqa: E402
 from PyQt6.QtWidgets import QApplication  # noqa: E402
+from PyQt6.QtWidgets import QCheckBox  # noqa: E402
 from PyQt6.QtWidgets import QPushButton  # noqa: E402
 
 from youtube_audio_video_downloader.gui.components.widgets import (  # noqa: E402
@@ -203,6 +204,27 @@ class BatchEditorCompletionTest(unittest.TestCase):
 
         self.assertTrue(badge.isHidden())
         self.assertNotIn("length_notice", editor.data()["Hate Story 2"]["tracks"][0]["Pink Lips"])
+
+    def test_collapsed_track_checkbox_syncs_with_expanded_download_field(self) -> None:
+        editor = JsonBatchEditor("album")
+        editor.load_data({"Album": {"tracks": [{"Track": {"download": False}}]}})
+        track = editor.entries[0]["fields"]["__tracks__"][0]
+        section = track["section"]
+        header_download = next(box for box in section.findChildren(QCheckBox) if box.text() == "Download")
+        self.assertTrue(header_download.isHidden())
+
+        section.set_expanded(False)
+        self.assertFalse(header_download.isHidden())
+        header_download.click()
+
+        self.assertFalse(section.toggle.isChecked())
+        self.assertTrue(track["fields"]["download"].isChecked())
+        self.assertEqual(editor.data()["Album"]["tracks"][0]["Track"]["download"], "true")
+
+        section.set_expanded(True)
+        track["fields"]["download"].setChecked(False)
+        self.assertTrue(header_download.isHidden())
+        self.assertFalse(header_download.isChecked())
 
     def test_audio_file_name_is_generated_instead_of_entered(self) -> None:
         editor = JsonBatchEditor("audio")

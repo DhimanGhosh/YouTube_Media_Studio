@@ -811,11 +811,17 @@ class CollapsibleSection(QFrame):
             self.length_badge.setToolTip(length_notice)
             header.addWidget(self.length_badge)
         header.addWidget(self.remove_button)
+        self._header_layout = header
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.addLayout(header)
         layout.addWidget(self.failure_detail)
         layout.addWidget(self.body)
+
+    def add_collapsed_control(self, control: QWidget) -> None:
+        self._header_layout.insertWidget(self._header_layout.indexOf(self.toggle) + 1, control)
+        control.setVisible(not self.toggle.isChecked())
+        self.toggle.toggled.connect(lambda expanded: control.setVisible(not expanded))
 
     def set_title(self, title: str) -> None:
         self._title = title
@@ -1668,6 +1674,13 @@ class JsonBatchEditor(QWidget):
             )
         fields["download"] = download
         form.addRow("Download", download)
+        if self.kind == "album":
+            header_download = QCheckBox("Download")
+            header_download.setToolTip("Include this track when its album is enabled")
+            header_download.setChecked(download.isChecked())
+            header_download.toggled.connect(download.setChecked)
+            download.toggled.connect(header_download.setChecked)
+            section.add_collapsed_control(header_download)
         if section.length_badge is not None:
             name_edit.textChanged.connect(section.length_badge.hide)
             fields["ytb_link"].textChanged.connect(section.length_badge.hide)

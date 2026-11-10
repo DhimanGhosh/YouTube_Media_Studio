@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import unittest
 from unittest.mock import patch
+from yt_dlp.utils import DownloadError
 
 from youtube_audio_video_downloader.services.downloads.individual_track_search import (
     _variant_compatible,
@@ -37,10 +38,15 @@ class IndividualTrackSearchTest(unittest.TestCase):
         }
         extract = youtube.return_value.__enter__.return_value.extract_info
         searches = [
-            {"entries": [{"id": "remix", "title": "Pink Lips Remix", "duration": 255}]},
+            {"entries": [
+                {"id": "remix", "title": "Pink Lips Remix", "duration": 255},
+                {"id": "short", "title": "Pink Lips | Hate Story 2", "duration": 209},
+            ]},
             {"entries": [
                 {"id": "cover", "title": "Pink Lips Cover", "duration": 255},
-                {"id": "full", "title": "Pink Lips Full Audio Song | Hate Story 2", "duration": 255},
+                {"id": "wrong", "title": "Pink Lips | Hate Story 2 | Other Artist", "duration": 255},
+                {"id": "full", "title": "Pink Lips | Hate Story 2 | Meet Bros Anjjan, Khushboo Grewal",
+                 "duration": 255},
             ]},
         ]
         extract.side_effect = searches
@@ -54,8 +60,18 @@ class IndividualTrackSearchTest(unittest.TestCase):
         )
         self.assertIn("Pink Lips Hate Story 2 full audio", extract.call_args.args[0])
 
+        extract.side_effect = [{"entries": [searches[1]["entries"][-1]]}, DownloadError("timeout")]
+        tracks = find_individual_album_tracks("Hate Story 2", "2014")
+        self.assertTrue(tracks[0]["Pink Lips"]["ytb_link"].endswith("=full"))
+
+        extract.side_effect = [{"entries": [searches[0]["entries"][-1]]}, DownloadError("timeout")]
+        catalog.side_effect = ValueError("invalid JSON")
+        tracks = find_individual_album_tracks("Hate Story 2", "2014")
+        self.assertTrue(tracks[0]["Pink Lips"]["ytb_link"].endswith("=short"))
+
+        catalog.side_effect = None
         catalog.return_value["album"] = "Different album"
-        extract.side_effect = searches
+        extract.side_effect = [{"entries": []}, searches[1]]
         unmatched = find_individual_album_tracks("Hate Story 2", "2014")[0]["Pink Lips"]
         self.assertEqual(unmatched["ytb_link"], "")
         self.assertEqual(unmatched["download"], "false")
@@ -72,9 +88,11 @@ class IndividualTrackSearchTest(unittest.TestCase):
         extract.side_effect = [
             {"entries": [
                 {"id": "wrong", "title": title, "channel": "Other - Topic", "duration": 285},
+                {"id": "wrong-title", "title": title, "channel": "K.K. - Topic", "duration": 285},
                 {"id": "right", "title": title, "channel": "K.K. - Topic", "duration": 342},
             ]},
             {"track": title, "album": "Hate Story 2", "artists": ["Other"]},
+            {"track": "Another Song (Remix)", "album": "Hate Story 2", "artists": ["K.K."]},
             {"track": title, "album": "Hate Story 2", "artists": ["K.K.", "Rashid Khan"]},
         ]
 

@@ -41,6 +41,18 @@ class WikipediaTracksTest(unittest.TestCase):
         )
         self.assertEqual(tracks[0]["artists"], "Atif Aslam, Shalmali Kholgade")
 
+    def test_skips_duration_footers_between_soundtrack_tables(self) -> None:
+        headers = "<tr><th>No.</th><th>Title</th><th>Singer(s)</th><th>Length</th></tr>"
+        tracks = extract_tracks_from_html(
+            f"<table>{headers}"
+            "<tr><td>1</td><td>Jai Jai Ram</td><td>Arijit Singh</td><td>5:20</td></tr>"
+            '<tr><th colspan="3">Total length:</th><td>5:20</td></tr></table>'
+            f"<table>{headers}"
+            "<tr><td>1</td><td>Main Ram</td><td>Sachet Tandon</td><td>4:11</td></tr>"
+            '<tr><th colspan="3">Total duration:</th><td>4:11</td></tr></table>'
+        )
+        self.assertEqual([track["title"] for track in tracks], ["Jai Jai Ram", "Main Ram"])
+
     def test_removes_featured_artist_but_keeps_version_labels(self) -> None:
         self.assertEqual(
             clean_wikipedia_track_title(
