@@ -155,7 +155,8 @@ def print_ytdlp_diagnostic_once() -> YtDlpRuntimeDiagnostic:
         if diagnostic.stale:
             print(
                 "[YT-DLP-WARNING] This yt-dlp build is over 60 days old. "
-                "In the desktop app, see Help → Downloader Diagnostics… for update options.",
+                "Update yt-dlp in your Python environment or install a newer "
+                "YouTube Media Studio release for bundled tools.",
                 flush=True,
             )
         _DIAGNOSTIC_PRINTED = True

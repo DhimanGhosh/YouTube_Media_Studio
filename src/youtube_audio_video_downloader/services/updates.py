@@ -7,8 +7,9 @@ import json
 import os
 import platform
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
+from time import monotonic
 from typing import Any, Callable
 from urllib.request import Request, urlopen
 
@@ -152,13 +153,26 @@ def check_for_update(
     }
     releases: list[dict[str, Any]] = []
     page = 1
+    deadline = monotonic() + timeout
     while True:
         request = Request(f"{RELEASES_API}&page={page}", headers=headers)
-        with urlopen(request, timeout=timeout) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-            has_next_page = 'rel="next"' in response.headers.get("Link", "")
-        if not isinstance(payload, list):
-            raise RuntimeError("GitHub Releases returned an unexpected response")
+        try:
+            remaining = deadline - monotonic()
+            if remaining <= 0:
+                raise TimeoutError("GitHub release check timed out")
+            with urlopen(request, timeout=remaining) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+                has_next_page = 'rel="next"' in response.headers.get("Link", "")
+            if not isinstance(payload, list):
+                raise ValueError("GitHub Releases returned an unexpected response")
+        except (OSError, ValueError):
+            update = select_update(releases, current_version, include_betas=include_betas)
+            if update is None:
+                raise
+            return replace(
+                update,
+                notes="Some release notes could not be loaded.\n\n" + update.notes,
+            )
         releases.extend(payload)
         if not has_next_page:
             return select_update(releases, current_version, include_betas=include_betas)

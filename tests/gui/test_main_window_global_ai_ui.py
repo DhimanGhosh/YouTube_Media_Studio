@@ -46,7 +46,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
             patch.object(sys, "frozen", True, create=True),
             patch(
                 "youtube_audio_video_downloader.gui.application.main_window.ytdlp_runtime_diagnostic",
-                return_value=Mock(version="2026.08.19", browser="", stale=True),
+                return_value=Mock(version="2026.08.19", browser="", stale=True, age_days=83),
             ),
             patch.object(self.window, "_append_log") as log,
             patch.object(QMessageBox, "warning") as warning,
@@ -54,6 +54,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
             self.window._report_downloader_health_on_startup()
 
         warning.assert_not_called()
+        self.assertIn("age=83 days", log.call_args_list[0].args[0])
         self.assertIn("Downloader Diagnostics", log.call_args.args[0])
 
     def test_packaged_downloader_diagnostics_offers_app_updates(self) -> None:
@@ -61,7 +62,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
             patch.object(sys, "frozen", True, create=True),
             patch(
                 "youtube_audio_video_downloader.gui.application.main_window.ytdlp_runtime_diagnostic",
-                return_value=Mock(version="2026.08.19", browser="", stale=True),
+                return_value=Mock(version="2026.08.19", browser="", stale=True, age_days=83),
             ),
             patch(
                 "youtube_audio_video_downloader.gui.application.main_window.configure_runtime_tools",
@@ -73,6 +74,7 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
             self.window._diagnose_download_setup()
 
         self.assertIn("through app releases", prompt.call_args.args[2])
+        self.assertIn("age: 83 days", prompt.call_args.args[2])
         check.assert_called_once_with(interactive=True)
 
     def setUp(self) -> None:
@@ -1046,6 +1048,29 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
         self.assertFalse(
             self.window.settings.value("workspace/album_move_perform_enrichment", type=bool)
         )
+
+    def test_album_expansion_survives_workspace_restore_even_with_statuses(self) -> None:
+        self.window.settings_persist_state.setChecked(True)
+        editor = self.window.album_input
+        editor.load_data({"The Body": {}, "Hate Story 2": {}, "Ramayana": {}})
+        self.window._album_statuses = {
+            "The Body": "Needs attention",
+            "Hate Story 2": "Completed",
+        }
+        editor.set_statuses(self.window._album_statuses)
+        editor.entries[0]["section"].set_expanded(False)
+        editor.entries[1]["section"].set_expanded(True)
+        editor.entries[2]["section"].set_expanded(False)
+        self.window._save_workspace_state()
+
+        self.window._restore_workspace_state()
+
+        self.assertEqual(
+            editor.expansion_state(),
+            {"The Body": False, "Hate Story 2": True, "Ramayana": False},
+        )
+        self.assertEqual(editor.entries[0]["section"].status_label.text(), "NEEDS ATTENTION")
+        self.assertEqual(editor.entries[1]["section"].status_label.text(), "COMPLETED")
 
     def test_reset_restores_move_enrichment_default(self) -> None:
         reset_data = self.data_directory / "portable" / "YouTubeMediaStudioData"

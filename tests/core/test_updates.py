@@ -116,3 +116,17 @@ def test_fetches_intermediate_release_notes_from_later_pages(monkeypatch) -> Non
     assert update is not None
     assert "# Version 2.19.1" in update.notes
     assert fetch.call_args.args[0].full_url.endswith("&page=2")
+
+
+def test_later_page_failure_preserves_update_offer(monkeypatch) -> None:
+    first = MagicMock()
+    first.__enter__.return_value.read.return_value = json.dumps([release("v2.19.2")]).encode()
+    first.__enter__.return_value.headers = {"Link": '<next-page>; rel="next"'}
+    fetch = MagicMock(side_effect=[first, TimeoutError("later page timed out")])
+    monkeypatch.setattr("youtube_audio_video_downloader.services.updates.urlopen", fetch)
+
+    update = check_for_update("2.19.0")
+
+    assert update is not None
+    assert update.version == "2.19.2"
+    assert update.notes.startswith("Some release notes could not be loaded.")

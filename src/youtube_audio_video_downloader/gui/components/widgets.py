@@ -2504,6 +2504,20 @@ class JsonBatchEditor(QWidget):
         if not self.entries:
             self.add_entry()
 
+    def expansion_state(self) -> dict[str, bool]:
+        return {
+            name: entry["section"].toggle.isChecked()
+            for entry in self.entries
+            if (name := self._field_value(entry["fields"]["__name__"]))
+        }
+
+    def restore_expansion_state(self, expanded: dict[str, bool]) -> None:
+        for entry in self.entries:
+            name = self._field_value(entry["fields"]["__name__"])
+            state = expanded.get(name)
+            if isinstance(state, bool):
+                entry["section"].set_expanded(state)
+
     def set_statuses(self, statuses: dict[str, str]) -> None:
         completed_names: list[str] = []
         for entry in self.entries:

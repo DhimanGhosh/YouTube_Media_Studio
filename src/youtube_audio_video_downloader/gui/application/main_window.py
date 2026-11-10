@@ -4119,8 +4119,9 @@ class MainWindow(QMainWindow):
         if not tools.deno:
             problems.append("Deno is unavailable for YouTube JavaScript challenges")
         browser = diagnostic.browser or "none detected (anonymous fallback remains available)"
+        age = "unknown" if diagnostic.age_days is None else f"{diagnostic.age_days} days"
         summary = (
-            f"yt-dlp: {diagnostic.version}\n"
+            f"yt-dlp: {diagnostic.version} (age: {age})\n"
             f"FFmpeg: {tools.ffmpeg or 'missing'}\n"
             f"FFprobe: {tools.ffprobe or 'missing'}\n"
             f"Deno: {tools.deno or 'missing'}\n"
@@ -4181,7 +4182,8 @@ class MainWindow(QMainWindow):
     def _report_downloader_health_on_startup(self) -> None:
         diagnostic = ytdlp_runtime_diagnostic()
         browser = diagnostic.browser or "none"
-        self._append_log(f"[YT-DLP] version={diagnostic.version} | browser-cookies={browser}")
+        age = "unknown" if diagnostic.age_days is None else f"{diagnostic.age_days} days"
+        self._append_log(f"[YT-DLP] version={diagnostic.version} | age={age} | browser-cookies={browser}")
         if diagnostic.stale:
             self._append_log(
                 f"[YT-DLP] yt-dlp {diagnostic.version} is over 60 days old. "
@@ -4625,6 +4627,7 @@ class MainWindow(QMainWindow):
             ):
                 self.settings.remove(f"workspace/{key}")
             self.settings.remove("workspace/album_statuses")
+            self.settings.remove("workspace/album_expansion")
             self.settings.remove("workspace/history")
             self.settings.sync()
 
@@ -5137,6 +5140,10 @@ class MainWindow(QMainWindow):
                 if isinstance(statuses, dict):
                     self._album_statuses = {str(k): str(v) for k, v in statuses.items()}
                     self.album_input.set_statuses(self._album_statuses)
+            expansion = json.loads(str(self.settings.value("workspace/album_expansion", "{}") or "{}"))
+            if isinstance(expansion, dict):
+                # Saved visibility takes precedence over completion's default collapse.
+                self.album_input.restore_expansion_state(expansion)
 
             history_raw = str(self.settings.value("workspace/history", "") or "")
             if history_raw:
@@ -5239,6 +5246,9 @@ class MainWindow(QMainWindow):
         )
         self.settings.setValue(
             "workspace/album_statuses", json.dumps(self._album_statuses, ensure_ascii=False)
+        )
+        self.settings.setValue(
+            "workspace/album_expansion", json.dumps(self.album_input.expansion_state(), ensure_ascii=False)
         )
         self.settings.setValue("workspace/history", json.dumps(self._history, ensure_ascii=False))
         self.settings.sync()
