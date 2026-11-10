@@ -4,6 +4,14 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [Unreleased]
+
+### Fixed
+
+- Bundle yt-dlp 2026.10.26 and show its age in diagnostics and logs without interrupting startup.
+- Explain that packaged downloader tools are updated through the in-app software updater.
+- Show release notes for every eligible version between the installed version and the available update.
+
 ## [2.19.2] - 2026-11-10
 
 ### Fixed

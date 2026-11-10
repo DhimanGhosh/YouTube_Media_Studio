@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from youtube_audio_video_downloader.services.updates import select_update
+import json
+from unittest.mock import MagicMock
+
+from youtube_audio_video_downloader.services.updates import check_for_update, select_update
 
 
 def release(tag: str, *, prerelease: bool = False) -> dict:
@@ -76,3 +79,40 @@ def test_signing_off_beta_returns_latest_stable(monkeypatch) -> None:
     )
     assert update is not None
     assert update.version == "2.14.2"
+    assert update.notes == "notes"
+
+
+def test_upgrade_notes_include_intermediate_releases_without_installers(monkeypatch) -> None:
+    monkeypatch.setattr("platform.system", lambda: "Windows")
+    update = select_update(
+        [
+            dict(release("v2.19.1"), body="Album fixes", assets=[]),
+            dict(release("v2.19.0"), body="Already installed"),
+            dict(release("v2.19.3"), body="Unpublished", draft=True),
+            dict(release("v2.19.2"), body="Language filter"),
+            dict(release("v2.19.4"), body="Beyond the installable update", assets=[]),
+            dict(release("v2.19.2b1"), body="Beta notes", prerelease=True),
+        ],
+        "2.19.0",
+    )
+
+    assert update is not None
+    assert update.notes == "# Version 2.19.2\n\nLanguage filter\n\n# Version 2.19.1\n\nAlbum fixes"
+    assert update.asset_url == "https://example.test/v2.19.2.exe"
+    assert update.checksum_url == "https://example.test/v2.19.2-SHA256SUMS.txt"
+
+
+def test_fetches_intermediate_release_notes_from_later_pages(monkeypatch) -> None:
+    first, second = MagicMock(), MagicMock()
+    first.__enter__.return_value.read.return_value = json.dumps([release("v2.19.2")]).encode()
+    first.__enter__.return_value.headers = {"Link": '<next-page>; rel="next"'}
+    second.__enter__.return_value.read.return_value = json.dumps([release("v2.19.1")]).encode()
+    second.__enter__.return_value.headers = {}
+    fetch = MagicMock(side_effect=[first, second])
+    monkeypatch.setattr("youtube_audio_video_downloader.services.updates.urlopen", fetch)
+
+    update = check_for_update("2.19.0")
+
+    assert update is not None
+    assert "# Version 2.19.1" in update.notes
+    assert fetch.call_args.args[0].full_url.endswith("&page=2")

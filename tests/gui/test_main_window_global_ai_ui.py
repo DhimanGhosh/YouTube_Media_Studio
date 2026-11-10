@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import gc
 import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -39,6 +40,40 @@ class MainWindowGlobalAiUiTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.app = QApplication.instance() or QApplication([])
+
+    def test_stale_downloader_at_startup_is_logged_without_a_popup(self) -> None:
+        with (
+            patch.object(sys, "frozen", True, create=True),
+            patch(
+                "youtube_audio_video_downloader.gui.application.main_window.ytdlp_runtime_diagnostic",
+                return_value=Mock(version="2026.08.19", browser="", stale=True),
+            ),
+            patch.object(self.window, "_append_log") as log,
+            patch.object(QMessageBox, "warning") as warning,
+        ):
+            self.window._report_downloader_health_on_startup()
+
+        warning.assert_not_called()
+        self.assertIn("Downloader Diagnostics", log.call_args.args[0])
+
+    def test_packaged_downloader_diagnostics_offers_app_updates(self) -> None:
+        with (
+            patch.object(sys, "frozen", True, create=True),
+            patch(
+                "youtube_audio_video_downloader.gui.application.main_window.ytdlp_runtime_diagnostic",
+                return_value=Mock(version="2026.08.19", browser="", stale=True),
+            ),
+            patch(
+                "youtube_audio_video_downloader.gui.application.main_window.configure_runtime_tools",
+                return_value=Mock(ffmpeg="ffmpeg", ffprobe="ffprobe", deno="deno"),
+            ),
+            patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes) as prompt,
+            patch.object(self.window, "_check_for_updates") as check,
+        ):
+            self.window._diagnose_download_setup()
+
+        self.assertIn("through app releases", prompt.call_args.args[2])
+        check.assert_called_once_with(interactive=True)
 
     def setUp(self) -> None:
         self.environment_patch = patch.dict(

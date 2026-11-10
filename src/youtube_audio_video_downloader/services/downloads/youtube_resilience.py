@@ -155,7 +155,7 @@ def print_ytdlp_diagnostic_once() -> YtDlpRuntimeDiagnostic:
         if diagnostic.stale:
             print(
                 "[YT-DLP-WARNING] This yt-dlp build is over 60 days old. "
-                "Use Download diagnostics / Auto-fix or install the latest release.",
+                "In the desktop app, see Help → Downloader Diagnostics… for update options.",
                 flush=True,
             )
         _DIAGNOSTIC_PRINTED = True

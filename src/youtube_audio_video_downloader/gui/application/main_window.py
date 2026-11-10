@@ -3085,7 +3085,7 @@ class MainWindow(QMainWindow):
         batch_form.addRow("Retries", self.settings_retries)
         batch_form.addRow("Retry delay", self.settings_retry_wait)
         batch_form.addRow("Rate-limit wait", self.settings_rate_limit_wait)
-        download_diagnostics = QPushButton("Diagnose / Auto-fix downloads")
+        download_diagnostics = QPushButton("Downloader diagnostics…")
         download_diagnostics.setObjectName("secondaryButton")
         download_diagnostics.setToolTip(
             "Check yt-dlp, FFmpeg, Deno, and browser-cookie recovery support"
@@ -4107,10 +4107,11 @@ class MainWindow(QMainWindow):
         diagnostic = ytdlp_runtime_diagnostic()
         tools = configure_runtime_tools(allow_download=False)
         problems: list[str] = []
+        needs_ytdlp_update = diagnostic.version == "not installed" or diagnostic.stale
         if diagnostic.version == "not installed":
             problems.append("yt-dlp is not installed")
         elif diagnostic.stale:
-            problems.append(f"yt-dlp {diagnostic.version} is over 60 days old")
+            problems.append(f"yt-dlp {diagnostic.version} is over 60 days old and may still work")
         if not tools.ffmpeg:
             problems.append("FFmpeg is unavailable")
         if not tools.ffprobe:
@@ -4134,17 +4135,30 @@ class MainWindow(QMainWindow):
             )
             return
         repair_text = "\n".join(f"• {problem}" for problem in problems)
+        details = summary + "Detected:\n" + repair_text
+        if getattr(sys, "frozen", False):
+            answer = QMessageBox.question(
+                self,
+                "Check for an app update?",
+                details + "\n\nThis installation updates its bundled downloader tools "
+                "through app releases. Check for an app update now?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes,
+            )
+            if answer == QMessageBox.StandardButton.Yes:
+                self._check_for_updates(interactive=True)
+            return
+        if not needs_ytdlp_update:
+            QMessageBox.information(self, "Downloader diagnostics", details)
+            return
         answer = QMessageBox.question(
             self,
-            "Downloader repair available",
-            summary + "Detected:\n" + repair_text + "\n\nRun the applicable auto-fix?",
+            "Update yt-dlp?",
+            details + "\n\nUpdate yt-dlp in this Python environment?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.Yes,
         )
         if answer != QMessageBox.StandardButton.Yes:
-            return
-        if getattr(sys, "frozen", False):
-            self._check_for_updates(interactive=True)
             return
         updater = Path(__file__).resolve().parents[4] / "tools" / "update_ytdlp.py"
         started = (
@@ -4170,16 +4184,9 @@ class MainWindow(QMainWindow):
         self._append_log(f"[YT-DLP] version={diagnostic.version} | browser-cookies={browser}")
         if diagnostic.stale:
             self._append_log(
-                "[YT-DLP-WARNING] Installed yt-dlp is over 60 days old; use "
-                "File → Settings… → Batch processing and network → Diagnose / Auto-fix downloads."
+                f"[YT-DLP] yt-dlp {diagnostic.version} is over 60 days old. "
+                "See Help → Downloader Diagnostics… for update options."
             )
-            if getattr(sys, "frozen", False):
-                QMessageBox.warning(
-                    self,
-                    "Downloader update recommended",
-                    f"yt-dlp {diagnostic.version} is over 60 days old. Open File → "
-                    "Settings… and run Diagnose / Auto-fix downloads before downloading.",
-                )
 
     def _update_thread_finished(self) -> None:
         self._update_thread = None
