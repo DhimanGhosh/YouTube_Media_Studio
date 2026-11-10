@@ -256,6 +256,30 @@ class BatchEditorCompletionTest(unittest.TestCase):
         self.assertTrue(header_download.isHidden())
         self.assertFalse(header_download.isChecked())
 
+    def test_collapsed_album_checkbox_controls_album_without_changing_tracks(self) -> None:
+        editor = JsonBatchEditor("album")
+        editor.load_data({"The Body": {"tracks": [{"Song": {"download": True}}]}})
+        entry = editor.entries[0]
+        section = entry["section"]
+        header_download = next(
+            box for box in section.findChildren(QCheckBox, options=Qt.FindChildOption.FindDirectChildrenOnly)
+            if box.text() == "Download"
+        )
+        self.assertTrue(header_download.isHidden())
+        section.set_status("Needs attention")
+        section.set_expanded(False)
+        self.assertFalse(header_download.isHidden())
+
+        header_download.click()
+
+        self.assertFalse(section.toggle.isChecked())
+        self.assertEqual(editor.data()["The Body"]["download"], "false")
+        self.assertEqual(editor.data()["The Body"]["tracks"][0]["Song"]["download"], "true")
+        section.set_expanded(True)
+        entry["fields"]["download"].setChecked(True)
+        self.assertTrue(header_download.isHidden())
+        self.assertTrue(header_download.isChecked())
+
     def test_audio_file_name_is_generated_instead_of_entered(self) -> None:
         editor = JsonBatchEditor("audio")
         entry = editor.entries[0]
