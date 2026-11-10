@@ -234,9 +234,9 @@ multiple machines while keeping each machine's media storage independent.
 - **Retries** is the bounded number of attempts for retryable work.
 - **Retry delay** is the normal wait between failed attempts.
 - **Rate-limit wait** is the longer pause used when a service asks the app to slow down.
-- **Diagnose / Auto-fix downloads** reports yt-dlp age, FFmpeg, FFprobe, Deno, and
-  detected browser-cookie support. Source installs can update yt-dlp directly; packaged
-  installs use the application updater to receive repaired binaries.
+- **Downloader diagnostics…** reports yt-dlp age, FFmpeg, FFprobe, Deno, and
+  detected browser-cookie support. Source checkouts can update yt-dlp directly.
+  Packaged installations receive downloader updates through app releases.
 
 ### Audio, metadata, and playback
 

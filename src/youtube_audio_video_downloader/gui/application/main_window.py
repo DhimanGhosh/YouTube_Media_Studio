@@ -3085,7 +3085,7 @@ class MainWindow(QMainWindow):
         batch_form.addRow("Retries", self.settings_retries)
         batch_form.addRow("Retry delay", self.settings_retry_wait)
         batch_form.addRow("Rate-limit wait", self.settings_rate_limit_wait)
-        download_diagnostics = QPushButton("Diagnose / Auto-fix downloads")
+        download_diagnostics = QPushButton("Downloader diagnostics…")
         download_diagnostics.setObjectName("secondaryButton")
         download_diagnostics.setToolTip(
             "Check yt-dlp, FFmpeg, Deno, and browser-cookie recovery support"
@@ -4107,10 +4107,11 @@ class MainWindow(QMainWindow):
         diagnostic = ytdlp_runtime_diagnostic()
         tools = configure_runtime_tools(allow_download=False)
         problems: list[str] = []
+        needs_ytdlp_update = diagnostic.version == "not installed" or diagnostic.stale
         if diagnostic.version == "not installed":
             problems.append("yt-dlp is not installed")
         elif diagnostic.stale:
-            problems.append(f"yt-dlp {diagnostic.version} is over 60 days old")
+            problems.append(f"yt-dlp {diagnostic.version} is over 60 days old and may still work")
         if not tools.ffmpeg:
             problems.append("FFmpeg is unavailable")
         if not tools.ffprobe:
@@ -4118,8 +4119,9 @@ class MainWindow(QMainWindow):
         if not tools.deno:
             problems.append("Deno is unavailable for YouTube JavaScript challenges")
         browser = diagnostic.browser or "none detected (anonymous fallback remains available)"
+        age = "unknown" if diagnostic.age_days is None else f"{diagnostic.age_days} days"
         summary = (
-            f"yt-dlp: {diagnostic.version}\n"
+            f"yt-dlp: {diagnostic.version} (age: {age})\n"
             f"FFmpeg: {tools.ffmpeg or 'missing'}\n"
             f"FFprobe: {tools.ffprobe or 'missing'}\n"
             f"Deno: {tools.deno or 'missing'}\n"
@@ -4134,17 +4136,30 @@ class MainWindow(QMainWindow):
             )
             return
         repair_text = "\n".join(f"• {problem}" for problem in problems)
+        details = summary + "Detected:\n" + repair_text
+        if getattr(sys, "frozen", False):
+            answer = QMessageBox.question(
+                self,
+                "Check for an app update?",
+                details + "\n\nThis installation updates its bundled downloader tools "
+                "through app releases. Check for an app update now?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes,
+            )
+            if answer == QMessageBox.StandardButton.Yes:
+                self._check_for_updates(interactive=True)
+            return
+        if not needs_ytdlp_update:
+            QMessageBox.information(self, "Downloader diagnostics", details)
+            return
         answer = QMessageBox.question(
             self,
-            "Downloader repair available",
-            summary + "Detected:\n" + repair_text + "\n\nRun the applicable auto-fix?",
+            "Update yt-dlp?",
+            details + "\n\nUpdate yt-dlp in this Python environment?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.Yes,
         )
         if answer != QMessageBox.StandardButton.Yes:
-            return
-        if getattr(sys, "frozen", False):
-            self._check_for_updates(interactive=True)
             return
         updater = Path(__file__).resolve().parents[4] / "tools" / "update_ytdlp.py"
         started = (
@@ -4167,19 +4182,13 @@ class MainWindow(QMainWindow):
     def _report_downloader_health_on_startup(self) -> None:
         diagnostic = ytdlp_runtime_diagnostic()
         browser = diagnostic.browser or "none"
-        self._append_log(f"[YT-DLP] version={diagnostic.version} | browser-cookies={browser}")
+        age = "unknown" if diagnostic.age_days is None else f"{diagnostic.age_days} days"
+        self._append_log(f"[YT-DLP] version={diagnostic.version} | age={age} | browser-cookies={browser}")
         if diagnostic.stale:
             self._append_log(
-                "[YT-DLP-WARNING] Installed yt-dlp is over 60 days old; use "
-                "File → Settings… → Batch processing and network → Diagnose / Auto-fix downloads."
+                f"[YT-DLP] yt-dlp {diagnostic.version} is over 60 days old. "
+                "See Help → Downloader Diagnostics… for update options."
             )
-            if getattr(sys, "frozen", False):
-                QMessageBox.warning(
-                    self,
-                    "Downloader update recommended",
-                    f"yt-dlp {diagnostic.version} is over 60 days old. Open File → "
-                    "Settings… and run Diagnose / Auto-fix downloads before downloading.",
-                )
 
     def _update_thread_finished(self) -> None:
         self._update_thread = None
@@ -4618,6 +4627,7 @@ class MainWindow(QMainWindow):
             ):
                 self.settings.remove(f"workspace/{key}")
             self.settings.remove("workspace/album_statuses")
+            self.settings.remove("workspace/album_expansion")
             self.settings.remove("workspace/history")
             self.settings.sync()
 
@@ -5130,6 +5140,10 @@ class MainWindow(QMainWindow):
                 if isinstance(statuses, dict):
                     self._album_statuses = {str(k): str(v) for k, v in statuses.items()}
                     self.album_input.set_statuses(self._album_statuses)
+            expansion = json.loads(str(self.settings.value("workspace/album_expansion", "{}") or "{}"))
+            if isinstance(expansion, dict):
+                # Saved visibility takes precedence over completion's default collapse.
+                self.album_input.restore_expansion_state(expansion)
 
             history_raw = str(self.settings.value("workspace/history", "") or "")
             if history_raw:
@@ -5232,6 +5246,9 @@ class MainWindow(QMainWindow):
         )
         self.settings.setValue(
             "workspace/album_statuses", json.dumps(self._album_statuses, ensure_ascii=False)
+        )
+        self.settings.setValue(
+            "workspace/album_expansion", json.dumps(self.album_input.expansion_state(), ensure_ascii=False)
         )
         self.settings.setValue("workspace/history", json.dumps(self._history, ensure_ascii=False))
         self.settings.sync()

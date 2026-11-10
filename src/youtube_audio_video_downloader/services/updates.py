@@ -7,8 +7,9 @@ import json
 import os
 import platform
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
+from time import monotonic
 from typing import Any, Callable
 from urllib.request import Request, urlopen
 
@@ -16,7 +17,7 @@ from packaging.version import InvalidVersion, Version
 
 
 RELEASES_API = (
-    "https://api.github.com/repos/DhimanGhosh/YouTube_Media_Studio/releases?per_page=30"
+    "https://api.github.com/repos/DhimanGhosh/YouTube_Media_Studio/releases?per_page=100"
 )
 
 
@@ -55,12 +56,13 @@ def select_update(
     *,
     include_betas: bool = False,
 ) -> AvailableUpdate | None:
-    """Select the newest newer installable release for the chosen channel."""
+    """Select an installer and collect release notes for the upgrade range."""
 
     current = _version(current_version)
     if current is None:
         return None
     candidates: list[tuple[Version, dict[str, Any], dict[str, Any]]] = []
+    eligible_releases: dict[Version, dict[str, Any]] = {}
     suffixes = _asset_suffixes()
     for release in releases:
         if release.get("draft"):
@@ -83,6 +85,7 @@ def select_update(
             or (prerelease and not include_betas)
         ):
             continue
+        eligible_releases.setdefault(parsed, release)
         assets = release.get("assets")
         if not isinstance(assets, list):
             continue
@@ -109,11 +112,24 @@ def select_update(
     if not candidates:
         return None
     parsed, release, asset = max(candidates, key=lambda value: value[0])
+    notes = str(release.get("body") or "")
+    if parsed > current:
+        eligible_releases[parsed] = release
+        releases_in_range = [
+            (version, details) for version, details in sorted(eligible_releases.items(), reverse=True)
+            if current < version <= parsed
+        ]
+        if len(releases_in_range) > 1:
+            notes = "\n\n".join(
+                f"# Version {version}\n\n"
+                + (str(details.get("body") or "").strip() or "No release notes were supplied.")
+                for version, details in releases_in_range
+            )
     return AvailableUpdate(
         version=str(parsed),
         tag=str(release.get("tag_name") or ""),
         name=str(release.get("name") or release.get("tag_name") or parsed),
-        notes=str(release.get("body") or ""),
+        notes=notes,
         prerelease=bool(release.get("prerelease")) or parsed.is_prerelease,
         asset_name=str(asset.get("name") or "update"),
         asset_url=str(asset.get("browser_download_url") or ""),
@@ -130,19 +146,37 @@ def check_for_update(
 ) -> AvailableUpdate | None:
     """Query public GitHub Releases. No account or Google sign-in is required."""
 
-    request = Request(
-        RELEASES_API,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "User-Agent": f"YouTube-Media-Studio/{current_version}",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
-    )
-    with urlopen(request, timeout=timeout) as response:
-        payload = json.loads(response.read().decode("utf-8"))
-    if not isinstance(payload, list):
-        raise RuntimeError("GitHub Releases returned an unexpected response")
-    return select_update(payload, current_version, include_betas=include_betas)
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": f"YouTube-Media-Studio/{current_version}",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    releases: list[dict[str, Any]] = []
+    page = 1
+    deadline = monotonic() + timeout
+    while True:
+        request = Request(f"{RELEASES_API}&page={page}", headers=headers)
+        try:
+            remaining = deadline - monotonic()
+            if remaining <= 0:
+                raise TimeoutError("GitHub release check timed out")
+            with urlopen(request, timeout=remaining) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+                has_next_page = 'rel="next"' in response.headers.get("Link", "")
+            if not isinstance(payload, list):
+                raise ValueError("GitHub Releases returned an unexpected response")
+        except (OSError, ValueError):
+            update = select_update(releases, current_version, include_betas=include_betas)
+            if update is None:
+                raise
+            return replace(
+                update,
+                notes="Some release notes could not be loaded.\n\n" + update.notes,
+            )
+        releases.extend(payload)
+        if not has_next_page:
+            return select_update(releases, current_version, include_betas=include_betas)
+        page += 1
 
 
 def download_update(

@@ -22,7 +22,9 @@ from PyQt6.QtCore import (
     pyqtProperty,
     pyqtSignal,
 )
-from PyQt6.QtGui import QColor, QDrag, QLinearGradient, QPainter, QPixmap, QRadialGradient
+from PyQt6.QtGui import (
+    QColor, QDrag, QLinearGradient, QPainter, QPainterPath, QPixmap, QRadialGradient,
+)
 from PyQt6.QtWidgets import (
     QAbstractButton,
     QAbstractItemView,
@@ -753,12 +755,45 @@ class AlbumDragHandle(QPushButton):
         distance = (event.position().toPoint() - self._press_position).manhattanLength()
         if distance < QApplication.startDragDistance():
             return
+        section = self.parentWidget()
+        hotspot = self.mapTo(section, self._press_position)
         self._press_position = None
         mime = QMimeData()
         mime.setData(self.MIME_TYPE, b"album")
         drag = QDrag(self)
         drag.setMimeData(mime)
-        drag.exec(Qt.DropAction.MoveAction)
+        drag.setPixmap(section.grab())
+        drag.setHotSpot(hotspot)
+        drag.setDragCursor(self._closed_hand_pixmap(), Qt.DropAction.MoveAction)
+        drag.exec(Qt.DropAction.MoveAction, Qt.DropAction.MoveAction)
+
+    @staticmethod
+    def _closed_hand_pixmap() -> QPixmap:
+        cursor = QPixmap(24, 24)
+        cursor.fill(Qt.GlobalColor.transparent)
+        hand = QPainterPath()
+        hand.moveTo(6, 13)
+        hand.lineTo(4, 11)
+        hand.quadTo(3, 8, 6, 8)
+        hand.lineTo(8, 10)
+        hand.lineTo(8, 6)
+        hand.quadTo(9, 3, 12, 5)
+        hand.quadTo(14, 3, 16, 6)
+        hand.quadTo(19, 5, 20, 8)
+        hand.quadTo(22, 9, 21, 13)
+        hand.lineTo(18, 20)
+        hand.lineTo(10, 20)
+        hand.closeSubpath()
+        painter = QPainter(cursor)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(QColor("#171925"))
+        painter.setBrush(Qt.GlobalColor.white)
+        painter.drawPath(hand)
+        painter.drawLine(12, 5, 12, 10)
+        painter.drawLine(16, 6, 16, 11)
+        painter.drawLine(20, 8, 19, 12)
+        painter.end()
+        return cursor
 
 
 class CollapsibleSection(QFrame):
@@ -1023,6 +1058,11 @@ class JsonBatchEditor(QWidget):
         super().__init__(parent)
         self.kind = kind
         self.setAcceptDrops(kind == "album")
+        self._album_drop_marker = QWidget(self) if kind == "album" else None
+        if self._album_drop_marker is not None:
+            self._album_drop_marker.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+            self._album_drop_marker.setStyleSheet("background-color: #a5a0ff; border-radius: 1px")
+            self._album_drop_marker.hide()
         self.retry_attempts = max(1, int(retry_attempts))
         self._audio_mode = "download"
         self.entries: list[dict] = []
@@ -2421,7 +2461,37 @@ class JsonBatchEditor(QWidget):
         if self._dragged_album(event) is not None:
             event.acceptProposedAction()
 
+    def dragMoveEvent(self, event) -> None:
+        section = self._dragged_album(event)
+        marker = self._album_drop_marker
+        if section is None or marker is None:
+            event.ignore()
+            return
+        event.acceptProposedAction()
+        destination = self._album_drop_index(section, event.position().y())
+        if destination == self.entries_layout.indexOf(section):
+            marker.hide()
+            return
+        other_sections = [
+            record["section"] for record in self.entries if record["section"] is not section
+        ]
+        spacing = self.entries_layout.spacing() // 2
+        if destination < len(other_sections):
+            y = other_sections[destination].geometry().top() - spacing
+        else:
+            y = min(self.height() - 3, other_sections[-1].geometry().bottom() + spacing)
+        marker.setGeometry(section.x(), y, section.width(), 3)
+        marker.raise_()
+        marker.show()
+
+    def dragLeaveEvent(self, event) -> None:
+        if self._album_drop_marker is not None:
+            self._album_drop_marker.hide()
+        event.accept()
+
     def dropEvent(self, event) -> None:
+        if self._album_drop_marker is not None:
+            self._album_drop_marker.hide()
         section = self._dragged_album(event)
         if section is None:
             return
@@ -2435,16 +2505,23 @@ class JsonBatchEditor(QWidget):
         ):
             return None
         section = source.parentWidget()
-        if section.parentWidget() is self and not section.toggle.isChecked():
+        if (
+            section.parentWidget() is self
+            and self.entries_layout.indexOf(section) >= 0
+            and not section.toggle.isChecked()
+        ):
             return section
         return None
 
-    def _move_album(self, section: CollapsibleSection, drop_y: float) -> None:
-        current = self.entries_layout.indexOf(section)
-        destination = sum(
+    def _album_drop_index(self, section: CollapsibleSection, drop_y: float) -> int:
+        return sum(
             record["section"] is not section and record["section"].geometry().center().y() < drop_y
             for record in self.entries
         )
+
+    def _move_album(self, section: CollapsibleSection, drop_y: float) -> None:
+        current = self.entries_layout.indexOf(section)
+        destination = self._album_drop_index(section, drop_y)
         if current == destination:
             return
         self.entries.insert(destination, self.entries.pop(current))
@@ -2503,6 +2580,20 @@ class JsonBatchEditor(QWidget):
                 self.add_entry(str(name), values)
         if not self.entries:
             self.add_entry()
+
+    def expansion_state(self) -> dict[str, bool]:
+        return {
+            name: entry["section"].toggle.isChecked()
+            for entry in self.entries
+            if (name := self._field_value(entry["fields"]["__name__"]))
+        }
+
+    def restore_expansion_state(self, expanded: dict[str, bool]) -> None:
+        for entry in self.entries:
+            name = self._field_value(entry["fields"]["__name__"])
+            state = expanded.get(name)
+            if isinstance(state, bool):
+                entry["section"].set_expanded(state)
 
     def set_statuses(self, statuses: dict[str, str]) -> None:
         completed_names: list[str] = []
