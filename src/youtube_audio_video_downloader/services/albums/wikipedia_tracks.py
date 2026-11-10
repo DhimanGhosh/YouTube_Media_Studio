@@ -218,6 +218,12 @@ def extract_tracks_from_html(html: str) -> list[dict[str, object]]:
             if max(title_index, artist_index) >= len(row):
                 continue
             title = re.sub(r'"\s*(?=\()', " ", row[title_index]).strip().strip('"')
+            title_key = _key(title)
+            # Wikipedia spans the album total across the title and singer columns.
+            if title_key in {"total length", "total duration", "total running time"} and (
+                _key(row[artist_index]) in {"", title_key}
+            ):
+                continue
             artists = format_artist_names(row[artist_index].strip())
             if title and artists:
                 title = clean_wikipedia_track_title(title, artists)

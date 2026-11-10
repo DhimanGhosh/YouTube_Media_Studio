@@ -565,5 +565,7 @@ def _item_result_from_log(operation: str, line: str) -> tuple[str, bool] | None:
     unsuccessful = {"FAILED", "SKIPPED"}
     if event not in successful | unsuccessful:
         return None
+    if event == "SKIPPED" and " | reason=download=false" in match.group(2):
+        return None
     item = match.group(2).split(" | ", 1)[0].strip()
     return (item, event in successful) if item else None

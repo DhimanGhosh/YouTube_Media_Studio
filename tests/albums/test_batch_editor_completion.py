@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import json
 import os
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PyQt6.QtCore import QPointF, Qt  # noqa: E402
 from PyQt6.QtWidgets import QApplication  # noqa: E402
+from PyQt6.QtWidgets import QCheckBox  # noqa: E402
 from PyQt6.QtWidgets import QPushButton  # noqa: E402
 
 from youtube_audio_video_downloader.gui.components.widgets import (  # noqa: E402
@@ -133,6 +136,95 @@ class BatchEditorCompletionTest(unittest.TestCase):
 
         self.assertTrue(entry["section"].toggle.isChecked())
         self.assertEqual(entry["section"].status_label.text(), "NEEDS ATTENTION")
+
+    def test_album_failure_preserves_download_selection(self) -> None:
+        editor = JsonBatchEditor("album")
+        editor.load_data({"The Body": {
+            "download": " off ",
+            "tracks": [{"Song": {"download": False}}],
+        }})
+
+        editor.disable_completed((), ("The Body / 01. Song",))
+
+        values = editor.data()["The Body"]
+        self.assertEqual(values["download"], "false")
+        self.assertEqual(values["tracks"][0]["Song"]["download"], "false")
+        self.assertEqual(editor.entries[0]["section"].status_label.text(), "NEEDS ATTENTION")
+
+    def test_collapsed_album_drag_reorders_layout_and_saved_data(self) -> None:
+        editor = JsonBatchEditor("album")
+        editor.load_data({"First": {}, "Second": {}, "Third": {"download": False}})
+        for record in editor.entries:
+            record["section"].set_expanded(False)
+        section = editor.entries[2]["section"]
+        self.assertFalse(section.drag_handle.isHidden())
+        self.assertEqual(section.drag_handle.cursor().shape(), Qt.CursorShape.OpenHandCursor)
+        section.set_expanded(True)
+        self.assertTrue(section.drag_handle.isHidden())
+        section.set_expanded(False)
+        section.set_status("Needs attention")
+        editor.show()
+        self.app.processEvents()
+        order_changes = []
+        editor.order_changed.connect(lambda: order_changes.append(list(editor.data())))
+
+        event = Mock()
+        event.source.return_value = section.drag_handle
+        event.position.return_value = QPointF(0, editor.entries[0]["section"].geometry().top())
+        editor.dragEnterEvent(event)
+        editor.dropEvent(event)
+
+        self.assertEqual(order_changes, [["Third", "First", "Second"]])
+        self.assertEqual(event.acceptProposedAction.call_count, 2)
+        self.assertIs(editor.entries_layout.itemAt(0).widget(), section)
+        self.assertFalse(section.toggle.isChecked())
+        self.assertEqual(section.status_label.text(), "NEEDS ATTENTION")
+        payload = json.loads(json.dumps(editor.data()))
+        editor.load_data(payload)
+        self.assertEqual(list(editor.data()), ["Third", "First", "Second"])
+        self.assertEqual(editor.data()["Third"]["download"], "false")
+
+    def test_length_notice_survives_completion_and_clears_when_link_changes(self) -> None:
+        editor = JsonBatchEditor("album")
+        notice = "Wikipedia lists 03:29. Matched YouTube audio runs 04:15."
+        editor.load_data({"Hate Story 2": {"tracks": [{"Pink Lips": {
+            "ytb_link": "https://youtu.be/pink",
+            "length_notice": notice,
+        }}]}})
+        track = editor.entries[0]["fields"]["__tracks__"][0]
+
+        editor.disable_completed(("Hate Story 2",))
+        badge = track["section"].length_badge
+        self.assertEqual(badge.text(), "Wiki length differs")
+        self.assertEqual(badge.toolTip(), notice)
+        self.assertFalse(badge.isHidden())
+        self.assertEqual(editor.data()["Hate Story 2"]["tracks"][0]["Pink Lips"]["length_notice"], notice)
+
+        track["fields"]["ytb_link"].setText("https://youtu.be/replacement")
+
+        self.assertTrue(badge.isHidden())
+        self.assertNotIn("length_notice", editor.data()["Hate Story 2"]["tracks"][0]["Pink Lips"])
+
+    def test_collapsed_track_checkbox_syncs_with_expanded_download_field(self) -> None:
+        editor = JsonBatchEditor("album")
+        editor.load_data({"Album": {"tracks": [{"Track": {"download": False}}]}})
+        track = editor.entries[0]["fields"]["__tracks__"][0]
+        section = track["section"]
+        header_download = next(box for box in section.findChildren(QCheckBox) if box.text() == "Download")
+        self.assertTrue(header_download.isHidden())
+
+        section.set_expanded(False)
+        self.assertFalse(header_download.isHidden())
+        header_download.click()
+
+        self.assertFalse(section.toggle.isChecked())
+        self.assertTrue(track["fields"]["download"].isChecked())
+        self.assertEqual(editor.data()["Album"]["tracks"][0]["Track"]["download"], "true")
+
+        section.set_expanded(True)
+        track["fields"]["download"].setChecked(False)
+        self.assertTrue(header_download.isHidden())
+        self.assertFalse(header_download.isChecked())
 
     def test_audio_file_name_is_generated_instead_of_entered(self) -> None:
         editor = JsonBatchEditor("audio")

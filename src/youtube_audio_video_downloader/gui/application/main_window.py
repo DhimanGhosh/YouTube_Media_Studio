@@ -1694,6 +1694,7 @@ class MainWindow(QMainWindow):
             retry_attempts=self._default_value("retries", 3),
         )
         self.album_input.log_requested.connect(self._append_log)
+        self.album_input.order_changed.connect(self._save_workspace_state)
         self.album_output = PathPicker(placeholder="Optional output folder", mode="folder")
         self.album_keep_temp = self._check("Keep temporary source audio")
         self.album_report = self._check("Write result report", False)
@@ -3298,7 +3299,9 @@ class MainWindow(QMainWindow):
         self._show_ai_usage(operation, params)
         self._active_operation_name = operation
         input_data = params.get("input_data")
-        self._active_entry_names = list(input_data) if isinstance(input_data, dict) else []
+        self._active_entry_names = (
+            self._enabled_album_names(input_data) if operation == "album" else []
+        )
         if operation == "album":
             for name in self._active_entry_names:
                 self._album_statuses[name] = "Running"
@@ -3430,7 +3433,7 @@ class MainWindow(QMainWindow):
         thread.finished.connect(lambda current=thread: self._clear_parallel_job(current))
         self._parallel_jobs[thread] = (operation, worker)
         input_data = params.get("input_data")
-        entry_names = list(input_data) if isinstance(input_data, dict) else []
+        entry_names = self._enabled_album_names(input_data) if operation == "album" else []
         self._parallel_entry_names[thread] = entry_names
         if operation == "album":
             for name in entry_names:
@@ -3683,6 +3686,13 @@ class MainWindow(QMainWindow):
         if self._active_operation_name == "album":
             self._set_active_album_status("Cancelled")
         self._save_workspace_state()
+
+    @staticmethod
+    def _enabled_album_names(input_data: object) -> list[str]:
+        # The album editor serializes the Download checkbox as "true" or "false".
+        if not isinstance(input_data, dict):
+            return []
+        return [name for name, values in input_data.items() if values.get("download") != "false"]
 
     def _set_active_album_status(self, status: str) -> None:
         for name in self._active_entry_names:
