@@ -54,6 +54,7 @@ class IndividualTrackSearchTest(unittest.TestCase):
         tracks = find_individual_album_tracks("Hate Story 2", "2014")
 
         self.assertEqual(tracks[0]["Pink Lips"]["ytb_link"], "https://www.youtube.com/watch?v=full")
+        wiki.assert_called_once_with("Hate Story 2", "2014", preferred_languages_only=True)
         self.assertEqual(
             tracks[0]["Pink Lips"]["length_notice"],
             "Wikipedia lists 03:29. Matched YouTube audio runs 04:15.",
