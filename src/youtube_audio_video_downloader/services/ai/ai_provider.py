@@ -10,7 +10,9 @@ import time
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import Request
+
+from youtube_audio_video_downloader.core.network import urlopen
 
 from youtube_audio_video_downloader.services.ai.ai_provider_registry import (
     AI_PROVIDER_API_KEY_ENV,

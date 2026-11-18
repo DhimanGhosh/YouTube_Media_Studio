@@ -9,7 +9,9 @@ from collections import Counter
 from collections.abc import Iterable, Mapping
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+from urllib.request import Request
+
+from youtube_audio_video_downloader.core.network import urlopen
 
 from youtube_audio_video_downloader.config.app_identity import http_user_agent
 from youtube_audio_video_downloader.services.albums.album_names import normalize_album_name

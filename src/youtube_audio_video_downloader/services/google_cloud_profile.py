@@ -17,7 +17,9 @@ from pathlib import Path
 from typing import Any, Protocol
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlencode, urlparse
-from urllib.request import Request, urlopen
+from urllib.request import Request
+
+from youtube_audio_video_downloader.core.network import urlopen
 
 
 OAUTH_SCOPES = (

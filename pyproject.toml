@@ -11,6 +11,7 @@ license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
+    "certifi>=2026.10.23",
     "mutagen>=1.47.0",
     "numpy>=2.0.0",
     "yt-dlp[default,deno]>=2026.10.26",

@@ -11,7 +11,9 @@ from pathlib import Path
 from typing import Any
 from urllib.error import URLError
 from urllib.parse import urlparse
-from urllib.request import Request, urlopen
+from urllib.request import Request
+
+from youtube_audio_video_downloader.core.network import urlopen
 
 from mutagen import File as MutagenFile
 from mutagen.flac import Picture
