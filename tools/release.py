@@ -17,7 +17,9 @@ import tomllib
 import zipfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from urllib.request import Request, urlopen
+from urllib.request import Request
+
+from youtube_audio_video_downloader.core.network import urlopen
 
 from youtube_audio_video_downloader.config.app_identity import (
     APP_DISPLAY_NAME,
@@ -434,6 +436,8 @@ def build_desktop(target: str) -> Path:
             [
                 "--collect-all",
                 "yt_dlp_ejs",
+                "--collect-data",
+                "certifi",
                 "--copy-metadata",
                 PACKAGE_DISTRIBUTION,
                 "--add-data",

@@ -7,7 +7,9 @@ import re
 import threading
 from difflib import SequenceMatcher
 from urllib.parse import quote_plus
-from urllib.request import Request, urlopen
+from urllib.request import Request
+
+from youtube_audio_video_downloader.core.network import urlopen
 
 from youtube_audio_video_downloader.config.app_identity import http_user_agent
 from youtube_audio_video_downloader.services.albums.album_names import normalize_album_name

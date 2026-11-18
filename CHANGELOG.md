@@ -4,6 +4,15 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [Unreleased]
+
+### Fixed
+
+- Bundle trusted HTTPS certificates for macOS album lookup, cover previews, artwork embedding, and software updates.
+- Reuse album artwork across concurrent track tagging and briefly cache failed requests to avoid repeated network delays.
+- Preserve embedded player artwork when a replacement cover cannot be downloaded.
+- Clarify the Terminal commands used to launch unsigned macOS releases.
+
 ## [2.19.4] - 2026-11-10
 
 ### Fixed

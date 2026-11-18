@@ -5,7 +5,9 @@ from __future__ import annotations
 import math
 import re
 from pathlib import Path
-from urllib.request import Request, urlopen
+from urllib.request import Request
+
+from youtube_audio_video_downloader.core.network import urlopen
 
 from PyQt6 import sip
 from PyQt6.QtCore import (

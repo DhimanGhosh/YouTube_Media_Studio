@@ -11,7 +11,9 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from time import monotonic
 from typing import Any, Callable
-from urllib.request import Request, urlopen
+from urllib.request import Request
+
+from youtube_audio_video_downloader.core.network import urlopen
 
 from packaging.version import InvalidVersion, Version
 

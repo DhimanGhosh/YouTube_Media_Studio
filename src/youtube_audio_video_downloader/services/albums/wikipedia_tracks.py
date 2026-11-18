@@ -9,7 +9,9 @@ import time
 from html.parser import HTMLParser
 from urllib.error import HTTPError
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+from urllib.request import Request
+
+from youtube_audio_video_downloader.core.network import urlopen
 
 from youtube_audio_video_downloader.config.app_identity import http_user_agent
 from youtube_audio_video_downloader.utils.artist_name_formatter import format_artist_names

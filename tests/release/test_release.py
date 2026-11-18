@@ -86,6 +86,7 @@ def test_every_desktop_target_has_a_native_icon() -> None:
 def test_pinned_linux_ffmpeg_archive_is_verified_and_safely_extracted(
     monkeypatch, tmp_path
 ) -> None:
+    monkeypatch.setattr(release_tool.platform, "machine", lambda: "x86_64")
     archive = io.BytesIO()
     with tarfile.open(fileobj=archive, mode="w:xz") as bundle:
         for name, payload in (("ffmpeg", b"static ffmpeg"), ("ffprobe", b"static ffprobe")):
@@ -124,6 +125,7 @@ def test_pinned_linux_ffmpeg_rejects_non_x64_hosts(monkeypatch, tmp_path) -> Non
 def test_failed_linux_ffmpeg_extraction_removes_archive_and_partial_files(
     monkeypatch, tmp_path
 ) -> None:
+    monkeypatch.setattr(release_tool.platform, "machine", lambda: "x86_64")
     archive = io.BytesIO()
     with tarfile.open(fileobj=archive, mode="w:xz") as bundle:
         member = tarfile.TarInfo("ffmpeg-static/ffmpeg")
@@ -150,6 +152,7 @@ def test_failed_linux_ffmpeg_extraction_removes_archive_and_partial_files(
 def test_failed_linux_ffmpeg_download_removes_partial_archive(
     monkeypatch, tmp_path
 ) -> None:
+    monkeypatch.setattr(release_tool.platform, "machine", lambda: "x86_64")
     class BrokenResponse(io.BytesIO):
         def read(self, size=-1):
             if self.tell():

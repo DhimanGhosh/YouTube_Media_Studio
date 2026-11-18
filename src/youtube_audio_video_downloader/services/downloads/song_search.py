@@ -6,7 +6,9 @@ import json
 import re
 from dataclasses import asdict, dataclass
 from typing import Any
-from urllib.request import Request, urlopen
+from urllib.request import Request
+
+from youtube_audio_video_downloader.core.network import urlopen
 
 from youtube_audio_video_downloader.services.ai.ai_provider import chat_json
 from youtube_audio_video_downloader.services.albums.album_names import normalize_album_name

@@ -139,7 +139,18 @@ preserving settings, playlists, history, and application data.
 
 1. On an Apple-silicon Mac, download the ARM64 DMG.
 2. Open it and drag `YouTubeMediaStudio.app` to **Applications**.
-3. Launch `YouTubeMediaStudio.app` from Applications.
+3. Prefer a signed and notarized release when available. For an unsigned release,
+   verify that the download came from this repository’s official GitHub Releases
+   and compare its SHA-256 digest with the published `SHA256SUMS.txt` through a
+   trusted channel before removing quarantine. The commands below bypass the
+   Gatekeeper quarantine check; use them only after that verification:
+
+   ```sh
+   xattr -dr com.apple.quarantine /Applications/YouTubeMediaStudio.app
+   open /Applications/YouTubeMediaStudio.app
+   ```
+
+   After the first successful launch, open it normally from Applications.
 
 Unsigned releases can be installed, but macOS Gatekeeper may block the first launch
 because Apple cannot verify the app with its notarization service. After dragging the
