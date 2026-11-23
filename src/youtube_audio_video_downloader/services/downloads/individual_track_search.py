@@ -1,4 +1,4 @@
-"""Find close-duration YouTube audio results for Wikipedia album tracks."""
+"""Find close-duration YouTube audio results for Wikipedia or catalog album tracks."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from youtube_audio_video_downloader.services.albums.album_art_finder import (
 )
 from youtube_audio_video_downloader.services.albums.album_names import normalize_album_name
 from youtube_audio_video_downloader.services.albums.wikipedia_tracks import find_wikipedia_tracks
+from youtube_audio_video_downloader.services.albums.catalog_tracks import find_catalog_album_tracks
 from youtube_audio_video_downloader.utils.artist_name_formatter import format_artist_names
 from youtube_audio_video_downloader.utils.time_utils import format_seconds_as_timestamp
 
@@ -39,10 +40,16 @@ def find_individual_album_tracks(
     import yt_dlp
     from yt_dlp.utils import DownloadError
 
-    wikipedia_tracks = find_wikipedia_tracks(album_name, release_year, preferred_languages_only=True)
-    if not wikipedia_tracks:
+    try:
+        album_tracks = find_wikipedia_tracks(album_name, release_year, preferred_languages_only=True)
+    except (OSError, ValueError):
+        album_tracks = []
+    if not album_tracks:
+        album_tracks = find_catalog_album_tracks(album_name, release_year)
+    if not album_tracks:
         raise LookupError(
-            f'Wikipedia has no usable Hindi, Bengali, or English soundtrack tracks for "{album_name}".'
+            f'No usable track list was found on Wikipedia or the Apple Music catalog for "{album_name}". '
+            "You can add tracks manually or paste a full-album YouTube source."
         )
     results: list[dict] = []
     options: dict[str, Any] = {
@@ -51,7 +58,7 @@ def find_individual_album_tracks(
     }
     album_key = _key(normalize_album_name(album_name))
     with yt_dlp.YoutubeDL(options) as downloader:
-        for track in wikipedia_tracks:
+        for track in album_tracks:
             if is_cancelled is not None and is_cancelled():
                 return []
             title = str(track["title"])
@@ -95,6 +102,30 @@ def find_individual_album_tracks(
                     candidate_title = str(entry.get("title") or "")
                     candidate_tokens = set(_key(candidate_title).split())
                     overlap = len(wanted_tokens & candidate_tokens) / max(1, len(wanted_tokens))
+                    # Search can translate a song title (Zakhmi -> Wounded) while
+                    # the watch page still supplies its original recording title.
+                    if overlap < 0.65 and (
+                        entry.get("channel_is_verified")
+                        and f" {album_key} " in f" {_key(candidate_title)} "
+                        and {"official", "audio"} <= candidate_tokens
+                        and any(
+                            f" {artist} " in f" {_key(candidate_title)} "
+                            for artist in _artist_keys(artists)
+                        )
+                    ):
+                        if is_cancelled is not None and is_cancelled():
+                            return []
+                        try:
+                            original = downloader.extract_info(
+                                _video_url(entry), download=False, process=False,
+                            )
+                        except DownloadError:
+                            original = None
+                        if isinstance(original, dict) and original.get("title"):
+                            entry = {**entry, **original}
+                            candidate_title = str(entry["title"])
+                            candidate_tokens = set(_key(candidate_title).split())
+                            overlap = len(wanted_tokens & candidate_tokens) / max(1, len(wanted_tokens))
                     if overlap < 0.65:
                         continue
                     if not _variant_compatible(variant_words, candidate_tokens & _VARIANT_TERMS):
@@ -147,7 +178,9 @@ def find_individual_album_tracks(
                     "artists": artists,
                     "download": "false",
                     "match_status": "No safe close-duration YouTube match",
-                    "length_notice": _length_notice(expected, closest, matched=False),
+                    "length_notice": _length_notice(
+                        expected, closest, matched=False, source_name=str(track.get("source") or "Wikipedia")
+                    ),
                 }})
                 continue
             results.append({title: {
@@ -157,7 +190,9 @@ def find_individual_album_tracks(
                 "artists": artists,
                 "download": "true",
                 "match_status": "Matched",
-                "length_notice": _length_notice(expected, chosen, matched=True),
+                "length_notice": _length_notice(
+                    expected, chosen, matched=True, source_name=str(track.get("source") or "Wikipedia")
+                ),
             }})
     if not any(values["ytb_link"] or values.get("length_notice")
                for track in results for values in track.values()):
@@ -247,14 +282,16 @@ def _duration_matches(duration: int, expected: int) -> bool:
     return not expected or abs(duration - expected) <= max(25, int(expected * 0.12))
 
 
-def _length_notice(expected: int, entry: dict | None, *, matched: bool) -> str:
+def _length_notice(
+    expected: int, entry: dict | None, *, matched: bool, source_name: str = "Wikipedia",
+) -> str:
     duration = int(float(entry.get("duration") or 0)) if entry else 0
     if not duration or _duration_matches(duration, expected):
         return ""
     wiki_time = format_seconds_as_timestamp(expected).removeprefix("00:")
     video_time = format_seconds_as_timestamp(duration).removeprefix("00:")
     source = "Matched YouTube audio" if matched else "Closest YouTube candidate"
-    return f"Wikipedia lists {wiki_time}. {source} runs {video_time}."
+    return f"{source_name} lists {wiki_time}. {source} runs {video_time}."
 
 
 def _variant_compatible(expected: set[str], candidate: set[str]) -> bool:

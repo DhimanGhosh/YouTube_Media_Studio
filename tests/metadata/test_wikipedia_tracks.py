@@ -10,11 +10,24 @@ from youtube_audio_video_downloader.services.albums.wikipedia_tracks import (
     extract_tracks_from_html,
     clean_wikipedia_track_title,
     find_wikipedia_song_metadata,
+    find_wikipedia_tracks,
     _api,
 )
 
 
 class WikipediaTracksTest(unittest.TestCase):
+    @patch("youtube_audio_video_downloader.services.albums.wikipedia_tracks._api")
+    def test_retries_search_without_soundtrack_for_toolsidas_junior(self, api) -> None:
+        api.side_effect = [
+            {"query": {"search": [{"title": "List of T-Series films", "snippet": "2022"}]}},
+            {"query": {"search": [{"title": "Toolsidas Junior", "snippet": "2022 Hindi film"}]}},
+            {"parse": {"text": '<table><tr><th>Title</th><th>Singer(s)</th></tr>'
+                       '<tr><td>Udd Chala</td><td>Sachet Tandon, Ujjwal Kashyap</td></tr></table>'}},
+        ]
+        tracks = find_wikipedia_tracks("Toolsidas Junior", "2022", preferred_languages_only=True)
+        self.assertEqual(tracks[0]["title"], "Udd Chala")
+        self.assertEqual(api.call_args_list[1].args[0]["srsearch"], "Toolsidas Junior 2022")
+
     def test_extracts_title_and_singers_from_soundtrack_table(self) -> None:
         html = """<table><tr><th>No.</th><th>Title</th><th>Singer(s)</th></tr>
         <tr><td>1</td><td>Tu Jo Mila (Dekhna Na Mudke)</td><td>Javed Ali</td></tr></table>"""
@@ -106,6 +119,39 @@ class WikipediaTracksTest(unittest.TestCase):
             preferred_languages_only=True,
         )
         self.assertEqual([track["title"] for track in tracks], ["Hindi song"])
+
+    def test_preserves_list_item_boundaries_in_language_infobox(self) -> None:
+        for languages, expected in (
+            (("Hindi", "English"), ["Kabhi Alvida Naa Kehna"]),
+            (("Hindi",), ["Kabhi Alvida Naa Kehna"]),
+            (("Tamil",), []),
+            (("Hindi", "Tamil"), []),
+        ):
+            with self.subTest(languages=languages):
+                items = "".join(f"<li>{language}</li>" for language in languages)
+                tracks = extract_tracks_from_html(
+                    '<table class="infobox"><tr><th>Languages</th><td>'
+                    f'<div class="hlist"><ul>{items}</ul></div></td></tr></table>'
+                    '<table><tr><th>Title</th><th>Singer(s)</th><th>Length</th></tr>'
+                    '<tr><td><ul><li>Kabhi Alvida Naa Kehna</li></ul></td>'
+                    '<td>Sonu Nigam, Alka Yagnik</td>'
+                    '<td>08:07</td></tr></table>',
+                    preferred_languages_only=True,
+                )
+                self.assertEqual([track["title"] for track in tracks], expected)
+
+    def test_preserves_list_item_boundaries_in_track_languages_and_singers(self) -> None:
+        tracks = extract_tracks_from_html(
+            '<table><tr><th>Title</th><th>Singers</th><th>Languages</th></tr>'
+            '<tr><td>Supported song</td><td><ul><li>Sonu Nigam</li>'
+            '<li>Alka Yagnik</li></ul></td><td><ul><li>Hindi</li>'
+            '<li>English</li></ul></td></tr>'
+            '<tr><td>Other song</td><td>Singer</td><td><ul><li>Hindi</li>'
+            '<li>Tamil</li></ul></td></tr></table>',
+            preferred_languages_only=True,
+        )
+        self.assertEqual([track["title"] for track in tracks], ["Supported song"])
+        self.assertEqual(tracks[0]["artists"], "Sonu Nigam, Alka Yagnik")
 
     def test_metadata_lookups_keep_tracks_from_all_editions(self) -> None:
         tracks = extract_tracks_from_html(

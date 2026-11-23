@@ -873,8 +873,9 @@ class CollapsibleSection(QFrame):
         else:
             self.toggle.setText(title)
 
-    def set_status(self, status: str) -> None:
+    def set_status(self, status: str, tooltip: str = "") -> None:
         self.status_label.setText(status.upper())
+        self.status_label.setToolTip(tooltip)
         self.status_label.setVisible(bool(status))
         attention = status.casefold() in {"needs attention", "failed", "partial"}
         if attention and not self.failure_detail.text():
@@ -1430,6 +1431,7 @@ class JsonBatchEditor(QWidget):
             return
         button.setEnabled(False)
         button.setText("Auto filling…")
+        button.setToolTip("")
         section.set_status("Finding metadata")
         self.log_requested.emit(f'[ALBUM-AUTO-FILL] Searching metadata for "{album_name}".')
         year_edit = fields.get("release_year")
@@ -1467,6 +1469,7 @@ class JsonBatchEditor(QWidget):
         if self.kind != "album":
             return
         try:
+            button.setToolTip("")
             year_edit = fields.get("release_year")
             art_edit = fields.get("album_art")
             link_edit = fields.get("ytb_link")
@@ -1530,24 +1533,24 @@ class JsonBatchEditor(QWidget):
                 )
                 return
             errors = result.get("errors", [])
+            message = "\n".join(str(error) for error in errors)
             if changed:
-                section.set_status("Partially filled" if errors else "Metadata found")
+                section.set_status("Partially filled" if errors else "Metadata found", message)
                 self.log_requested.emit(
                     f'[ALBUM-AUTO-FILL] Updated "{searched_name}": ' + ", ".join(changed) + "."
                 )
             else:
-                section.set_status("No new data")
+                section.set_status("No new data", message)
                 self.log_requested.emit(
                     f'[ALBUM-AUTO-FILL] No usable metadata found for "{searched_name}".'
                 )
             if errors:
-                message = "\n".join(str(error) for error in errors)
                 button.setToolTip(message)
                 self.log_requested.emit(
                     f'[ALBUM-AUTO-FILL] Lookup warnings for "{searched_name}": {message}'
                 )
         except Exception as exc:
-            section.set_status("Auto fill failed")
+            section.set_status("Auto fill failed", str(exc))
             self.log_requested.emit(
                 f'[ALBUM-AUTO-FILL] Failed to apply metadata for "{searched_name}": {exc}'
             )
@@ -1565,7 +1568,7 @@ class JsonBatchEditor(QWidget):
         section: CollapsibleSection,
         button: QPushButton,
     ) -> None:
-        """Replace an album's rows with Wikipedia-matched individual sources."""
+        """Replace an album's rows with individually matched sources."""
         link_edit = fields.get("ytb_link")
         if isinstance(link_edit, QLineEdit):
             link_edit.clear()
@@ -1598,7 +1601,7 @@ class JsonBatchEditor(QWidget):
             fields["download"].setChecked(False)
         section.set_status(f"{matched_count}/{len(individual_tracks)} individual tracks matched")
         button.setToolTip(
-            "YouTube matches use Wikipedia lengths and verified recording metadata."
+            "YouTube matches use Wikipedia or catalog lengths and verified recording metadata."
         )
         self.log_requested.emit(
             f'[ALBUM-TRACK-SEARCH] Filled {len(individual_tracks)} tracks for "{album_name}" '
@@ -2119,19 +2122,19 @@ class JsonBatchEditor(QWidget):
         button = QPushButton("Find on YouTube")
         button.setObjectName("secondaryButton")
         individual_switch = QCheckBox(
-            "Search individual full songs (from Wikipedia track list)"
+            "Search individual full songs (Wikipedia or music catalog)"
         )
-        individual_switch.setChecked(False)
+        individual_switch.setChecked(self.kind == "album")
         individual_switch.setToolTip(
             "Off: find a timestamped full-album jukebox to split. "
-            "On: find a separate YouTube audio source for every Wikipedia track."
+            "On: find a separate YouTube audio source for every Wikipedia or catalog track."
         )
         individual_switch.setVisible(self.kind == "album")
         fields["__individual_track_search__"] = individual_switch
 
         def update_search_help(enabled: bool = False) -> None:
             button.setToolTip(
-                "Find and fill separate YouTube audio links for the album's Wikipedia tracks"
+                "Find and fill separate YouTube audio links for the album's Wikipedia or catalog tracks"
                 if enabled and self.kind == "album"
                 else "Find a new timestamped full-album YouTube jukebox and split its tracks"
             )
