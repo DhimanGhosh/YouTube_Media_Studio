@@ -619,6 +619,32 @@ class BatchEditorCompletionTest(unittest.TestCase):
         )
         self.assertTrue(any("release year, album art" in line for line in logs), logs)
 
+    def test_album_lookup_warning_is_on_status_and_cleared_by_success(self) -> None:
+        editor = JsonBatchEditor("album")
+        entry = editor.add_entry("Dilfek")
+        section = entry["section"]
+        button = QPushButton()
+        warning = 'YouTube jukebox: No YouTube result was found for "Dilfek 2026".'
+        editor._apply_album_auto_fill_result(
+            "Dilfek", {"year": "2026", "errors": [warning]},
+            entry["fields"], section, button,
+        )
+        self.assertEqual(section.status_label.text(), "PARTIALLY FILLED")
+        self.assertEqual(section.status_label.toolTip(), warning)
+        editor._apply_album_auto_fill_result(
+            "Dilfek", {"year": "2026", "errors": [warning]},
+            entry["fields"], section, button,
+        )
+        self.assertEqual(section.status_label.text(), "NO NEW DATA")
+        self.assertEqual(section.status_label.toolTip(), warning)
+        editor._apply_album_auto_fill_result(
+            "Dilfek", {"album_art": "https://example.test/cover.jpg"},
+            entry["fields"], section, button,
+        )
+        self.assertEqual(section.status_label.text(), "METADATA FOUND")
+        self.assertEqual(section.status_label.toolTip(), "")
+        self.assertEqual(button.toolTip(), "")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -10,6 +10,7 @@ abbreviated hashes to the next version section.
 
 - Restore album auto-fill for Kabhi Alvida Naa Kehna and other Wikipedia soundtracks with languages formatted as lists.
 - Preserve separate singer names and track languages when Wikipedia formats them as list items.
+- Show album auto-fill warnings when hovering over the status badge, including Partially filled and No new data, and clear outdated warnings on retry.
 
 ## [2.19.5] - 2026-11-18
 

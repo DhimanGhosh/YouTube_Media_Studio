@@ -873,8 +873,9 @@ class CollapsibleSection(QFrame):
         else:
             self.toggle.setText(title)
 
-    def set_status(self, status: str) -> None:
+    def set_status(self, status: str, tooltip: str = "") -> None:
         self.status_label.setText(status.upper())
+        self.status_label.setToolTip(tooltip)
         self.status_label.setVisible(bool(status))
         attention = status.casefold() in {"needs attention", "failed", "partial"}
         if attention and not self.failure_detail.text():
@@ -1430,6 +1431,7 @@ class JsonBatchEditor(QWidget):
             return
         button.setEnabled(False)
         button.setText("Auto filling…")
+        button.setToolTip("")
         section.set_status("Finding metadata")
         self.log_requested.emit(f'[ALBUM-AUTO-FILL] Searching metadata for "{album_name}".')
         year_edit = fields.get("release_year")
@@ -1467,6 +1469,7 @@ class JsonBatchEditor(QWidget):
         if self.kind != "album":
             return
         try:
+            button.setToolTip("")
             year_edit = fields.get("release_year")
             art_edit = fields.get("album_art")
             link_edit = fields.get("ytb_link")
@@ -1530,24 +1533,24 @@ class JsonBatchEditor(QWidget):
                 )
                 return
             errors = result.get("errors", [])
+            message = "\n".join(str(error) for error in errors)
             if changed:
-                section.set_status("Partially filled" if errors else "Metadata found")
+                section.set_status("Partially filled" if errors else "Metadata found", message)
                 self.log_requested.emit(
                     f'[ALBUM-AUTO-FILL] Updated "{searched_name}": ' + ", ".join(changed) + "."
                 )
             else:
-                section.set_status("No new data")
+                section.set_status("No new data", message)
                 self.log_requested.emit(
                     f'[ALBUM-AUTO-FILL] No usable metadata found for "{searched_name}".'
                 )
             if errors:
-                message = "\n".join(str(error) for error in errors)
                 button.setToolTip(message)
                 self.log_requested.emit(
                     f'[ALBUM-AUTO-FILL] Lookup warnings for "{searched_name}": {message}'
                 )
         except Exception as exc:
-            section.set_status("Auto fill failed")
+            section.set_status("Auto fill failed", str(exc))
             self.log_requested.emit(
                 f'[ALBUM-AUTO-FILL] Failed to apply metadata for "{searched_name}": {exc}'
             )
