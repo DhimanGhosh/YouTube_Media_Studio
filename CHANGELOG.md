@@ -4,6 +4,13 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [Unreleased]
+
+### Fixed
+
+- Restore album auto-fill for Kabhi Alvida Naa Kehna and other Wikipedia soundtracks with languages formatted as lists.
+- Preserve separate singer names and track languages when Wikipedia formats them as list items.
+
 ## [2.19.5] - 2026-11-18
 
 ### Fixed

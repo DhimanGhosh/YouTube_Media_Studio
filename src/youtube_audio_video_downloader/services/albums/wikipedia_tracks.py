@@ -145,7 +145,9 @@ class _TableParser(HTMLParser):
             self._caption_text.append(data)
 
     def handle_endtag(self, tag: str) -> None:
-        if self._heading_level and tag == f"h{self._heading_level}":
+        if tag == "li" and self._cell is not None:
+            self._cell.append(", ")
+        elif self._heading_level and tag == f"h{self._heading_level}":
             level = self._heading_level
             self._heading_level = 0
             self._headings = {

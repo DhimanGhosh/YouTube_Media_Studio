@@ -107,6 +107,37 @@ class WikipediaTracksTest(unittest.TestCase):
         )
         self.assertEqual([track["title"] for track in tracks], ["Hindi song"])
 
+    def test_preserves_list_item_boundaries_in_language_infobox(self) -> None:
+        for languages, expected in (
+            (("Hindi", "English"), ["Kabhi Alvida Naa Kehna"]),
+            (("Hindi",), ["Kabhi Alvida Naa Kehna"]),
+            (("Tamil",), []),
+        ):
+            with self.subTest(languages=languages):
+                items = "".join(f"<li>{language}</li>" for language in languages)
+                tracks = extract_tracks_from_html(
+                    '<table class="infobox"><tr><th>Languages</th><td>'
+                    f'<div class="hlist"><ul>{items}</ul></div></td></tr></table>'
+                    '<table><tr><th>Title</th><th>Singer(s)</th><th>Length</th></tr>'
+                    '<tr><td>Kabhi Alvida Naa Kehna</td><td>Sonu Nigam, Alka Yagnik</td>'
+                    '<td>08:07</td></tr></table>',
+                    preferred_languages_only=True,
+                )
+                self.assertEqual([track["title"] for track in tracks], expected)
+
+    def test_preserves_list_item_boundaries_in_track_languages_and_singers(self) -> None:
+        tracks = extract_tracks_from_html(
+            '<table><tr><th>Title</th><th>Singers</th><th>Languages</th></tr>'
+            '<tr><td>Supported song</td><td><ul><li>Sonu Nigam</li>'
+            '<li>Alka Yagnik</li></ul></td><td><ul><li>Hindi</li>'
+            '<li>English</li></ul></td></tr>'
+            '<tr><td>Other song</td><td>Singer</td><td><ul><li>Hindi</li>'
+            '<li>Tamil</li></ul></td></tr></table>',
+            preferred_languages_only=True,
+        )
+        self.assertEqual([track["title"] for track in tracks], ["Supported song"])
+        self.assertEqual(tracks[0]["artists"], "Sonu Nigam, Alka Yagnik")
+
     def test_metadata_lookups_keep_tracks_from_all_editions(self) -> None:
         tracks = extract_tracks_from_html(
             "<h3>Tamil</h3><table><tr><th>Title</th><th>Singers</th></tr>"
