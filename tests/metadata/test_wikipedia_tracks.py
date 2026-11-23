@@ -112,6 +112,7 @@ class WikipediaTracksTest(unittest.TestCase):
             (("Hindi", "English"), ["Kabhi Alvida Naa Kehna"]),
             (("Hindi",), ["Kabhi Alvida Naa Kehna"]),
             (("Tamil",), []),
+            (("Hindi", "Tamil"), []),
         ):
             with self.subTest(languages=languages):
                 items = "".join(f"<li>{language}</li>" for language in languages)
@@ -119,7 +120,8 @@ class WikipediaTracksTest(unittest.TestCase):
                     '<table class="infobox"><tr><th>Languages</th><td>'
                     f'<div class="hlist"><ul>{items}</ul></div></td></tr></table>'
                     '<table><tr><th>Title</th><th>Singer(s)</th><th>Length</th></tr>'
-                    '<tr><td>Kabhi Alvida Naa Kehna</td><td>Sonu Nigam, Alka Yagnik</td>'
+                    '<tr><td><ul><li>Kabhi Alvida Naa Kehna</li></ul></td>'
+                    '<td>Sonu Nigam, Alka Yagnik</td>'
                     '<td>08:07</td></tr></table>',
                     preferred_languages_only=True,
                 )

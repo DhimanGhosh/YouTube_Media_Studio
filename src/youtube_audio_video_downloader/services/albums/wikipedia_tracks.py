@@ -133,6 +133,8 @@ class _TableParser(HTMLParser):
                 self._cell_colspan = max(1, int(attributes.get("colspan", "1")))
             except (TypeError, ValueError):
                 self._cell_colspan = 1
+        elif tag == "li" and self._cell is not None and "".join(self._cell).strip():
+            self._cell.append(", ")
         elif tag == "br" and self._cell is not None:
             self._cell.append(", ")
 
@@ -145,9 +147,7 @@ class _TableParser(HTMLParser):
             self._caption_text.append(data)
 
     def handle_endtag(self, tag: str) -> None:
-        if tag == "li" and self._cell is not None:
-            self._cell.append(", ")
-        elif self._heading_level and tag == f"h{self._heading_level}":
+        if self._heading_level and tag == f"h{self._heading_level}":
             level = self._heading_level
             self._heading_level = 0
             self._headings = {
@@ -207,7 +207,7 @@ class _TableParser(HTMLParser):
                          if len(row) >= 2 and _key(row[0]) in _LANGUAGE_HEADERS),
                         (),
                     )
-                    if len(labels) == 1:
+                    if labels:
                         self.page_languages = labels
             self._table = None
 
