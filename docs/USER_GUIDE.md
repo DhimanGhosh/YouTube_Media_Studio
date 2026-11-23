@@ -478,9 +478,10 @@ This is the complete **Auto fill album** workflow:
 1. Enter the album name. Include a four-digit year in the name when two releases share
    the same title; an explicitly entered year is treated as strong evidence.
 2. Select **Auto fill album**.
-3. Leave **Search individual full songs** off (the default) to find a suitable
-   timestamped full-album/jukebox source. Turn it on to read the Wikipedia track list
-   and find a separate full-length YouTube audio source for every song.
+3. **Search individual full songs** is enabled by default. It reads Wikipedia's track
+   list, or an exact album/year match in the Apple Music catalog when Wikipedia has no
+   usable list, and finds a separate full-length YouTube audio source for every song.
+   Turn it off to find a timestamped full-album/jukebox source.
 4. The app also searches online release evidence for the year and square cover art.
 5. When a full-album source is found, the app immediately extracts timestamped tracks
    and singer credits from its description. With the workspace AI switch on, the
@@ -504,9 +505,9 @@ behalf.
   another tool. The source is never deleted or replaced.
 - **Find on YouTube** normally finds a timestamped full-album result and starts track
   extraction. Repeated presses exclude every result already returned for that album.
-- Turn on **Search individual full songs (from Wikipedia track list)** before using
+- Leave **Search individual full songs (Wikipedia or music catalog)** on when using
   **Find on YouTube** or **Auto fill album** to populate separate full-song links instead
-  of searching for a jukebox. This switch is off by default on every album card.
+  of searching for a jukebox. This switch is on by default on every album card.
 - **Find year** searches Wikipedia release evidence.
 - **Find cover** searches for a square cover; selecting it again excludes the current
   URL so another candidate can be found.

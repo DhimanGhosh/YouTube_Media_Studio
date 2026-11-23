@@ -392,13 +392,15 @@ class BatchEditorCompletionTest(unittest.TestCase):
         self.assertTrue(fields["__extract_button__"].isEnabled())
         self.assertEqual(fields["ytb_link"].text(), "https://youtu.be/abcdefghijk")
 
-    def test_each_album_has_default_off_individual_track_search_switch(self) -> None:
+    def test_each_album_has_default_on_individual_track_search_switch(self) -> None:
         editor = JsonBatchEditor("album")
         first = editor.add_entry("First album")
         second = editor.add_entry("Second album")
 
-        self.assertFalse(first["fields"]["__individual_track_search__"].isChecked())
-        self.assertFalse(second["fields"]["__individual_track_search__"].isChecked())
+        self.assertTrue(first["fields"]["__individual_track_search__"].isChecked())
+        self.assertTrue(second["fields"]["__individual_track_search__"].isChecked())
+        first["fields"]["__individual_track_search__"].setChecked(False)
+        self.assertTrue(second["fields"]["__individual_track_search__"].isChecked())
         self.assertIn(
             "timestamped full-album",
             first["fields"]["__source_search__"].toolTip(),

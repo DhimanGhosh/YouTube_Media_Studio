@@ -10,11 +10,24 @@ from youtube_audio_video_downloader.services.albums.wikipedia_tracks import (
     extract_tracks_from_html,
     clean_wikipedia_track_title,
     find_wikipedia_song_metadata,
+    find_wikipedia_tracks,
     _api,
 )
 
 
 class WikipediaTracksTest(unittest.TestCase):
+    @patch("youtube_audio_video_downloader.services.albums.wikipedia_tracks._api")
+    def test_retries_search_without_soundtrack_for_toolsidas_junior(self, api) -> None:
+        api.side_effect = [
+            {"query": {"search": [{"title": "List of T-Series films", "snippet": "2022"}]}},
+            {"query": {"search": [{"title": "Toolsidas Junior", "snippet": "2022 Hindi film"}]}},
+            {"parse": {"text": '<table><tr><th>Title</th><th>Singer(s)</th></tr>'
+                       '<tr><td>Udd Chala</td><td>Sachet Tandon, Ujjwal Kashyap</td></tr></table>'}},
+        ]
+        tracks = find_wikipedia_tracks("Toolsidas Junior", "2022", preferred_languages_only=True)
+        self.assertEqual(tracks[0]["title"], "Udd Chala")
+        self.assertEqual(api.call_args_list[1].args[0]["srsearch"], "Toolsidas Junior 2022")
+
     def test_extracts_title_and_singers_from_soundtrack_table(self) -> None:
         html = """<table><tr><th>No.</th><th>Title</th><th>Singer(s)</th></tr>
         <tr><td>1</td><td>Tu Jo Mila (Dekhna Na Mudke)</td><td>Javed Ali</td></tr></table>"""

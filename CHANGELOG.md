@@ -11,6 +11,9 @@ abbreviated hashes to the next version section.
 - Restore album auto-fill for Kabhi Alvida Naa Kehna and other Wikipedia soundtracks with languages formatted as lists.
 - Preserve separate singer names and track languages when Wikipedia formats them as list items.
 - Show album auto-fill warnings when hovering over the status badge, including Partially filled and No new data, and clear outdated warnings on retry.
+- Fall back to an exact album and year match in the Apple Music catalog when Wikipedia has no usable track list, including non-film EPs such as Dilfek.
+- Enable individual full-song search by default on album cards; turn it off to search for a full-album jukebox.
+- Retry Wikipedia searches without the word soundtrack when it hides a film's track list, including Toolsidas Junior.
 
 ## [2.19.5] - 2026-11-18
 

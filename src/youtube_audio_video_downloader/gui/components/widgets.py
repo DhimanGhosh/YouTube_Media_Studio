@@ -1568,7 +1568,7 @@ class JsonBatchEditor(QWidget):
         section: CollapsibleSection,
         button: QPushButton,
     ) -> None:
-        """Replace an album's rows with Wikipedia-matched individual sources."""
+        """Replace an album's rows with individually matched sources."""
         link_edit = fields.get("ytb_link")
         if isinstance(link_edit, QLineEdit):
             link_edit.clear()
@@ -1601,7 +1601,7 @@ class JsonBatchEditor(QWidget):
             fields["download"].setChecked(False)
         section.set_status(f"{matched_count}/{len(individual_tracks)} individual tracks matched")
         button.setToolTip(
-            "YouTube matches use Wikipedia lengths and verified recording metadata."
+            "YouTube matches use Wikipedia or catalog lengths and verified recording metadata."
         )
         self.log_requested.emit(
             f'[ALBUM-TRACK-SEARCH] Filled {len(individual_tracks)} tracks for "{album_name}" '
@@ -2122,19 +2122,19 @@ class JsonBatchEditor(QWidget):
         button = QPushButton("Find on YouTube")
         button.setObjectName("secondaryButton")
         individual_switch = QCheckBox(
-            "Search individual full songs (from Wikipedia track list)"
+            "Search individual full songs (Wikipedia or music catalog)"
         )
-        individual_switch.setChecked(False)
+        individual_switch.setChecked(self.kind == "album")
         individual_switch.setToolTip(
             "Off: find a timestamped full-album jukebox to split. "
-            "On: find a separate YouTube audio source for every Wikipedia track."
+            "On: find a separate YouTube audio source for every Wikipedia or catalog track."
         )
         individual_switch.setVisible(self.kind == "album")
         fields["__individual_track_search__"] = individual_switch
 
         def update_search_help(enabled: bool = False) -> None:
             button.setToolTip(
-                "Find and fill separate YouTube audio links for the album's Wikipedia tracks"
+                "Find and fill separate YouTube audio links for the album's Wikipedia or catalog tracks"
                 if enabled and self.kind == "album"
                 else "Find a new timestamped full-album YouTube jukebox and split its tracks"
             )

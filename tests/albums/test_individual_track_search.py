@@ -13,6 +13,28 @@ from youtube_audio_video_downloader.services.downloads.individual_track_search i
 
 
 class IndividualTrackSearchTest(unittest.TestCase):
+    @patch("youtube_audio_video_downloader.services.downloads.individual_track_search.find_catalog_song_metadata", return_value={})
+    @patch("youtube_audio_video_downloader.services.downloads.individual_track_search.find_catalog_album_tracks")
+    @patch("youtube_audio_video_downloader.services.downloads.individual_track_search.find_wikipedia_tracks")
+    @patch("yt_dlp.YoutubeDL")
+    def test_catalog_fallback_reaches_youtube_when_wikipedia_is_missing(
+        self, youtube, wiki, catalog, song_metadata,
+    ) -> None:
+        catalog.return_value = [{"title": "Makhmali", "artists": "Rito Riba, Saaheal",
+                                 "duration_seconds": 180, "source": "Apple Music catalog"}]
+        for failure in ([], OSError("Wikipedia unavailable")):
+            with self.subTest(failure=failure):
+                wiki.side_effect = failure if isinstance(failure, Exception) else None
+                wiki.return_value = []
+                youtube.return_value.__enter__.return_value.extract_info.return_value = {
+                    "entries": [{"id": "makhmali123", "title": "Makhmali Dilfek Rito Riba Saaheal",
+                                 "duration": 180}]
+                }
+                tracks = find_individual_album_tracks("Dilfek", "2026")
+                self.assertEqual(tracks[0]["Makhmali"]["ytb_link"],
+                                 "https://www.youtube.com/watch?v=makhmali123")
+                self.assertEqual(catalog.call_args.args, ("Dilfek", "2026"))
+
     def test_base_track_does_not_accept_remix(self) -> None:
         self.assertFalse(_variant_compatible(set(), {"remix"}))
 

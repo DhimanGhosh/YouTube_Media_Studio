@@ -6,6 +6,7 @@ import json
 import re
 import threading
 import time
+from collections.abc import Iterator
 from html.parser import HTMLParser
 from urllib.error import HTTPError
 from urllib.parse import urlencode
@@ -379,8 +380,7 @@ def find_wikipedia_tracks(
     query = f"{album_name} {release_year.strip()} soundtrack".strip()
     if not album_name.strip():
         return []
-    search = _api({"action": "query", "list": "search", "srsearch": query, "srlimit": "5", "format": "json"})
-    for item in search.get("query", {}).get("search", []):
+    for item in _album_search_results(query, f"{album_name} {release_year}".strip()):
         title = str(item.get("title") or "")
         context = f"{title} {re.sub(r'<[^>]+>', ' ', str(item.get('snippet') or ''))}"
         if not _title_matches(album_name, title) or (release_year and release_year not in context):
@@ -393,6 +393,19 @@ def find_wikipedia_tracks(
         if tracks:
             return tracks
     return []
+
+
+def _album_search_results(*queries: str) -> Iterator[dict]:
+    """Retry without 'soundtrack' when that word hides the film's own page."""
+    seen = set()
+    for query in dict.fromkeys(queries):
+        search = _api({"action": "query", "list": "search", "srsearch": query,
+                       "srlimit": "5", "format": "json"})
+        for item in search.get("query", {}).get("search", []):
+            title = item.get("title")
+            if title not in seen:
+                seen.add(title)
+                yield item
 
 
 def find_wikipedia_song_metadata(
