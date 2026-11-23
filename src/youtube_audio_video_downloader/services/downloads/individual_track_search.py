@@ -102,6 +102,30 @@ def find_individual_album_tracks(
                     candidate_title = str(entry.get("title") or "")
                     candidate_tokens = set(_key(candidate_title).split())
                     overlap = len(wanted_tokens & candidate_tokens) / max(1, len(wanted_tokens))
+                    # Search can translate a song title (Zakhmi -> Wounded) while
+                    # the watch page still supplies its original recording title.
+                    if overlap < 0.65 and (
+                        entry.get("channel_is_verified")
+                        and f" {album_key} " in f" {_key(candidate_title)} "
+                        and {"official", "audio"} <= candidate_tokens
+                        and any(
+                            f" {artist} " in f" {_key(candidate_title)} "
+                            for artist in _artist_keys(artists)
+                        )
+                    ):
+                        if is_cancelled is not None and is_cancelled():
+                            return []
+                        try:
+                            original = downloader.extract_info(
+                                _video_url(entry), download=False, process=False,
+                            )
+                        except DownloadError:
+                            original = None
+                        if isinstance(original, dict) and original.get("title"):
+                            entry = {**entry, **original}
+                            candidate_title = str(entry["title"])
+                            candidate_tokens = set(_key(candidate_title).split())
+                            overlap = len(wanted_tokens & candidate_tokens) / max(1, len(wanted_tokens))
                     if overlap < 0.65:
                         continue
                     if not _variant_compatible(variant_words, candidate_tokens & _VARIANT_TERMS):

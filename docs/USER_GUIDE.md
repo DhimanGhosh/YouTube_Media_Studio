@@ -503,8 +503,9 @@ behalf.
 - Choose **YouTube URL** in **Source media** to paste or find an online source.
 - Choose **Local file** and **Browse…** to select audio/video already downloaded by
   another tool. The source is never deleted or replaced.
-- **Find on YouTube** normally finds a timestamped full-album result and starts track
-  extraction. Repeated presses exclude every result already returned for that album.
+- With individual-song search disabled, **Find on YouTube** finds a timestamped
+  full-album result and starts track extraction. Repeated presses exclude every result
+  already returned for that album.
 - Leave **Search individual full songs (Wikipedia or music catalog)** on when using
   **Find on YouTube** or **Auto fill album** to populate separate full-song links instead
   of searching for a jukebox. This switch is on by default on every album card.
