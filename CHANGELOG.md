@@ -4,6 +4,12 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [Unreleased]
+
+### Added
+
+- Add Queue album to album cards and open album headings to append all album tracks to Now Playing without interrupting playback, alongside Play album next.
+
 ## [2.19.6] - 2026-11-24
 
 ### Fixed

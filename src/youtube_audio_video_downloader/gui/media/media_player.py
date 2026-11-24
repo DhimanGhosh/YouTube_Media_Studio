@@ -5068,6 +5068,10 @@ class MediaLibraryPage(QWidget):
         play_next_action.triggered.connect(
             lambda _checked=False, selected=list(tracks): self._play_next(selected)
         )
+        queue_action = menu.addAction("Queue album")
+        queue_action.triggered.connect(
+            lambda _checked=False, selected=list(tracks): self._append_to_queue(selected)
+        )
         menu.addSeparator()
         self._add_playlist_destinations(
             menu, tracks, label="Add album to playlist"
