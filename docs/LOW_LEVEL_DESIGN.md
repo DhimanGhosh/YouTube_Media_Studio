@@ -291,9 +291,6 @@ classDiagram
     class LibrarySearchWorker {
       +run()
     }
-    class LibraryRecommendationWorker {
-      +run()
-    }
     class AlbumGridListWidget {
       +wheelEvent(event)
     }
@@ -306,7 +303,6 @@ classDiagram
 
     MediaLibraryPage --> LibraryScanner
     MediaLibraryPage --> LibrarySearchWorker
-    MediaLibraryPage --> LibraryRecommendationWorker
     MediaLibraryPage --> AlbumGridListWidget
     MediaLibraryPage --> MediaPlaylists
     MediaLibraryPage --> QMediaPlayer
