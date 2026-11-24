@@ -10,5 +10,6 @@ The Python application and all other dependencies retain their respective licens
 
 The Python dependency bundle also includes **Agno** for model/provider orchestration,
 and the provider SDKs used by its Ollama, OpenAI-compatible, NVIDIA, and Anthropic
-adapters. These libraries retain their upstream licenses and notices; their inclusion does not grant
+adapters, plus **DDGS** for bounded public web evidence in metadata verification.
+These libraries retain their upstream licenses and notices; their inclusion does not grant
 access to any hosted service or bundle any provider API key.
