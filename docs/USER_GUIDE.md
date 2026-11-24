@@ -834,7 +834,7 @@ After **Apply fixes**, affected metadata is updated and the library refreshes.
 | Callout | Area | Use |
 | --- | --- | --- |
 | 1 | Playlist drawer | Create, rename, delete, filter, select, and close playlists. |
-| 2–7 | Main library areas | Search/browse while the resizable drawer remains open. |
+| 2–6 | Main library areas | Search/browse while the resizable drawer remains open. |
 
 Create a playlist, then use track/album/artist context menus or **Add to playlist**.
 When a path is already present, choose **Skip duplicates** to add only new selections or
@@ -873,7 +873,7 @@ reported separately.
 | Callout | Area | Use |
 | --- | --- | --- |
 | 1 | Current queue | Read total minutes, drag tracks into playback order, play a selection, remove it, or clear the queue. |
-| 2–7 | Main library | Browse and add more media without stopping playback. |
+| 2–6 | Main library | Browse and add more media without stopping playback. |
 
 The total time rounds **up to the next whole minute**: 4:00 shows 4 min, 4:07 shows
 5 min, and 28:59 shows 29 min. Totals above an hour stay in minutes (61:01 shows
