@@ -799,6 +799,12 @@ same-Wi-Fi access.
 7. Table columns recalculate to the largest visible value whenever the album, artist,
    search, or filter result changes.
 
+Right-click an album card or the open album's heading and choose **Queue album** to
+append its tracks to the end of Now Playing without interrupting playback. Tracks
+already queued are skipped, matching the existing song and playlist Queue actions.
+**Play album next** places the album directly after the current track instead.
+Queue album follows the current shuffle setting, just like other Queue actions.
+
 In Videos mode the album browser hides so the video list and cinema player receive the
 space. **Thumbnails view** displays larger 16:9 preview tiles; **List view** shows Title,
 Artwork, Artist, Album, Year, Type, and Length. Selection and actions persist when

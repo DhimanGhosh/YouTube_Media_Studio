@@ -1022,6 +1022,58 @@ class MediaPlayerPageTest(unittest.TestCase):
             2,
         )
 
+    def test_album_context_menu_appends_all_tracks_from_both_album_views(self) -> None:
+        current = media("Already Playing", 2024, 180_000)
+        pending = media("Already Queued", 2024, 180_000)
+        album_tracks = list(self.page.items)
+        self.page._load_current = Mock()
+
+        for opened in (False, True):
+            with self.subTest(opened=opened):
+                self.page.queue = [current, pending]
+                self.page._queue_source = list(self.page.queue)
+                self.page.queue_index = 0
+                if opened:
+                    self.page.open_album(self.page.albums.item(0))
+                    self.page.album_tracks.selectRow(0)
+
+                def trigger_queue(menu, _position):
+                    self.assertEqual(
+                        [action.text() for action in menu.actions()[:2]],
+                        ["Play album next", "Queue album"],
+                    )
+                    menu.actions()[1].trigger()
+
+                with patch.object(QMenu, "exec", new=trigger_queue):
+                    if opened:
+                        self.page._show_open_album_context_menu(QPoint())
+                    else:
+                        entry = self.page.albums.item(0)
+                        position = self.page.albums.visualItemRect(entry).center()
+                        self.page._show_album_context_menu(position)
+
+                self.assertEqual(self.page.queue, [current, pending, *album_tracks])
+                self.assertEqual(self.page._queue_source, self.page.queue)
+                self.assertEqual(self.page.queue_index, 0)
+                self.assertEqual(self.page.queue_list.count(), 4)
+                self.page._load_current.assert_not_called()
+
+    def test_album_context_menu_queue_handles_empty_queue_and_existing_tracks(self) -> None:
+        tracks = list(self.page.items)
+
+        def trigger_queue(menu, _position):
+            menu.actions()[1].trigger()
+
+        self.page._load_current = Mock()
+        with patch.object(QMenu, "exec", new=trigger_queue):
+            for _ in range(2):
+                self.page._show_album_folder_context_menu("Test Album", [], tracks, QPoint())
+
+        self.assertEqual(self.page.queue, tracks)
+        self.assertEqual(self.page._queue_source, tracks)
+        self.assertEqual(self.page.queue_index, 0)
+        self.page._load_current.assert_not_called()
+
     def test_album_play_selected_next_preserves_selected_row_order(self) -> None:
         current = media("Already Playing", 2024, 180_000)
         self.page.queue = [current]
