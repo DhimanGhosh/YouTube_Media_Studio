@@ -24,7 +24,7 @@
     .status { color:var(--muted); font-size:13px; }
     .row { display:flex; gap:8px; align-items:center; } .row > * { min-width:0; }
     .grow { flex:1; } .hidden { display:none !important; }
-    nav { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; position:fixed; z-index:7; left:50%; bottom:calc(10px + env(safe-area-inset-bottom)); transform:translateX(-50%); width:min(94%,720px); padding:8px; }
+    nav { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; position:fixed; z-index:7; left:50%; bottom:calc(10px + env(safe-area-inset-bottom)); transform:translateX(-50%); width:min(94%,720px); padding:8px; }
     nav button { padding:9px 4px; font-size:12px; } nav button.active { background:var(--accent); border-color:var(--accent); }
     .filters { display:grid; grid-template-columns:1fr 95px 95px; gap:7px; margin:10px 0; }
     .list { display:grid; gap:8px; }
@@ -67,13 +67,9 @@
       <p id="playlistHint" class="status">Drag tracks or use the arrows. Changes are saved to the desktop immediately.</p>
       <div id="playlistTracks" class="list"></div>
     </section>
-    <section id="curatorView" class="view hidden">
-      <div class="card" style="padding:14px"><h2>Smart Library Curator</h2><p>Uses the AI provider and computing power configured on your PC.</p><div class="row"><input id="curatorQuery" class="grow" placeholder="e.g. relaxing Bengali songs from the 2000s"><button id="curate" class="primary">Find</button></div><p id="curatorStatus" class="status">AI idle</p></div>
-      <div id="recommendations" class="list" style="margin-top:10px"></div>
-    </section>
   </main>
   <div id="playerbar" class="card hidden"><div id="phoneNow" class="status">Phone playback</div><audio id="audio" controls></audio><video id="video" controls class="hidden"></video></div>
-  <nav id="nav" class="card hidden"><button data-view="libraryView" class="active">Songs</button><button data-view="albumsView">Albums</button><button data-view="playlistsView">Playlists</button><button data-view="curatorView">Curator</button></nav>
+  <nav id="nav" class="card hidden"><button data-view="libraryView" class="active">Songs</button><button data-view="albumsView">Albums</button><button data-view="playlistsView">Playlists</button></nav>
 
   <script>
   (() => {
@@ -131,8 +127,7 @@
       $('playlistTracks').querySelectorAll('[data-up]').forEach(b=>b.onclick=()=>reorder(+b.dataset.up,+b.dataset.up-1)); $('playlistTracks').querySelectorAll('[data-down]').forEach(b=>b.onclick=()=>reorder(+b.dataset.down,+b.dataset.down+1)); $('playlistTracks').querySelectorAll('[data-remove]').forEach(b=>b.onclick=()=>action('remove_playlist_positions',{playlist:b.dataset.playlist,positions:[+b.dataset.remove]}));
       $('playlistTracks').querySelectorAll('[draggable]').forEach((row,index)=>{ row.ondragstart=()=>{dragged=index;row.classList.add('dragging')}; row.ondragend=()=>{dragged=null;row.classList.remove('dragging')}; row.ondragover=e=>{e.preventDefault();row.classList.add('drop-target')}; row.ondragleave=()=>row.classList.remove('drop-target'); row.ondrop=e=>{e.preventDefault();row.classList.remove('drop-target');if(dragged!==null)reorder(dragged,index)}; });
     }
-    function renderCurator(){ $('curatorStatus').textContent=state.curator.status; $('recommendations').innerHTML=state.recommendations.map(r=>trackCard(r,` · ${esc(r.reason)}`)).join(''); bindTrackActions($('recommendations')); }
-    function render(){ renderTracks(); renderAlbums(); renderPlaylistOptions(); renderCurator(); }
+    function render(){ renderTracks(); renderAlbums(); renderPlaylistOptions(); }
     function phonePlay(id){ const track=state.tracks.find(t=>t.id===id); if(!track)return; const isVideo=track.type==='video', player=isVideo?$('video'):$('audio'), other=isVideo?$('audio'):$('video'); other.pause(); other.classList.add('hidden'); player.classList.remove('hidden'); player.src=`/media/${id}?token=${encodeURIComponent(token)}`; player.play(); $('phoneNow').textContent=`${track.title} · ${track.artists}`; $('playerbar').classList.remove('hidden'); }
     function bindYearRange(fromId,toId,renderFn){ [fromId,toId].forEach(id=>$(id).oninput=e=>{ e.target.value=e.target.value.replace(/\D/g,'').slice(0,4); const from=Number($(fromId).value)||0, to=Number($(toId).value)||0; if(from&&to&&to<from){ if(e.target.id===fromId) $(toId).value=String(from); else $(fromId).value=String(to); } renderFn(); }); }
     ['search','mediaType'].forEach(id=>$(id).oninput=renderTracks);
@@ -141,7 +136,6 @@
     bindYearRange('albumFromYear','albumToYear',renderAlbums);
     $('playlistFilter').oninput=renderPlaylist; $('playlistSelect').onchange=renderPlaylist;
     $('createPlaylist').onclick=()=>{ const name=$('newPlaylist').value.trim(); if(name){action('create_playlist',{name});$('newPlaylist').value='';} };
-    $('curate').onclick=()=>{ const query=$('curatorQuery').value.trim(); if(query)action('curate',{query,limit:10}); };
     if(token) showApp(); else showLogin();
   })();
   </script>

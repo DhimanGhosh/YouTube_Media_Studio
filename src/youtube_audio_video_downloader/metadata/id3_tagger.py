@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 import mimetypes
+import threading
+import time
+from collections import OrderedDict
+from threading import Event
 from pathlib import Path
 from urllib.error import URLError
-from urllib.request import Request, urlopen
+from urllib.request import Request
+
+from youtube_audio_video_downloader.core.network import urlopen
 
 from mutagen.id3 import APIC, ID3, TALB, TDRC, TIT2, TPE1, TPE2, TRCK, error as ID3Error
 from mutagen.mp3 import MP3
@@ -17,6 +23,11 @@ from youtube_audio_video_downloader.utils.artist_name_formatter import format_ar
 
 class MetadataTagger:
     """Apply ID3 tags and optional album art to downloaded MP3 files."""
+
+    def __init__(self) -> None:
+        self._art_lock = threading.Lock()
+        self._art_inflight: dict[str, Event] = {}
+        self._art_cache: OrderedDict[str, tuple[float, tuple[bytes, str] | None]] = OrderedDict()
 
     def tag_mp3(self, mp3_path: Path, song: Song) -> None:
         """Write title, album, artists, release year and album art into an MP3 file."""
@@ -44,7 +55,6 @@ class MetadataTagger:
         tags.delall("TPE2")
         tags.delall("TDRC")
         tags.delall("TRCK")
-        tags.delall("APIC")
 
         tags.add(TIT2(encoding=3, text=metadata.title))
         tags.add(TALB(encoding=3, text=metadata.album))
@@ -61,6 +71,7 @@ class MetadataTagger:
         album_art = self._download_album_art(song.album_art)
         if album_art is not None:
             image_bytes, mime_type = album_art
+            tags.delall("APIC")
             tags.add(
                 APIC(
                     encoding=3,
@@ -87,8 +98,42 @@ class MetadataTagger:
             return f"{track_number}/{track_total}"
         return str(track_number)
 
+    def _download_album_art(self, album_art_url: str) -> tuple[bytes, str] | None:
+        """Reuse album artwork across tracks, including concurrent tagging.
+
+        Short-lived negative entries avoid repeating slow failures for every
+        song, while allowing a later attempt after the network recovers.
+        """
+        if not album_art_url:
+            return None
+        while True:
+            with self._art_lock:
+                cached = self._art_cache.get(album_art_url)
+                if cached is not None and time.monotonic() < cached[0]:
+                    self._art_cache.move_to_end(album_art_url)
+                    return cached[1]
+                pending = self._art_inflight.get(album_art_url)
+                if pending is None:
+                    pending = Event()
+                    self._art_inflight[album_art_url] = pending
+                    break
+            pending.wait()
+        try:
+            result = self._fetch_album_art(album_art_url)
+            lifetime = 300 if result is not None else 30
+            with self._art_lock:
+                self._art_cache[album_art_url] = (time.monotonic() + lifetime, result)
+                self._art_cache.move_to_end(album_art_url)
+                while len(self._art_cache) > 8:
+                    self._art_cache.popitem(last=False)
+            return result
+        finally:
+            with self._art_lock:
+                self._art_inflight.pop(album_art_url, None)
+                pending.set()
+
     @staticmethod
-    def _download_album_art(album_art_url: str) -> tuple[bytes, str] | None:
+    def _fetch_album_art(album_art_url: str) -> tuple[bytes, str] | None:
         """Download album art bytes from the JSON URL.
 
         Tagging continues without artwork if the image URL is empty or fails.
@@ -104,7 +149,9 @@ class MetadataTagger:
 
         try:
             with urlopen(request, timeout=20) as response:  # noqa: S310 - user-provided metadata URL.
-                image_bytes = response.read()
+                image_bytes = response.read(15 * 1024 * 1024 + 1)
+                if not image_bytes or len(image_bytes) > 15 * 1024 * 1024:
+                    return None
                 content_type = response.headers.get("Content-Type", "").split(";")[0].strip()
         except (OSError, URLError, TimeoutError):
             return None

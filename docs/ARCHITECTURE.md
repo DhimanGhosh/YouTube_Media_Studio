@@ -11,8 +11,7 @@ release automation fit together.
 | --- | --- |
 | [High-level design](HIGH_LEVEL_DESIGN.md) | System context, containers, deployment, data ownership, external integrations, and quality attributes |
 | [Low-level design](LOW_LEVEL_DESIGN.md) | Python package boundaries, principal classes, operation dispatch, domain models, concurrency, persistence, and extension points |
-| [Workflow designs](WORKFLOW_DESIGNS.md) | Sequence diagrams and flowcharts for downloads, splitting, enrichment, curation, playback, editing, cancellation, and releases |
-| [Built-in CPU AI](BUILT_IN_AI.md) | Managed runtime/model, system requirements, provider order, local preference profile, privacy, and troubleshooting |
+| [Workflow designs](WORKFLOW_DESIGNS.md) | Sequence diagrams and flowcharts for downloads, splitting, enrichment, playback, editing, cancellation, and releases |
 
 ## Project mind map
 
@@ -37,7 +36,6 @@ mindmap
       Album browser
       Queue and playback
       Live phone synchronization
-      Smart Library Curator
     Metadata
       ID3 and MP4 tags
       Album editor
@@ -47,10 +45,8 @@ mindmap
       Consolidator
     AI and evidence
       Agno agents
-      Built-in CPU model
       Hosted providers
       Ollama fallback
-      Per-user preference profile
       Catalog and web evidence
       Deterministic fallback
     Platform services
@@ -75,21 +71,30 @@ mindmap
    bounded thread pools and report progress through Qt signals.
 3. **Evidence gates metadata mutation.** AI can plan or adjudicate, but catalog/web
    corroboration and deterministic validation decide whether uncertain changes are safe.
-4. **Local-library curation never substitutes external files.** Curator results refer
-   only to indexed `LibraryItem` paths; YouTube search is an explicit separate action.
-5. **Per-item intent remains per item.** Batch entries own metadata, resolution, and
+4. **Per-item intent remains per item.** Batch entries own metadata, resolution, and
    timestamp ranges so one row cannot silently change another row's download.
-6. **User data is separate from application binaries.** Settings, trackers, diagnostics,
+5. **User data is separate from application binaries.** Settings, trackers, diagnostics,
    and workspace drafts live in a writable application-data directory that survives
    upgrades.
-7. **File changes are recoverable where practical.** Services use retry-aware access,
+6. **File changes are recoverable where practical.** Services use retry-aware access,
    conflict-safe output names, transaction-like replacements, and explicit skip/review
    results instead of silent overwrites.
-8. **Personalization belongs to the current user.** Playlist taste is represented by a
-   local, path-free profile and never trained into release model weights.
 
 ## Reading order
 
 Start with the [high-level design](HIGH_LEVEL_DESIGN.md), then use the
 [low-level design](LOW_LEVEL_DESIGN.md) for code ownership. Refer to
 [workflow designs](WORKFLOW_DESIGNS.md) when changing a particular execution path.
+
+## Stable 2.x synchronization boundaries
+
+The Media Player owns the index, filesystem watcher, and queue reconciliation.
+Filesystem notifications are debounced; discovery and metadata reading stay on the
+scanner thread. Scan termination is guaranteed even after an exception, and only a
+successful, uninterrupted result replaces the visible library.
+
+Each yt-dlp instance can select the application's progressive HTTP range downloader.
+It validates server range support and stages complete output privately; native yt-dlp
+retains responsibility for extraction, segmented streams, and postprocessing. See
+[the low-level design](LOW_LEVEL_DESIGN.md#stable-2x-library-and-download-synchronization)
+for lifecycle and integrity rules.

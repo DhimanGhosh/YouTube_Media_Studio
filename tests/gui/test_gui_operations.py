@@ -25,6 +25,83 @@ from youtube_audio_video_downloader.services.downloads.video_downloader import Y
 
 
 class GuiOperationsTest(unittest.TestCase):
+    def test_enrichment_failures_keep_exact_album_identity_and_reason(self):
+        from youtube_audio_video_downloader.gui.runtime.operations import _summarize_results
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            results = [DownloadResult("Album A / Song", DownloadStatus.DOWNLOADED, "A/song.mp3"),
+                       DownloadResult("Album B / Song", DownloadStatus.DOWNLOADED, "B/song.mp3")]
+            report = MetadataEnrichmentReport(
+                2, (), (), ("song.mp3: lookup failed",),
+                failure_details=((root / "B/song.mp3", "lookup failed"),),
+            )
+            summary = _summarize_results("album", results, report, output_roots=[root])
+        self.assertEqual(summary.failed_items, ("Album B / Song",))
+        self.assertEqual(summary.completed_items, ("Album A / Song",))
+        self.assertEqual(summary.failure_details["Album B / Song"], "Metadata enrichment: lookup failed")
+
+    def test_album_enricher_accepts_one_file_without_touching_siblings(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            folder = Path(temporary_directory)
+            selected = folder / "Selected.mp3"
+            sibling = folder / "Sibling.mp3"
+            selected.write_bytes(b"selected")
+            sibling.write_bytes(b"sibling")
+            report = MetadataEnrichmentReport(
+                scanned=1,
+                updated=(selected,),
+                skipped=(),
+                failed=(),
+                completed=(selected,),
+            )
+            with patch(
+                "youtube_audio_video_downloader.gui.runtime.operations.enrich_media_files",
+                return_value=report,
+            ) as file_enricher, patch(
+                "youtube_audio_video_downloader.gui.runtime.operations.enrich_folder_metadata"
+            ) as folder_enricher, patch(
+                "youtube_audio_video_downloader.gui.runtime.operations._reorder_album_from_wikipedia"
+            ) as reorder:
+                summary = execute_operation(
+                    "album_metadata_enricher",
+                    {"source_folder": str(selected)},
+                    CancellationToken(),
+                )
+
+        self.assertEqual(file_enricher.call_args.args[0], [selected.resolve()])
+        folder_enricher.assert_not_called()
+        reorder.assert_not_called()
+        self.assertEqual(summary.total, 1)
+        self.assertEqual(summary.tagged, 1)
+        self.assertEqual(Path(summary.output_path), selected.resolve())
+
+    def test_album_enricher_accepts_a_supported_file_already_in_tracker(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            selected = Path(temporary_directory) / "Already complete.mp3"
+            selected.write_bytes(b"audio")
+            report = MetadataEnrichmentReport(
+                scanned=0,
+                updated=(),
+                skipped=(),
+                failed=(),
+                completed=(selected,),
+                tracked=1,
+            )
+            with patch(
+                "youtube_audio_video_downloader.gui.runtime.operations.enrich_media_files",
+                return_value=report,
+            ) as file_enricher:
+                summary = execute_operation(
+                    "album_metadata_enricher",
+                    {"source_folder": str(selected)},
+                    CancellationToken(),
+                )
+
+        file_enricher.assert_called_once()
+        self.assertEqual(summary.total, 1)
+        self.assertEqual(summary.tracked, 1)
+        self.assertEqual(summary.failed, 0)
+
     def test_album_summary_completes_parent_when_all_enabled_tracks_finish(self) -> None:
         results = [
             DownloadResult(

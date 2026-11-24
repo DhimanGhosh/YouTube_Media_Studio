@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from difflib import SequenceMatcher
+from collections.abc import Iterable
 from typing import Any
 
 from youtube_audio_video_downloader.services.downloads.youtube_track_extractor import (
@@ -29,8 +30,9 @@ def find_album_jukebox_video(
     release_year: str = "",
     *,
     exclude_url: str = "",
+    exclude_urls: Iterable[str] = (),
 ) -> dict[str, str]:
-    """Return the best validated result, optionally skipping the current URL."""
+    """Return the best validated result, skipping every previously used URL."""
     import yt_dlp
 
     query = album_jukebox_query(album_name, release_year)
@@ -64,6 +66,11 @@ def find_album_jukebox_video(
         expected_tracks = find_wikipedia_tracks(album_name, release_year)
     except Exception:
         expected_tracks = []
+    excluded_identities = {
+        identity
+        for url in (exclude_url, *exclude_urls)
+        if (identity := _youtube_video_identity(url))
+    }
     with yt_dlp.YoutubeDL(
         {"quiet": True, "no_warnings": True, "skip_download": True}
     ) as downloader:
@@ -74,7 +81,7 @@ def find_album_jukebox_video(
                 url = f"https://www.youtube.com/watch?v={video_id}"
             if not url:
                 continue
-            if _youtube_video_identity(url) == _youtube_video_identity(exclude_url):
+            if _youtube_video_identity(url) in excluded_identities:
                 continue
             try:
                 detail = downloader.extract_info(url, download=False)

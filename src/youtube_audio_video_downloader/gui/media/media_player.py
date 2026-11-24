@@ -3,19 +3,22 @@
 from __future__ import annotations
 
 import json
+import html
 import os
 import random
-import re
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 from ctypes import wintypes
 from typing import Callable
+from urllib.parse import quote, unquote
 
 from PyQt6.QtCore import (
     QEasingCurve,
     QAbstractNativeEventFilter,
     QEvent,
+    QFileSystemWatcher,
     QItemSelectionModel,
     QModelIndex,
     QObject,
@@ -53,6 +56,7 @@ from PyQt6.QtMultimediaWidgets import QGraphicsVideoItem
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
+    QBoxLayout,
     QCompleter,
     QCheckBox,
     QComboBox,
@@ -113,15 +117,36 @@ from youtube_audio_video_downloader.services.media.remote_media import (
     RemoteMediaServer,
     media_id,
 )
-from youtube_audio_video_downloader.services.ai.library_recommendations import (
-    LibraryRecommendation,
-    playlist_taste_search_query,
-    recommend_library_tracks,
+from youtube_audio_video_downloader.services.google_cloud_profile import (
+    match_portable_tracks,
+    portable_playlist_snapshot,
 )
-from youtube_audio_video_downloader.services.ai.ai_provider import configured_primary_identity
-from youtube_audio_video_downloader.services.ai.preference_profile import (
-    update_preference_profile,
-)
+
+
+def _chevron_icon(direction: str) -> QIcon:
+    """Return a crisp, font-independent drawer chevron."""
+
+    pixmap = QPixmap(20, 20)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setPen(
+        QPen(
+            QColor("#dbe4ff"),
+            2.2,
+            Qt.PenStyle.SolidLine,
+            Qt.PenCapStyle.RoundCap,
+            Qt.PenJoinStyle.RoundJoin,
+        )
+    )
+    points = (
+        [QPointF(7, 4), QPointF(13, 10), QPointF(7, 16)]
+        if direction == "right"
+        else [QPointF(13, 4), QPointF(7, 10), QPointF(13, 16)]
+    )
+    painter.drawPolyline(QPolygonF(points))
+    painter.end()
+    return QIcon(pixmap)
 
 MEDIA_TYPE_ALL = "all"
 MEDIA_TYPE_AUDIO = "audio"
@@ -137,6 +162,7 @@ EMBEDDED_VIDEO_MAX_HEIGHT = 16_777_215
 FULLSCREEN_VIDEO_MAX_HEIGHT = 16_777_215
 AUDIO_PLAYER_CARD_MIN_HEIGHT = 166
 VIDEO_PLAYER_CARD_MIN_HEIGHT = 482
+COMPACT_PLAYER_EXTRA_HEIGHT = 48
 VIDEO_THUMBNAIL_SIZE = QSize(144, 81)
 VIDEO_GRID_THUMBNAIL_SIZE = QSize(240, 135)
 VIDEO_THUMBNAIL_CACHE_SIZE = QSize(320, 180)
@@ -144,6 +170,9 @@ VIDEO_TABLE_ROW_HEIGHT = 90
 VIDEO_TABLE_ARTWORK_WIDTH = round(VIDEO_TABLE_ROW_HEIGHT * 16 / 9)
 ARTWORK_COLUMN_INDEX = 1
 COMPACT_TABLE_ROW_HEIGHT = 30
+COMPACT_LIBRARY_WIDTH = 1_050
+MIN_LIBRARY_CENTER_WIDTH = 760
+MIN_DRAWER_WIDTH = 300
 PLAYLIST_POSITION_ROLE = int(Qt.ItemDataRole.UserRole) + 1
 PLAYLIST_NAME_ROLE = int(Qt.ItemDataRole.UserRole) + 2
 VIDEO_ASPECT_MODES: tuple[tuple[str, float | None], ...] = (
@@ -183,6 +212,8 @@ def _video_mode_index(
 
 class LibraryScanner(QObject):
     finished = pyqtSignal(object)
+    failed = pyqtSignal(str)
+    directories_found = pyqtSignal(object)
 
     def __init__(self, folders: list[str]) -> None:
         super().__init__()
@@ -191,9 +222,19 @@ class LibraryScanner(QObject):
     @pyqtSlot()
     def run(self) -> None:
         thread = QThread.currentThread()
-        self.finished.emit(
-            scan_library(self.folders, cancelled=thread.isInterruptionRequested)
-        )
+        items = None
+        try:
+            directories: list[str] = []
+            items = scan_library(self.folders, cancelled=thread.isInterruptionRequested,
+                                 directories=directories)
+            if thread.isInterruptionRequested():
+                items = None
+            else:
+                self.directories_found.emit(directories)
+        except Exception as exc:
+            self.failed.emit(str(exc))
+        finally:
+            self.finished.emit(items)
 
 
 class VideoViewport(QWidget):
@@ -397,46 +438,6 @@ class VideoThumbnailWorker(QObject):
                 key, video_thumbnail_bytes(item.path, item.duration_ms)
             )
         self.finished.emit()
-
-
-class LibraryRecommendationWorker(QObject):
-    """Run the local AI recommendation request away from the UI thread."""
-
-    finished = pyqtSignal(object, str)
-
-    def __init__(
-        self,
-        request_text: str,
-        items: list[LibraryItem],
-        model: str,
-        limit: int,
-        *,
-        language_continuation: bool = False,
-        playlists: dict[str, list[str]] | None = None,
-    ) -> None:
-        super().__init__()
-        self.request_text = request_text
-        self.items = items
-        self.model = model
-        self.limit = limit
-        self.language_continuation = language_continuation
-        self.playlists = playlists or {}
-
-    @pyqtSlot()
-    def run(self) -> None:
-        try:
-            result = recommend_library_tracks(
-                self.request_text,
-                self.items,
-                model=self.model,
-                limit=self.limit,
-                language_continuation=self.language_continuation,
-                playlists=self.playlists,
-            )
-        except Exception as exc:  # worker boundary must report failures to the UI
-            self.finished.emit([], str(exc))
-            return
-        self.finished.emit(result, "")
 
 
 class AnimatedSeekSlider(QSlider):
@@ -748,22 +749,43 @@ class OptionalYearSpinBox(QSpinBox):
 
     def __init__(self, hint: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setRange(0, 2100)
+        self._lowest_year = 1
+        self.setRange(0, datetime.now().year)
         self.lineEdit().setPlaceholderText(hint)
         self.setAccessibleName(hint)
+
+    def set_year_limits(self, lowest_year: int, highest_year: int) -> None:
+        """Keep zero as the empty value while enforcing real library year bounds."""
+
+        self._lowest_year = max(1, int(lowest_year))
+        self.setMaximum(max(self._lowest_year, int(highest_year)))
+        if self.value() and self.value() < self._lowest_year:
+            self.setValue(self._lowest_year)
+
+    def stepBy(self, steps: int) -> None:  # noqa: N802
+        if steps > 0 and self.value() == 0:
+            self.setValue(self._lowest_year)
+            return
+        if steps < 0 and self.value() == self._lowest_year:
+            self.setValue(0)
+            return
+        super().stepBy(steps)
 
     def textFromValue(self, value: int) -> str:  # noqa: N802
         return "" if value == self.minimum() else str(value)
 
     def valueFromText(self, text: str) -> int:  # noqa: N802
         stripped = text.strip()
-        return int(stripped) if stripped.isdecimal() else self.minimum()
+        if not stripped.isdecimal():
+            return self.minimum()
+        return max(self._lowest_year, min(self.maximum(), int(stripped)))
 
 
 class AnimatedReorderList(QListWidget):
     """Internal-move list with a short visual glide after dropping."""
 
     orderChanged = pyqtSignal()
+    deletePressed = pyqtSignal()
 
     def __init__(
         self,
@@ -785,6 +807,13 @@ class AnimatedReorderList(QListWidget):
         self._drop_overlay: QLabel | None = None
         self._drop_item: QListWidgetItem | None = None
         self._drop_foreground = None
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        if event.key() == Qt.Key.Key_Delete:
+            self.deletePressed.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def clear(self) -> None:
         """Discard transient drag visuals before their source items are deleted."""
@@ -939,11 +968,11 @@ class MediaLibraryPage(QWidget):
     spectrum_buffer_ready = pyqtSignal(object)
     visualizer_playback_changed = pyqtSignal(bool)
     remote_action_requested = pyqtSignal(object)
+    cloud_profile_changed = pyqtSignal()
 
     def __init__(self, settings: QSettings, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.settings = settings
-        self.ai_identity_resolver: Callable[[], tuple[str, str]] | None = None
         self.items: list[LibraryItem] = []
         self.filtered: list[LibraryItem] = []
         self.queue: list[LibraryItem] = []
@@ -974,14 +1003,12 @@ class MediaLibraryPage(QWidget):
         self._scanner_thread: QThread | None = None
         self._scanner_worker: LibraryScanner | None = None
         self._scan_refresh_pending = False
+        self._scan_force = False
+        self._library_directories: list[str] = []
         self._shutting_down = False
         self._scan_started_at = 0.0
         self._search_thread: QThread | None = None
         self._search_worker: LibrarySearchWorker | None = None
-        self._recommendation_thread: QThread | None = None
-        self._recommendation_worker: LibraryRecommendationWorker | None = None
-        self._last_recommendation_request = ""
-        self._last_recommendations: list[LibraryRecommendation] = []
         self._remote_server: RemoteMediaServer | None = None
         self._remote_path_by_id: dict[str, str] = {}
         self._remote_state_dirty = True
@@ -999,6 +1026,9 @@ class MediaLibraryPage(QWidget):
         self._fullscreen_controls_overlay: QFrame | None = None
         self._fullscreen_controls_animation: QPropertyAnimation | None = None
         self._fullscreen_controls_visible = False
+        self._last_opened_drawer = "queue"
+        self._compact_library_layout = False
+        self._compact_player_layout = False
         self._fullscreen_hide_timer = QTimer(self)
         self._fullscreen_hide_timer.setSingleShot(True)
         self._fullscreen_hide_timer.setInterval(2600)
@@ -1059,10 +1089,17 @@ class MediaLibraryPage(QWidget):
         self._load_folders()
         if self.phone_access_switch.isChecked():
             self._start_remote_access()
+        self.library_watcher = QFileSystemWatcher(self)
+        self.library_change_timer = QTimer(self)
+        self.library_change_timer.setSingleShot(True)
+        self.library_change_timer.setInterval(200)
+        self.library_change_timer.timeout.connect(lambda: self.refresh_library(force=False))
+        self.library_watcher.directoryChanged.connect(lambda _path: self.library_change_timer.start())
+        self.library_watcher.fileChanged.connect(lambda _path: self.library_change_timer.start())
         self.refresh_library()
         self.refresh_timer = QTimer(self)
         self.refresh_timer.setInterval(15000)
-        self.refresh_timer.timeout.connect(self.refresh_library)
+        self.refresh_timer.timeout.connect(self._periodic_library_refresh)
         self.refresh_timer.start()
         self.remote_sync_timer = QTimer(self)
         self.remote_sync_timer.setInterval(1000)
@@ -1074,11 +1111,15 @@ class MediaLibraryPage(QWidget):
         layout.setContentsMargins(6, 3, 8, 12)
         layout.setSpacing(10)
         main = QWidget()
+        main.setSizePolicy(
+            QSizePolicy.Policy.Ignored,
+            QSizePolicy.Policy.Expanding,
+        )
         main_layout = QVBoxLayout(main)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(10)
         header = QHBoxLayout()
-        title = QLabel("Media Library")
+        title = QLabel("Media Player")
         title.setObjectName("pageTitle")
         header.addWidget(title)
         header.addStretch(1)
@@ -1096,7 +1137,7 @@ class MediaLibraryPage(QWidget):
         self.phone_access_switch.setObjectName("phoneAccessSwitch")
         self.phone_access_switch.setAccessibleName("Phone access")
         self.phone_access_switch.setToolTip(
-            "Allow phones on this Wi-Fi network to use the Media Library"
+            "Allow phones on this Wi-Fi network to use the Media Player"
         )
         self.phone_access_switch.setChecked(remote_enabled and not remote_forced_off)
         self.phone_access_switch.setEnabled(not remote_forced_off)
@@ -1122,16 +1163,20 @@ class MediaLibraryPage(QWidget):
         )
         self.artist_repair_button.clicked.connect(self.review_artist_name_repairs)
         header.addWidget(self.artist_repair_button)
-        self.playlist_toggle_button = QPushButton("Playlists (0) ‹")
+        self.playlist_toggle_button = QPushButton("Playlists (0)")
         self.playlist_toggle_button.setObjectName("secondaryButton")
         self.playlist_toggle_button.setCheckable(True)
         self.playlist_toggle_button.setToolTip("Create and browse saved local playlists")
         self.playlist_toggle_button.toggled.connect(self._toggle_playlist_drawer)
         header.addWidget(self.playlist_toggle_button)
-        self.queue_toggle_button = QPushButton("Queue (0) ›")
+        self.playlist_toggle_button.setIcon(_chevron_icon("left"))
+        self.playlist_toggle_button.setIconSize(QSize(18, 18))
+        self.queue_toggle_button = QPushButton("Queue (0)")
         self.queue_toggle_button.setObjectName("secondaryButton")
         self.queue_toggle_button.setCheckable(True)
         self.queue_toggle_button.setToolTip("Show or hide the current playback queue")
+        self.queue_toggle_button.setIcon(_chevron_icon("right"))
+        self.queue_toggle_button.setIconSize(QSize(18, 18))
         self.queue_toggle_button.toggled.connect(self._toggle_queue_drawer)
         header.addWidget(self.queue_toggle_button)
         main_layout.addLayout(header)
@@ -1142,7 +1187,6 @@ class MediaLibraryPage(QWidget):
         subtitle.setObjectName("mutedLabel")
         main_layout.addWidget(subtitle)
         main_layout.addWidget(self._build_library_controls())
-        main_layout.addWidget(self._build_recommendation_card())
         self.library_splitter = QSplitter(Qt.Orientation.Vertical)
         self.library_splitter.addWidget(self._build_browser())
         self.library_splitter.addWidget(self._build_album_section())
@@ -1182,6 +1226,49 @@ class MediaLibraryPage(QWidget):
         self._sync_queue_drawer()
         self._render_playlists()
         self._sync_media_type_layout()
+        QTimer.singleShot(0, self._apply_responsive_layout)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        """Reflow the library workspace before narrow displays can clip controls."""
+
+        super().resizeEvent(event)
+        if hasattr(self, "drawer_splitter"):
+            QTimer.singleShot(0, self._apply_responsive_layout)
+
+    def _apply_responsive_layout(self) -> None:
+        """Keep the center workspace usable on portrait and split-screen displays."""
+
+        if not hasattr(self, "drawer_splitter"):
+            return
+        if self._keep_drawers_from_squeezing_center():
+            QTimer.singleShot(0, self._apply_responsive_layout)
+            return
+        compact = self.drawer_splitter.widget(1).width() < COMPACT_LIBRARY_WIDTH
+        if compact != self._compact_library_layout:
+            self._compact_library_layout = compact
+            self.library_controls_layout.setDirection(
+                QBoxLayout.Direction.TopToBottom
+                if compact
+                else QBoxLayout.Direction.LeftToRight
+            )
+            self.library_controls_layout.setStretch(0, 1 if compact else 3)
+            self.library_controls_layout.setStretch(1, 1 if compact else 7)
+        self._layout_track_actions()
+        self._layout_player_controls(compact)
+
+    def _keep_drawers_from_squeezing_center(self) -> bool:
+        """Allow two drawers only when their minimums leave a useful center pane."""
+
+        if not (self.playlist_drawer.isVisible() and self.queue_drawer.isVisible()):
+            return False
+        required = MIN_LIBRARY_CENTER_WIDTH + (2 * MIN_DRAWER_WIDTH)
+        if self.drawer_splitter.width() >= required:
+            return False
+        if self._last_opened_drawer == "playlist":
+            self.queue_toggle_button.setChecked(False)
+        else:
+            self.playlist_toggle_button.setChecked(False)
+        return True
 
     def _save_player_panel_height(self, _position: int, _index: int) -> None:
         sizes = self.browser_player_splitter.sizes()
@@ -1251,7 +1338,7 @@ class MediaLibraryPage(QWidget):
         self._remote_state_dirty = True
         self._set_phone_access_switch(False, "Off")
         self.phone_access_switch.setToolTip(
-            "Allow phones on this Wi-Fi network to use the Media Library"
+            "Allow phones on this Wi-Fi network to use the Media Player"
         )
         self.phone_access_details_button.setVisible(False)
 
@@ -1334,11 +1421,6 @@ class MediaLibraryPage(QWidget):
                 payload["playlist"] = name
                 tracks.append(payload)
             playlist_payload.append({"name": name, "tracks": tracks})
-        recommendations = []
-        for recommendation in self._last_recommendations:
-            payload = dict(self._remote_track_payload(recommendation.item))
-            payload["reason"] = recommendation.reason
-            recommendations.append(payload)
         current = (
             self.queue[self.queue_index]
             if 0 <= self.queue_index < len(self.queue)
@@ -1348,12 +1430,6 @@ class MediaLibraryPage(QWidget):
             "tracks": [payload_by_path[item.path.casefold()] for item in items],
             "albums": album_payload,
             "playlists": playlist_payload,
-            "recommendations": recommendations,
-            "curator": {
-                "status": self.recommendation_status.text(),
-                "request": self._last_recommendation_request,
-                "busy": self._recommendation_thread is not None,
-            },
             "playback": {
                 "current_id": media_id(current.path) if current else "",
                 "queue_length": len(self.queue),
@@ -1438,16 +1514,6 @@ class MediaLibraryPage(QWidget):
                     self._replace_queue(items)
                 else:
                     self._append_to_queue(items)
-        elif action == "curate":
-            query = str(raw_action.get("query", "")).strip()[:500]
-            if query and self._recommendation_thread is None:
-                limit = raw_action.get("limit", self._suggestion_limit)
-                self.recommendation_ai_enabled.setChecked(True)
-                self.recommendation_request.setText(query)
-                self.recommendation_limit.setValue(
-                    max(1, min(20, int(limit) if isinstance(limit, int) else 10))
-                )
-                self.request_ai_recommendations()
         self._publish_remote_state()
 
     def _build_folder_card(self) -> QWidget:
@@ -1486,6 +1552,7 @@ class MediaLibraryPage(QWidget):
 
         controls = QWidget()
         row = QHBoxLayout(controls)
+        self.library_controls_layout = row
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(8)
         self.folder_controls = self._build_folder_card()
@@ -1601,339 +1668,15 @@ class MediaLibraryPage(QWidget):
         row.addWidget(self.online_search_button)
         return row
 
-    def _build_recommendation_card(self) -> QWidget:
-        container = QWidget()
-        container_layout = QVBoxLayout(container)
-        container_layout.setContentsMargins(0, 0, 0, 0)
-        container_layout.setSpacing(6)
-        self.recommendation_toggle = QPushButton("Smart Library Curator  ›")
-        self.recommendation_toggle.setObjectName("secondaryButton")
-        self.recommendation_toggle.setCheckable(True)
-        self.recommendation_toggle.setToolTip(
-            "Open natural-language local-library curation"
-        )
-        container_layout.addWidget(self.recommendation_toggle)
-        card = GlassCard()
-        card.setObjectName("libraryRecommendationCard")
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(12, 8, 12, 8)
-        layout.setSpacing(6)
-        row = QHBoxLayout()
-        heading = QLabel("Smart Library Curator")
-        heading.setObjectName("sectionTitle")
-        heading.setToolTip(
-            "Uses the Global Settings agentic model and only indexed library metadata."
-        )
-        row.addWidget(heading)
-        self.recommendation_ai_enabled = QCheckBox("Use AI for this section")
-        section_value = self.settings.value("ai/tools/media_library")
-        self.recommendation_ai_enabled.setChecked(
-            self.settings.value("defaults/ai_enabled", True, type=bool)
-            if section_value is None
-            else str(section_value).casefold() in {"1", "true", "yes"}
-        )
-        self.recommendation_ai_enabled.setToolTip(
-            "Off sends this request directly to plain YouTube internet search."
-        )
-        self.recommendation_ai_enabled.toggled.connect(
-            self._save_recommendation_ai_setting
-        )
-        row.addWidget(self.recommendation_ai_enabled)
-        self.recommendation_request = QLineEdit()
-        self.recommendation_request.setPlaceholderText(
-            "Describe a mix by artist, language, era, genre, mood, energy, or occasion..."
-        )
-        self.recommendation_request.returnPressed.connect(
-            self.request_ai_recommendations
-        )
-        row.addWidget(self.recommendation_request, 1)
-        self.recommendation_limit = QSpinBox()
-        self.recommendation_limit.setRange(1, 20)
-        self.recommendation_limit.setValue(self._suggestion_limit)
-        self.recommendation_limit.setSuffix(" results")
-        self.recommendation_limit.setToolTip(
-            "Maximum exact matches to display; a number in the request overrides this value."
-        )
-        row.addWidget(self.recommendation_limit)
-        self.recommendation_button = QPushButton(
-            "Find in my library"
-            if self.recommendation_ai_enabled.isChecked()
-            else "Search internet"
-        )
-        self.recommendation_button.setObjectName("primaryButton")
-        self.recommendation_button.clicked.connect(self.request_ai_recommendations)
-        row.addWidget(self.recommendation_button)
-        self.start_mix_button = QPushButton("Start mix")
-        self.start_mix_button.setObjectName("secondaryButton")
-        self.start_mix_button.setEnabled(False)
-        self.start_mix_button.setToolTip(
-            "Play exact matches first, then continue with verified tracks in the same language."
-        )
-        self.start_mix_button.clicked.connect(self.start_recommendation_mix)
-        row.addWidget(self.start_mix_button)
-        self.online_recommendation_button = QPushButton("Search YouTube too")
-        self.online_recommendation_button.setObjectName("secondaryButton")
-        self.online_recommendation_button.clicked.connect(
-            self.search_recommendation_online
-        )
-        row.addWidget(self.online_recommendation_button)
-        self.clear_recommendation_button = QPushButton("Clear")
-        self.clear_recommendation_button.setObjectName("secondaryButton")
-        self.clear_recommendation_button.clicked.connect(
-            self.clear_ai_recommendations
-        )
-        row.addWidget(self.clear_recommendation_button)
-        self.recommendation_status = QLabel("AI idle")
-        self.recommendation_status.setObjectName("mutedLabel")
-        self.recommendation_status.setMinimumWidth(130)
-        row.addWidget(self.recommendation_status)
-        layout.addLayout(row)
-        self.recommendations = QListWidget()
-        self.recommendations.setMaximumHeight(150)
-        self.recommendations.setSelectionMode(
-            QAbstractItemView.SelectionMode.SingleSelection
-        )
-        self.recommendations.setToolTip(
-            "AI suggestions only. No files are edited and nothing is downloaded."
-        )
-        self.recommendations.itemDoubleClicked.connect(
-            self._play_recommended_item
-        )
-        self.recommendations.setContextMenuPolicy(
-            Qt.ContextMenuPolicy.CustomContextMenu
-        )
-        self.recommendations.customContextMenuRequested.connect(
-            lambda point: self._show_list_song_context_menu(self.recommendations, point)
-        )
-        self.recommendations.setVisible(False)
-        layout.addWidget(self.recommendations)
-        card.setVisible(False)
-        self.recommendation_toggle.toggled.connect(card.setVisible)
-        self.recommendation_toggle.toggled.connect(
-            lambda expanded: self.recommendation_toggle.setText(
-                "Smart Library Curator  ⌄"
-                if expanded
-                else "Smart Library Curator  ›"
-            )
-        )
-        container_layout.addWidget(card)
-        return container
-
-    def request_ai_recommendations(self) -> None:
-        self._remote_state_dirty = True
-        self.recommendation_toggle.setChecked(True)
-        if self._recommendation_thread is not None:
-            return
-        request_text = self.recommendation_request.text().strip()
-        if not request_text:
-            self.recommendation_status.setText("Describe what to suggest")
-            return
-        if not self.recommendation_ai_enabled.isChecked():
-            self._last_recommendation_request = request_text
-            self.recommendation_status.setText("AI off · opening internet search")
-            self.search_recommendation_online()
-            return
-        recommendation_items = self._media_type_items()
-        if not recommendation_items:
-            self.recommendation_status.setText("Library is empty")
-            return
-        provider, model, identity = self._resolve_ai_identity()
-        self._last_recommendation_request = request_text
-        requested_limit = _requested_result_limit(
-            request_text, self.recommendation_limit.value()
-        )
-        self.recommendation_button.setEnabled(False)
-        self.recommendation_status.setText(
-            f"AI working · {identity or 'not configured'}"
-        )
-        self.recommendations.clear()
-        self.recommendations.setVisible(False)
-        log_diagnostic(
-            "AI-START",
-            f"Library recommendations | provider={provider!r} "
-            f"model={model!r} items={len(recommendation_items)}",
-        )
-        self._run_recommendation_worker(
-            request_text,
-            recommendation_items,
-            model,
-            requested_limit,
-            finished_slot=self._recommendations_finished,
-        )
-
-    def _resolve_ai_identity(self) -> tuple[str, str, str]:
-        fallback_model = str(
-            self.settings.value("defaults/agentic_model", "qwen2.5:7b") or ""
-        )
-        provider, model = (
-            self.ai_identity_resolver()
-            if self.ai_identity_resolver is not None
-            else configured_primary_identity(fallback_model)
-        )
-        identity = " · ".join(value for value in (provider, model) if value)
-        return provider, model, identity
-
-    def _run_recommendation_worker(
-        self,
-        request_text: str,
-        items: list[LibraryItem],
-        model: str,
-        limit: int,
-        *,
-        finished_slot: Callable[[object, str], None],
-        language_continuation: bool = False,
-    ) -> None:
-        thread = QThread(self)
-        worker = LibraryRecommendationWorker(
-            request_text,
-            list(items),
-            model,
-            limit,
-            language_continuation=language_continuation,
-            playlists={name: list(paths) for name, paths in self.playlists.items()},
-        )
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)
-        worker.finished.connect(finished_slot)
-        worker.finished.connect(thread.quit)
-        worker.finished.connect(worker.deleteLater)
-        thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(self._recommendation_thread_finished)
-        self._recommendation_thread = thread
-        self._recommendation_worker = worker
-        thread.start()
-
-    def _save_recommendation_ai_setting(self, enabled: bool) -> None:
-        self.settings.setValue("ai/tools/media_library", bool(enabled))
-        self.settings.sync()
-        self.recommendation_button.setText(
-            "Find in my library" if enabled else "Search internet"
-        )
-
-    def _recommendations_finished(self, result: object, error: str) -> None:
-        self._recommendation_worker = None
-        recommendations = (
-            [value for value in result if isinstance(value, LibraryRecommendation)]
-            if isinstance(result, list)
-            else []
-        )
-        self._last_recommendations = recommendations if not error else []
-        self.start_mix_button.setEnabled(bool(self._last_recommendations))
-        if error:
-            self.recommendation_status.setText("AI unavailable")
-            self.recommendations.addItem(f"Could not create suggestions: {error}")
-            log_diagnostic("AI-FALLBACK", f"Library recommendations failed | {error}")
-        elif not recommendations:
-            self.recommendation_status.setText("No matching local tracks")
-            self.recommendations.addItem(
-                "The curator could not independently verify every requested filter "
-                "for a local track. "
-                "Use 'Search YouTube too' for external discovery."
-            )
-            log_diagnostic("AI-REVIEW", "Library recommendations returned no tracks")
-        else:
-            self.recommendation_status.setText(
-                f"AI suggested {len(recommendations)} local track(s)"
-            )
-            for recommendation in recommendations:
-                availability = (
-                    "LOCAL" if recommendation.exists_locally else "INDEXED · FILE MISSING"
-                )
-                row = QListWidgetItem(
-                    f"[{availability}] {recommendation.item.title} — "
-                    f"{recommendation.item.artists} · {recommendation.reason}"
-                )
-                row.setData(Qt.ItemDataRole.UserRole, recommendation.item.path)
-                self.recommendations.addItem(row)
-            log_diagnostic(
-                "AI-VERIFIED",
-                f"Library recommendations grounded={len(recommendations)}",
-            )
-        self.recommendations.setVisible(True)
-        self._remote_state_dirty = True
-
-    def _recommendation_thread_finished(self) -> None:
-        self._recommendation_thread = None
-        self.recommendation_button.setEnabled(True)
-        self._remote_state_dirty = True
-
-    def clear_ai_recommendations(self) -> None:
-        """Clear the AI prompt and rendered suggestions without changing playback."""
-        if self._recommendation_thread is not None:
-            return
-        self.recommendation_request.clear()
-        self._last_recommendation_request = ""
-        self._last_recommendations.clear()
-        self.start_mix_button.setEnabled(False)
-        self.recommendations.clear()
-        self.recommendations.setVisible(False)
-        self.recommendation_status.setText("AI idle")
-        self._remote_state_dirty = True
-
-    def start_recommendation_mix(self) -> None:
-        """Queue exact matches, then find verified same-language continuation tracks."""
-
-        if self._recommendation_thread is not None or not self._last_recommendations:
-            return
-        exact = [
-            value.item for value in self._last_recommendations
-            if value.exists_locally
-        ]
-        if not exact:
-            self.recommendation_status.setText("Matching local files are missing")
-            return
-        self._replace_queue(exact)
-        exact_paths = {item.path.casefold() for item in exact}
-        remaining = [
-            item
-            for item in self._media_type_items()
-            if item.path.casefold() not in exact_paths
-        ]
-        if not remaining:
-            self.recommendation_status.setText(f"Mix started · {len(exact)} track(s)")
-            return
-        _provider, model, identity = self._resolve_ai_identity()
-        self.start_mix_button.setEnabled(False)
-        self.recommendation_status.setText(
-            f"Mix started · {identity} · finding continuation tracks"
-        )
-        self._run_recommendation_worker(
-            self._last_recommendation_request,
-            remaining,
-            model,
-            20,
-            language_continuation=True,
-            finished_slot=self._finish_recommendation_mix,
-        )
-
-    def _finish_recommendation_mix(
-        self, result: object, error: str
-    ) -> None:
-        self._recommendation_worker = None
-        recommendations = (
-            [value for value in result if isinstance(value, LibraryRecommendation)]
-            if isinstance(result, list)
-            else []
-        )
-        continuation = [value.item for value in recommendations if value.exists_locally]
-        added = self._append_to_queue(continuation)
-        self.start_mix_button.setEnabled(bool(self._last_recommendations))
-        suffix = f" · {added} related track(s) queued" if added else ""
-        if error:
-            suffix = " · continuation unavailable"
-        self.recommendation_status.setText(
-            f"Mix playing {len(self.queue)} track(s){suffix}"
-        )
 
     def reset_page(self) -> bool:
-        """Clear library configuration and UI state without deleting media files."""
+        """Clear library configuration without deleting media or saved playlists."""
 
         if any(
             thread is not None
             for thread in (
                 self._scanner_thread,
                 self._search_thread,
-                self._recommendation_thread,
                 self._video_thumbnail_thread,
             )
         ):
@@ -1952,14 +1695,11 @@ class MediaLibraryPage(QWidget):
         self._apply_video_display_modes()
         self.year_from.setValue(0)
         self.year_to.setValue(0)
-        self.clear_ai_recommendations()
         self.items.clear()
         self.filtered.clear()
         self.queue.clear()
         self._queue_source.clear()
         self.queue_index = -1
-        self.playlists.clear()
-        self._active_playlist = ""
         self._open_album_items.clear()
         self._open_album_name = ""
         self._open_album_artists.clear()
@@ -1978,28 +1718,17 @@ class MediaLibraryPage(QWidget):
         self._update_queue_status()
         self.elapsed.setText("0:00 / 0:00")
         self.now_playing_art.clear()
+        saved_playlists = encode_playlists(self.playlists)
+        active_playlist = self._active_playlist
         self.settings.remove("library")
+        if self.playlists:
+            self.settings.setValue("library/playlists", saved_playlists)
+            self.settings.setValue("library/active_playlist", active_playlist)
+        self.settings.sync()
         self._render_playlists()
         self._search_debounce.stop()
         return True
 
-    def search_recommendation_online(self) -> None:
-        """Route the unchanged AI request to verified YouTube Search Song results."""
-        query = self.recommendation_request.text().strip() or self._last_recommendation_request
-        if not query:
-            self.recommendation_status.setText("Describe what to search")
-            return
-        self.recommendation_status.setText("Opening YouTube search…")
-        query = playlist_taste_search_query(query, self.items, self.playlists)
-        self.request_search_song.emit(query)
-
-    def _play_recommended_item(self, row: QListWidgetItem) -> None:
-        path = str(row.data(Qt.ItemDataRole.UserRole) or "")
-        item = next((value for value in self.items if value.path == path), None)
-        if item is None or not Path(item.path).is_file():
-            self.recommendation_status.setText("Selected local file is missing")
-            return
-        self._replace_queue([item])
 
     def _build_browser(self) -> QWidget:
         widget = QWidget()
@@ -2022,23 +1751,28 @@ class MediaLibraryPage(QWidget):
         artist_layout.addWidget(self.facets, 1)
 
         track_pane = QWidget()
+        track_pane.setSizePolicy(
+            QSizePolicy.Policy.Ignored,
+            QSizePolicy.Policy.Expanding,
+        )
         track_layout = QVBoxLayout(track_pane)
         track_layout.setContentsMargins(0, 0, 0, 0)
 
-        actions = QHBoxLayout()
+        actions = QGridLayout()
         actions.setSpacing(8)
+        self.track_actions_layout = actions
+        self.track_action_widgets: list[QWidget] = []
         self.media_results_label = QLabel("Songs and videos")
-        actions.addWidget(self.media_results_label)
+        self.track_action_widgets.append(self.media_results_label)
         self.all_tracks_button = QPushButton("‹ All tracks")
         self.all_tracks_button.setObjectName("secondaryButton")
         self.all_tracks_button.setToolTip("Clear artist selection and show all tracks")
         self.all_tracks_button.clicked.connect(self._show_all_albums)
         self.all_tracks_button.setVisible(False)
-        actions.addWidget(self.all_tracks_button)
+        self.track_action_widgets.append(self.all_tracks_button)
         self.match_status = QLabel()
         self.match_status.setObjectName("mutedLabel")
-        actions.addWidget(self.match_status)
-        actions.addStretch(1)
+        self.track_action_widgets.append(self.match_status)
         self.video_view_toggle = QPushButton("Thumbnails view")
         self.video_view_toggle.setObjectName("secondaryButton")
         self.video_view_toggle.setCheckable(True)
@@ -2050,7 +1784,7 @@ class MediaLibraryPage(QWidget):
         )
         self.video_view_toggle.toggled.connect(self._toggle_video_view)
         self.video_view_toggle.setVisible(False)
-        actions.addWidget(self.video_view_toggle)
+        self.track_action_widgets.append(self.video_view_toggle)
         self.add_selected_to_playlist_button = QPushButton("Add to playlist")
         self.add_selected_to_playlist_button.setObjectName("secondaryButton")
         self.add_selected_to_playlist_button.setToolTip(
@@ -2059,9 +1793,10 @@ class MediaLibraryPage(QWidget):
         self.add_selected_to_playlist_button.clicked.connect(
             self.add_selected_tracks_to_playlist
         )
-        actions.addWidget(self.add_selected_to_playlist_button)
+        self.track_action_widgets.append(self.add_selected_to_playlist_button)
         for text, handler, primary in (
             ("Play selected", self.play_selected, True),
+            ("Play selected next", self.play_next_selected, False),
             ("Queue selected", self.enqueue_selected, False),
             ("Play all matches", self.play_all_matches, False),
             ("Shuffle all", self.shuffle_all_matches, False),
@@ -2069,7 +1804,7 @@ class MediaLibraryPage(QWidget):
             button = QPushButton(text)
             button.setObjectName("primaryButton" if primary else "secondaryButton")
             button.clicked.connect(handler)
-            actions.addWidget(button)
+            self.track_action_widgets.append(button)
         track_layout.addLayout(actions)
 
         self.table = self._new_media_table(
@@ -2104,6 +1839,7 @@ class MediaLibraryPage(QWidget):
         self.artist_track_splitter.addWidget(track_pane)
         self.artist_track_splitter.setStretchFactor(0, 1)
         self.artist_track_splitter.setStretchFactor(1, 4)
+        self._layout_track_actions()
         self.artist_track_splitter.setSizes(
             [
                 max(180, int(self.settings.value("library/artist_pane_width", 240))),
@@ -2117,6 +1853,29 @@ class MediaLibraryPage(QWidget):
         )
         layout.addWidget(self.artist_track_splitter, 1)
         return widget
+
+    def _layout_track_actions(self) -> None:
+        """Wrap browser actions instead of shrinking their labels into fragments."""
+
+        if not hasattr(self, "track_actions_layout"):
+            return
+        layout = self.track_actions_layout
+        while layout.count():
+            layout.takeAt(0)
+        width = self.artist_track_splitter.widget(1).width()
+        compact = width < 900
+        metadata = self.track_action_widgets[:4]
+        commands = self.track_action_widgets[4:]
+        for column, widget in enumerate(metadata):
+            layout.addWidget(widget, 0, column)
+        layout.setColumnStretch(len(metadata), 1)
+        if not compact:
+            for offset, widget in enumerate(commands, start=len(metadata) + 1):
+                layout.addWidget(widget, 0, offset)
+            return
+        columns = 3 if width < 720 else len(commands)
+        for index, widget in enumerate(commands):
+            layout.addWidget(widget, 1 + (index // columns), index % columns)
 
     def _build_album_section(self) -> QWidget:
         self.album_stack = QStackedWidget()
@@ -2209,6 +1968,7 @@ class MediaLibraryPage(QWidget):
         detail_header.addWidget(self.add_open_album_to_playlist_button)
         for text, mode, selected in (
             ("Play selected", "play", True),
+            ("Play selected next", "next", True),
             ("Queue selected", "queue", True),
             ("Shuffle selected", "shuffle", True),
         ):
@@ -2236,7 +1996,7 @@ class MediaLibraryPage(QWidget):
     def _build_playlist_drawer(self) -> QWidget:
         drawer = GlassCard()
         drawer.setObjectName("playlistDrawer")
-        drawer.setMinimumWidth(180)
+        drawer.setMinimumWidth(MIN_DRAWER_WIDTH)
         layout = QVBoxLayout(drawer)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(8)
@@ -2246,7 +2006,11 @@ class MediaLibraryPage(QWidget):
         heading.setObjectName("sectionTitle")
         header.addWidget(heading)
         header.addStretch(1)
-        close_button = QPushButton("‹")
+        close_button = QPushButton()
+        close_button.setIcon(_chevron_icon("left"))
+        close_button.setIconSize(QSize(20, 20))
+        close_button.setFixedSize(40, 40)
+        close_button.setAccessibleName("Collapse playlists")
         close_button.setObjectName("secondaryButton")
         close_button.setToolTip("Collapse playlists")
         close_button.clicked.connect(
@@ -2312,16 +2076,18 @@ class MediaLibraryPage(QWidget):
         )
         layout.addWidget(self.playlist_tracks, 3)
 
-        track_actions = QHBoxLayout()
-        for text, handler, primary in (
+        track_actions = QGridLayout()
+        for index, (text, handler, primary) in enumerate((
             ("Play", self.play_selected_playlist_tracks, True),
+            ("Play next", self.play_next_selected_playlist_tracks, False),
             ("Queue", self.queue_selected_playlist_tracks, False),
             ("Remove", self.remove_selected_playlist_tracks, False),
-        ):
+        )):
             button = QPushButton(text)
+            button.setMinimumWidth(112)
             button.setObjectName("primaryButton" if primary else "secondaryButton")
             button.clicked.connect(handler)
-            track_actions.addWidget(button)
+            track_actions.addWidget(button, index // 2, index % 2)
         layout.addLayout(track_actions)
         return drawer
 
@@ -2336,25 +2102,41 @@ class MediaLibraryPage(QWidget):
         sizes = self.drawer_splitter.sizes()
         total = max(sum(sizes), self.drawer_splitter.width())
         playlist = (
-            max(180, int(self.settings.value("library/playlist_drawer_width", 340)))
+            max(MIN_DRAWER_WIDTH, int(self.settings.value("library/playlist_drawer_width", 340)))
             if self.playlist_drawer.isVisible()
             else 0
         )
         queue = (
-            max(180, int(self.settings.value("library/queue_drawer_width", 330)))
+            max(MIN_DRAWER_WIDTH, int(self.settings.value("library/queue_drawer_width", 330)))
             if self.queue_drawer.isVisible()
             else 0
         )
-        center = max(320, total - playlist - queue)
+        visible_drawers = int(playlist > 0) + int(queue > 0)
+        if visible_drawers:
+            available_for_drawers = max(
+                MIN_DRAWER_WIDTH * visible_drawers,
+                total - MIN_LIBRARY_CENTER_WIDTH,
+            )
+            requested = playlist + queue
+            if requested > available_for_drawers:
+                scale = available_for_drawers / requested
+                if playlist:
+                    playlist = max(MIN_DRAWER_WIDTH, round(playlist * scale))
+                if queue:
+                    queue = max(MIN_DRAWER_WIDTH, round(queue * scale))
+        center = max(MIN_LIBRARY_CENTER_WIDTH, total - playlist - queue)
         self.drawer_splitter.setSizes([playlist, center, queue])
 
     def _toggle_playlist_drawer(self, visible: bool) -> None:
         self.playlist_drawer.setVisible(bool(visible))
         if visible:
+            self._last_opened_drawer = "playlist"
+            self._keep_drawers_from_squeezing_center()
             QTimer.singleShot(0, self._restore_drawer_widths)
-        arrow = "›" if visible else "‹"
-        self.playlist_toggle_button.setText(
-            f"Playlists ({len(self.playlists)}) {arrow}"
+        QTimer.singleShot(0, self._apply_responsive_layout)
+        self.playlist_toggle_button.setText(f"Playlists ({len(self.playlists)})")
+        self.playlist_toggle_button.setIcon(
+            _chevron_icon("right" if visible else "left")
         )
 
     def _save_playlists(self) -> None:
@@ -2363,19 +2145,31 @@ class MediaLibraryPage(QWidget):
         )
         self.settings.setValue("library/active_playlist", self._active_playlist)
         self.settings.sync()
-        self._update_preference_profile()
         self._remote_state_dirty = True
+        self.cloud_profile_changed.emit()
 
-    def _update_preference_profile(self) -> None:
-        try:
-            profile = update_preference_profile(self.items, self.playlists)
-            log_diagnostic(
-                "AI-PROFILE",
-                f"Local playlist preference profile updated | "
-                f"playlists={len(profile['playlists'])}",
-            )
-        except OSError as exc:
-            log_diagnostic("AI-PROFILE", f"Could not save local preference profile | {exc}")
+    def cloud_playlist_snapshot(self) -> dict[str, list[dict[str, object]]]:
+        """Return playlists without machine-specific filesystem paths."""
+
+        return portable_playlist_snapshot(
+            self.playlists, [item.as_dict() for item in self.items]
+        )
+
+    def import_cloud_playlist_entries(
+        self, name: str, entries: list[dict[str, object]]
+    ) -> tuple[int, list[str]]:
+        """Merge portable/cloud entries into a local playlist by metadata identity."""
+
+        paths, missing = match_portable_tracks(
+            entries, [item.as_dict() for item in self.items]
+        )
+        existing = self.playlists.setdefault(name, [])
+        known = {path.casefold() for path in existing}
+        additions = [path for path in paths if path.casefold() not in known]
+        existing.extend(additions)
+        self._save_playlists()
+        self._render_playlists()
+        return len(additions), missing
 
     def _render_playlists(self) -> None:
         self.playlist_list.blockSignals(True)
@@ -2398,9 +2192,9 @@ class MediaLibraryPage(QWidget):
             self.playlist_list.setCurrentRow(selected_row)
         self.playlist_list.blockSignals(False)
         self._render_playlist_tracks()
-        arrow = "›" if self.playlist_drawer.isVisible() else "‹"
-        self.playlist_toggle_button.setText(
-            f"Playlists ({len(self.playlists)}) {arrow}"
+        self.playlist_toggle_button.setText(f"Playlists ({len(self.playlists)})")
+        self.playlist_toggle_button.setIcon(
+            _chevron_icon("right" if self.playlist_drawer.isVisible() else "left")
         )
 
     def _playlist_selection_changed(self) -> None:
@@ -2641,22 +2435,30 @@ class MediaLibraryPage(QWidget):
         duplicate_count = sum(item.path.casefold() in known for item in items)
         policy = duplicate_policy
         if duplicate_count and policy not in {"skip", "add"}:
-            box = QMessageBox(self)
-            box.setIcon(QMessageBox.Icon.Warning)
-            box.setWindowTitle("Track already present")
-            box.setText("Track already present")
-            box.setInformativeText(
-                f"{duplicate_count} selected track(s) already exist in {name}."
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Tracks already in playlist")
+            dialog.setMinimumSize(480, 220)
+            content = QVBoxLayout(dialog)
+            heading = QLabel("Some selected tracks are already present")
+            heading.setObjectName("sectionTitle")
+            content.addWidget(heading)
+            details = QLabel(
+                f"{duplicate_count} of {len(items)} selected track(s) already exist in "
+                f"‘{name}’.\n\nChoose whether to skip those duplicates or add another copy."
             )
-            skip_button = box.addButton(
-                "Skip duplicates", QMessageBox.ButtonRole.AcceptRole
-            )
-            add_button = box.addButton(
-                "Add anyway", QMessageBox.ButtonRole.DestructiveRole
-            )
-            box.exec()
-            policy = "skip" if box.clickedButton() is skip_button else "add"
-            if box.clickedButton() not in {skip_button, add_button}:
+            details.setWordWrap(True)
+            content.addWidget(details, 1)
+            actions = QDialogButtonBox()
+            skip_button = actions.addButton("Skip duplicates", QDialogButtonBox.ButtonRole.AcceptRole)
+            add_button = actions.addButton("Add anyway", QDialogButtonBox.ButtonRole.DestructiveRole)
+            cancel_button = actions.addButton(QDialogButtonBox.StandardButton.Cancel)
+            skip_button.clicked.connect(lambda: dialog.done(1))
+            add_button.clicked.connect(lambda: dialog.done(2))
+            cancel_button.clicked.connect(dialog.reject)
+            content.addWidget(actions)
+            choice = dialog.exec()
+            policy = "skip" if choice == 1 else "add"
+            if choice not in {1, 2}:
                 return 0
         result = add_playlist_paths(
             existing,
@@ -2706,6 +2508,10 @@ class MediaLibraryPage(QWidget):
         selected = self._selected_playlist_items() or self._visible_playlist_items()
         self._append_to_queue(selected)
 
+    def play_next_selected_playlist_tracks(self) -> None:
+        selected = self._selected_playlist_items() or self._visible_playlist_items()
+        self._play_next(selected)
+
     def remove_selected_playlist_tracks(self) -> None:
         removals: dict[str, set[int]] = {}
         for entry in self.playlist_tracks.selectedItems():
@@ -2740,7 +2546,7 @@ class MediaLibraryPage(QWidget):
     def _build_queue_drawer(self) -> QWidget:
         drawer = GlassCard()
         drawer.setObjectName("playbackQueueDrawer")
-        drawer.setMinimumWidth(180)
+        drawer.setMinimumWidth(MIN_DRAWER_WIDTH)
         layout = QVBoxLayout(drawer)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(8)
@@ -2748,8 +2554,15 @@ class MediaLibraryPage(QWidget):
         heading = QLabel("Current queue")
         heading.setObjectName("sectionTitle")
         header.addWidget(heading)
+        self.queue_duration_label = QLabel("0 tracks • 0 min")
+        self.queue_duration_label.setObjectName("mutedLabel")
+        header.addWidget(self.queue_duration_label)
         header.addStretch(1)
-        close_button = QPushButton("›")
+        close_button = QPushButton()
+        close_button.setIcon(_chevron_icon("right"))
+        close_button.setIconSize(QSize(20, 20))
+        close_button.setFixedSize(40, 40)
+        close_button.setAccessibleName("Collapse queue")
         close_button.setObjectName("secondaryButton")
         close_button.setToolTip("Collapse queue")
         close_button.clicked.connect(lambda: self.queue_toggle_button.setChecked(False))
@@ -2760,6 +2573,9 @@ class MediaLibraryPage(QWidget):
         hint.setWordWrap(True)
         layout.addWidget(hint)
         self.queue_list = AnimatedReorderList()
+        self.queue_list.setSelectionMode(
+            QAbstractItemView.SelectionMode.ExtendedSelection
+        )
         self.queue_list.setAccessibleName("Current playback queue")
         self.queue_list.itemDoubleClicked.connect(self._play_queue_entry)
         self.queue_list.orderChanged.connect(self._queue_reordered)
@@ -2767,6 +2583,7 @@ class MediaLibraryPage(QWidget):
         self.queue_list.customContextMenuRequested.connect(
             lambda point: self._show_list_song_context_menu(self.queue_list, point)
         )
+        self.queue_list.deletePressed.connect(self._remove_selected_queue_entries)
         layout.addWidget(self.queue_list, 1)
         actions = QHBoxLayout()
         for text, handler in (
@@ -2816,6 +2633,13 @@ class MediaLibraryPage(QWidget):
         grid.addWidget(self.now_playing_art, 1, 0, 3, 1)
         self.now_playing = QLabel("Nothing playing")
         self.now_playing.setObjectName("sectionTitle")
+        self.now_playing.setTextFormat(Qt.TextFormat.RichText)
+        self.now_playing.setTextInteractionFlags(
+            Qt.TextInteractionFlag.LinksAccessibleByMouse
+            | Qt.TextInteractionFlag.LinksAccessibleByKeyboard
+        )
+        self.now_playing.setOpenExternalLinks(False)
+        self.now_playing.linkActivated.connect(self._now_playing_link_activated)
         self.now_playing.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.now_playing.customContextMenuRequested.connect(
             self._show_now_playing_context_menu
@@ -2927,9 +2751,11 @@ class MediaLibraryPage(QWidget):
         self._update_playback_mode_buttons()
         self._apply_video_display_modes()
         grid.addWidget(controls, 3, 1, 1, 9)
-        volume_label = QLabel("Volume")
-        volume_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        grid.addWidget(volume_label, 3, 10)
+        self.volume_label = QLabel("Volume")
+        self.volume_label.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        grid.addWidget(self.volume_label, 3, 10)
         self.volume = AnimatedSeekSlider()
         self.volume.setRange(0, 100)
         self.volume.setValue(int(self.settings.value("library/volume", 75)))
@@ -2991,6 +2817,36 @@ class MediaLibraryPage(QWidget):
         self._sync_video_shortcuts()
         self._player_host_layout.addWidget(card)
         return self._player_host
+
+    def _layout_player_controls(self, compact: bool) -> None:
+        """Give transport and volume controls separate rows in compact mode."""
+
+        if not hasattr(self, "player_grid") or compact == self._compact_player_layout:
+            return
+        self._compact_player_layout = compact
+        if compact:
+            self.player_grid.addWidget(self.player_controls, 3, 1, 1, 12)
+            self.player_grid.addWidget(self.volume_label, 4, 1, 1, 2)
+            self.player_grid.addWidget(self.volume, 4, 3, 1, 8)
+            self.player_grid.addWidget(self.volume_percent, 4, 11, 1, 2)
+        else:
+            self.player_grid.addWidget(self.player_controls, 3, 1, 1, 9)
+            self.player_grid.addWidget(self.volume_label, 3, 10)
+            self.player_grid.addWidget(self.volume, 3, 11)
+            self.player_grid.addWidget(self.volume_percent, 3, 12)
+        self._update_player_minimum_height()
+
+    def _update_player_minimum_height(self, video_active: bool | None = None) -> None:
+        if video_active is None:
+            video_active = not self.video_viewport.isHidden()
+        base = (
+            VIDEO_PLAYER_CARD_MIN_HEIGHT
+            if video_active
+            else AUDIO_PLAYER_CARD_MIN_HEIGHT
+        )
+        self.player_card.setMinimumHeight(
+            base + (COMPACT_PLAYER_EXTRA_HEIGHT if self._compact_player_layout else 0)
+        )
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
         if (
@@ -3270,7 +3126,7 @@ class MediaLibraryPage(QWidget):
         self.video.setFocus()
 
     def exit_video_fullscreen(self) -> None:
-        """Restore the player card to the Media Library workspace."""
+        """Restore the player card to the Media Player workspace."""
 
         if not self._player_fullscreen:
             return
@@ -3374,7 +3230,7 @@ class MediaLibraryPage(QWidget):
         return str(Path(path).expanduser().resolve()).casefold()
 
     def video_display_profile(self, path: str | Path) -> tuple[str, str]:
-        """Return the Media Library playback profile saved for one video."""
+        """Return the Media Player playback profile saved for one video."""
 
         profile = self._video_display_profiles.get(self._video_profile_key(path), {})
         if not isinstance(profile, dict):
@@ -3699,24 +3555,44 @@ class MediaLibraryPage(QWidget):
         else:
             QMessageBox.information(self, "Artist fixes complete", message)
 
-    def refresh_library(self) -> None:
+    def _periodic_library_refresh(self) -> None:
+        if self._scanner_thread is None:
+            self.refresh_library(force=False)
+
+    def _update_library_watches(self, items: list[LibraryItem]) -> None:
+        paths = {str(Path(folder).expanduser().resolve()) for folder in self.folders()}
+        paths.update(self._library_directories)
+        paths.update(item.path for item in items)
+        watched = set(self.library_watcher.files() + self.library_watcher.directories())
+        if watched - paths:
+            self.library_watcher.removePaths(sorted(watched - paths))
+        if paths - watched:
+            self.library_watcher.addPaths(sorted(paths - watched))
+
+    def _scan_directories_found(self, directories: object) -> None:
+        self._library_directories = list(directories)
+
+    def refresh_library(self, *, force: bool = True) -> None:
         if self._shutting_down:
             return
         if self._scanner_thread is not None:
             self._scan_refresh_pending = True
-            self.library_refresh_button.setText("Refresh queued")
+            if force:
+                self._scanner_thread.requestInterruption()
+            self.library_refresh_button.setText("Refresh")
             self.library_refresh_button.setToolTip(
                 "Another rescan will run as soon as the current scan finishes"
             )
             return
         if not self.folders():
-            self.items = []
-            self.apply_filters()
-            self._render_playlist_tracks()
+            self._library_directories = []
+            self._scan_finished([])
             return
         self._scan_refresh_pending = False
-        self.library_refresh_button.setEnabled(False)
-        self.library_refresh_button.setText("Scanning…")
+        self._scan_force = force
+        self.library_refresh_button.setEnabled(True)
+        self.library_refresh_button.setText("Refresh")
+        self.library_refresh_button.setToolTip("Scanning library… Click to restart the scan")
         self._scan_started_at = time.monotonic()
         log_diagnostic(
             "LIBRARY", f"Background scan started; folders={self.folders()!r}"
@@ -3726,6 +3602,8 @@ class MediaLibraryPage(QWidget):
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.finished.connect(self._scan_finished)
+        worker.failed.connect(self._scan_failed)
+        worker.directories_found.connect(self._scan_directories_found)
         worker.finished.connect(thread.quit)
         worker.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
@@ -3733,6 +3611,10 @@ class MediaLibraryPage(QWidget):
         self._scanner_thread = thread
         self._scanner_worker = worker
         thread.start()
+
+    def _scan_failed(self, message: str) -> None:
+        log_diagnostic("LIBRARY", f"Scan failed: {message}")
+        self.queue_status.setText(f"Library scan failed: {message}. Click Refresh to retry.")
 
     def _scanner_thread_finished(self) -> None:
         self._scanner_thread = None
@@ -3747,19 +3629,41 @@ class MediaLibraryPage(QWidget):
 
     def _scan_finished(self, items: object) -> None:
         self._scanner_worker = None
+        if items is None:
+            return
         scanned_items = list(items) if isinstance(items, list) else []
+        self._update_library_watches(scanned_items)
         log_diagnostic(
             "LIBRARY",
             f"Background scan finished; items={len(scanned_items)} "
             f"elapsed={time.monotonic() - self._scan_started_at:.3f}s",
         )
-        if scanned_items == self.items:
+        if scanned_items == self.items and not self._scan_force:
             log_diagnostic(
                 "LIBRARY", "Scan contents unchanged; preserving current browser UI"
             )
             return
+        previous = {item.path: item.modified_ns for item in self.items}
+        if self._scan_force:
+            self._artwork_cache.clear()
+        self._artwork_cache = {
+            item.path: self._artwork_cache[item.path]
+            for item in scanned_items
+            if item.path in self._artwork_cache
+            and previous.get(item.path) == item.modified_ns
+        }
         self.items = scanned_items
-        self._update_preference_profile()
+        current_year = datetime.now().year
+        available_years = sorted(
+            item.year
+            for item in scanned_items
+            if isinstance(item.year, int) and 0 < item.year <= current_year
+        )
+        lowest_year = available_years[0] if available_years else current_year
+        self.year_from.set_year_limits(lowest_year, current_year)
+        self.year_to.set_year_limits(lowest_year, current_year)
+        self.year_from.lineEdit().setPlaceholderText(f"From {lowest_year}")
+        self.year_to.lineEdit().setPlaceholderText(f"To {current_year}")
         self._remote_state_dirty = True
         valid_thumbnail_keys = {
             (item.path, item.modified_ns)
@@ -3777,11 +3681,11 @@ class MediaLibraryPage(QWidget):
             if 0 <= self.queue_index < len(self.queue)
             else ""
         )
-        self.queue = [
-            item for item in self.queue if item.path.casefold() in available_paths
-        ]
+        indexed = {item.path.casefold(): item for item in scanned_items}
+        self.queue = [indexed[item.path.casefold()] for item in self.queue
+                      if item.path.casefold() in available_paths]
         self._queue_source = [
-            item
+            indexed[item.path.casefold()]
             for item in self._queue_source
             if item.path.casefold() in available_paths
         ]
@@ -3794,6 +3698,10 @@ class MediaLibraryPage(QWidget):
             0 if self.queue else -1,
         )
         self._update_queue_status()
+        if current_path and current_path.casefold() not in available_paths:
+            self.stop()
+        if 0 <= self.queue_index < len(self.queue):
+            self._set_now_playing_art(self.queue[self.queue_index])
         self.apply_filters()
         self._render_playlist_tracks()
         log_diagnostic(
@@ -4094,8 +4002,6 @@ class MediaLibraryPage(QWidget):
     def set_suggestion_limit(self, value: int) -> None:
         self._suggestion_limit = max(1, min(20, int(value)))
         self.search_completer.setMaxVisibleItems(self._suggestion_limit)
-        if hasattr(self, "recommendation_limit"):
-            self.recommendation_limit.setValue(self._suggestion_limit)
         self._schedule_search()
 
     def _populate_table(
@@ -4386,7 +4292,18 @@ class MediaLibraryPage(QWidget):
 
     def open_album(self, entry: QListWidgetItem) -> None:
         album = str(entry.data(Qt.ItemDataRole.UserRole) or "")
-        self._open_album_items = [item for item in self.filtered if item.album == album]
+        self._open_album_by_name(album, self.filtered)
+
+    def _open_album_by_name(
+        self, album: str, candidates: list[LibraryItem] | None = None
+    ) -> None:
+        """Open an album directly, including from the now-playing metadata link."""
+
+        pool = self.items if candidates is None else candidates
+        album_key = album.strip().casefold()
+        self._open_album_items = [
+            item for item in pool if item.album.strip().casefold() == album_key
+        ]
         if not self._open_album_items:
             return
         self._open_album_name = album
@@ -4401,6 +4318,42 @@ class MediaLibraryPage(QWidget):
         )
         self._update_album_track_context()
         self.album_stack.setCurrentIndex(1)
+
+    def _now_playing_link_activated(self, link: str) -> None:
+        """Navigate the library from album, artist, and year metadata links."""
+
+        kind, separator, encoded_value = link.partition(":")
+        if not separator:
+            return
+        value = unquote(encoded_value).strip()
+        if kind == "album":
+            # An album metadata link means the complete album, even when the
+            # browser currently has a narrower search, artist, type, or year view.
+            self.search.clear()
+            self.year_from.setValue(0)
+            self.year_to.setValue(0)
+            self.facets.clearSelection()
+            self.media_type_filter.setCurrentIndex(0)
+            self.apply_filters()
+            self._open_album_by_name(value, self.filtered)
+            return
+        if kind == "artist":
+            self.search.clear()
+            self.year_from.setValue(0)
+            self.year_to.setValue(0)
+            self.media_type_filter.setCurrentIndex(0)
+            available = self._available_artists(self.items)
+            self._update_artist_facets(available, [value])
+            self.apply_filters()
+            return
+        if kind == "year" and value.isdecimal():
+            year = int(value)
+            self.search.clear()
+            self.facets.clearSelection()
+            self.media_type_filter.setCurrentIndex(0)
+            self.year_from.setValue(year)
+            self.year_to.setValue(year)
+            self.apply_filters()
 
     def _update_album_browser_context(self) -> None:
         artists = [item.text() for item in self.facets.selectedItems()]
@@ -4505,10 +4458,22 @@ class MediaLibraryPage(QWidget):
         global_position: QPoint,
         *,
         source_playlist: str = "",
-    ) -> None:
+    ) -> QMenu | None:
         if not items:
-            return
+            return None
         menu = QMenu(self)
+        multiple = len(items) > 1
+        play_next_action = menu.addAction(
+            "Play selected next" if multiple else "Play next"
+        )
+        play_next_action.triggered.connect(
+            lambda _checked=False, selected=list(items): self._play_next(selected)
+        )
+        queue_action = menu.addAction("Queue selected" if multiple else "Queue")
+        queue_action.triggered.connect(
+            lambda _checked=False, selected=list(items): self._append_to_queue(selected)
+        )
+        menu.addSeparator()
         self._add_playlist_destinations(menu, items)
         if source_playlist:
             remove_action = menu.addAction("Remove from this playlist")
@@ -4555,6 +4520,7 @@ class MediaLibraryPage(QWidget):
             lambda _checked=False, selected=list(items): self._permanently_delete_media(selected)
         )
         menu.exec(global_position)
+        return menu
 
     def _playback_display_edit_modes(self, path: str | Path) -> tuple[str, str]:
         """Return the active or saved playback profile for a video."""
@@ -4680,6 +4646,15 @@ class MediaLibraryPage(QWidget):
             return
         menu = QMenu(self)
         menu.setTitle(album)
+        play_next_action = menu.addAction("Play album next")
+        play_next_action.triggered.connect(
+            lambda _checked=False, selected=list(tracks): self._play_next(selected)
+        )
+        queue_action = menu.addAction("Queue album")
+        queue_action.triggered.connect(
+            lambda _checked=False, selected=list(tracks): self._append_to_queue(selected)
+        )
+        menu.addSeparator()
         self._add_playlist_destinations(
             menu, tracks, label="Add album to playlist"
         )
@@ -4772,23 +4747,32 @@ class MediaLibraryPage(QWidget):
         targets = {path.casefold() for path in paths}
         if 0 <= self.queue_index < len(self.queue) and self.queue[self.queue_index].path.casefold() in targets:
             self.stop()
-        self.queue = [item for item in self.queue if item.path.casefold() not in targets]
-        self._queue_source = [item for item in self._queue_source if item.path.casefold() not in targets]
-        self.queue_index = min(self.queue_index, len(self.queue) - 1)
-        for name, playlist_paths in self.playlists.items():
-            self.playlists[name] = [path for path in playlist_paths if str(Path(path).expanduser().resolve()).casefold() not in targets]
-        self._save_playlists()
+        current_path = self.queue[self.queue_index].path if 0 <= self.queue_index < len(self.queue) else ""
         failures: list[str] = []
         deleted = 0
+        removed: set[str] = set()
         for path_text in paths:
             path = Path(path_text)
             try:
                 if path.exists():
                     path.unlink()
                 deleted += 1
+                removed.add(path_text.casefold())
                 self._video_display_profiles.pop(self._video_profile_key(path), None)
             except OSError as exc:
                 failures.append(f"{path.name}: {exc}")
+        self.queue = [item for item in self.queue if item.path.casefold() not in removed]
+        self._queue_source = [item for item in self._queue_source if item.path.casefold() not in removed]
+        self.queue_index = next((index for index, item in enumerate(self.queue)
+                                 if item.path == current_path), -1)
+        for name, playlist_paths in self.playlists.items():
+            self.playlists[name] = [path for path in playlist_paths
+                                   if str(Path(path).expanduser().resolve()).casefold() not in removed]
+        self._save_playlists()
+        self.items = [item for item in self.items if item.path.casefold() not in removed]
+        self._artwork_cache = {path: icon for path, icon in self._artwork_cache.items()
+                               if path.casefold() not in removed}
+        self.apply_filters()
         self.settings.setValue(
             "library/video_display_profiles",
             json.dumps(self._video_display_profiles, sort_keys=True),
@@ -4864,6 +4848,9 @@ class MediaLibraryPage(QWidget):
         selected = self._selected_library_items()
         self._append_to_queue(selected)
 
+    def play_next_selected(self) -> None:
+        self._play_next(self._selected_library_items())
+
     def _append_to_queue(self, selected: list[LibraryItem]) -> int:
         """Append unique tracks without interrupting the item currently playing."""
 
@@ -4890,6 +4877,47 @@ class MediaLibraryPage(QWidget):
         self._update_queue_status()
         return len(selected)
 
+    def _play_next(self, selected: list[LibraryItem]) -> int:
+        """Place tracks directly after the current item, moving existing copies."""
+
+        ordered: list[LibraryItem] = []
+        seen: set[str] = set()
+        current_path = (
+            self.queue[self.queue_index].path.casefold()
+            if 0 <= self.queue_index < len(self.queue)
+            else ""
+        )
+        for item in selected:
+            key = item.path.casefold()
+            if key and key != current_path and key not in seen:
+                seen.add(key)
+                ordered.append(item)
+        if not ordered:
+            return 0
+        if not self.queue:
+            self._replace_queue(ordered)
+            return len(ordered)
+
+        moved_paths = {item.path.casefold() for item in ordered}
+        remaining = [
+            item for item in self.queue
+            if item.path.casefold() not in moved_paths
+        ]
+        current_item = self.queue[self.queue_index]
+        current_index = next(
+            index for index, item in enumerate(remaining)
+            if item.path.casefold() == current_item.path.casefold()
+        )
+        self.queue = remaining[: current_index + 1] + ordered + remaining[current_index + 1 :]
+        self._queue_source = list(self.queue)
+        self.queue_index = current_index
+        if self._shuffle_enabled:
+            self._shuffle_enabled = False
+            self.settings.setValue("library/shuffle", False)
+            self._update_playback_mode_buttons()
+        self._update_queue_status()
+        return len(ordered)
+
     def play_all_matches(self) -> None:
         self._replace_queue(list(self.filtered))
 
@@ -4906,15 +4934,22 @@ class MediaLibraryPage(QWidget):
             return
         if mode == "queue":
             self._append_to_queue(tracks)
+        elif mode == "next":
+            self._play_next(tracks)
         else:
             self._replace_queue(tracks, shuffle=(mode == "shuffle") or None)
 
     def _toggle_queue_drawer(self, visible: bool) -> None:
         self.queue_drawer.setVisible(bool(visible))
         if visible:
+            self._last_opened_drawer = "queue"
+            self._keep_drawers_from_squeezing_center()
             QTimer.singleShot(0, self._restore_drawer_widths)
-        arrow = "‹" if visible else "›"
-        self.queue_toggle_button.setText(f"Queue ({len(self.queue)}) {arrow}")
+        QTimer.singleShot(0, self._apply_responsive_layout)
+        self.queue_toggle_button.setText(f"Queue ({len(self.queue)})")
+        self.queue_toggle_button.setIcon(
+            _chevron_icon("left" if visible else "right")
+        )
 
     @staticmethod
     def _queue_entry_text(item: LibraryItem, index: int, current: bool) -> str:
@@ -4948,8 +4983,11 @@ class MediaLibraryPage(QWidget):
         if selected_row >= 0:
             self.queue_list.setCurrentRow(selected_row)
         self.queue_list.blockSignals(False)
-        arrow = "‹" if self.queue_drawer.isVisible() else "›"
-        self.queue_toggle_button.setText(f"Queue ({len(self.queue)}) {arrow}")
+        self.queue_toggle_button.setText(f"Queue ({len(self.queue)})")
+        self.queue_toggle_button.setIcon(
+            _chevron_icon("left" if self.queue_drawer.isVisible() else "right")
+        )
+        self._update_queue_duration_label()
 
     def _refresh_queue_list_labels(self) -> None:
         for index, item in enumerate(self.queue):
@@ -5010,20 +5048,35 @@ class MediaLibraryPage(QWidget):
             self._play_queue_entry(entry)
 
     def _remove_selected_queue_entry(self) -> None:
-        row = self.queue_list.currentRow()
-        if not 0 <= row < len(self.queue):
+        self._remove_selected_queue_entries()
+
+    def _remove_selected_queue_entries(self) -> None:
+        """Remove selected queue rows without deleting their media files."""
+
+        rows = sorted(
+            {index.row() for index in self.queue_list.selectionModel().selectedRows()},
+            reverse=True,
+        )
+        if not rows:
+            row = self.queue_list.currentRow()
+            rows = [row] if 0 <= row < len(self.queue) else []
+        if not rows:
             return
-        removed_current = row == self.queue_index
-        self.queue.pop(row)
+        removed_current = self.queue_index in rows
+        rows_before_current = sum(row < self.queue_index for row in rows)
+        for row in rows:
+            if 0 <= row < len(self.queue):
+                self.queue.pop(row)
         self._queue_source = list(self.queue)
         if not self.queue:
             self.clear_playback_queue()
         elif removed_current:
-            self.queue_index = min(row, len(self.queue) - 1)
+            self.queue_index = min(
+                self.queue_index - rows_before_current, len(self.queue) - 1
+            )
             self._load_current()
         else:
-            if row < self.queue_index:
-                self.queue_index -= 1
+            self.queue_index -= rows_before_current
             self._update_queue_status()
 
     def clear_playback_queue(self) -> None:
@@ -5036,7 +5089,7 @@ class MediaLibraryPage(QWidget):
         self.now_playing.setText("Nothing playing")
         self._set_now_playing_art(None)
         self.video_viewport.setVisible(False)
-        self.player_card.setMinimumHeight(AUDIO_PLAYER_CARD_MIN_HEIGHT)
+        self._update_player_minimum_height(False)
         self.aspect_button.setEnabled(False)
         self.crop_button.setEnabled(False)
         self.fullscreen_button.setEnabled(False)
@@ -5108,14 +5161,23 @@ class MediaLibraryPage(QWidget):
             else None
         )
         self.player.setSource(QUrl.fromLocalFile(item.path))
-        self.now_playing.setText(f"{item.title} — {item.artists}  •  {item.album}")
+        artist_links = ", ".join(
+            f'<a href="artist:{quote(artist)}">{html.escape(artist)}</a>'
+            for artist in split_artists(item.artists)
+        ) or html.escape(item.artists)
+        album_link = (
+            f'<a href="album:{quote(item.album)}">{html.escape(item.album)}</a>'
+            if item.album else "Unknown album"
+        )
+        year_link = (
+            f'  •  <a href="year:{item.year}">{item.year}</a>' if item.year else ""
+        )
+        self.now_playing.setText(
+            f"{html.escape(item.title)} — {artist_links}  •  {album_link}{year_link}"
+        )
         self._set_now_playing_art(item)
         video_active = item.media_type == MEDIA_TYPE_VIDEO
-        self.player_card.setMinimumHeight(
-            VIDEO_PLAYER_CARD_MIN_HEIGHT
-            if video_active
-            else AUDIO_PLAYER_CARD_MIN_HEIGHT
-        )
+        self._update_player_minimum_height(video_active)
         self.video_viewport.setVisible(video_active)
         self.aspect_button.setEnabled(video_active)
         self.crop_button.setEnabled(video_active)
@@ -5178,6 +5240,20 @@ class MediaLibraryPage(QWidget):
             )
         if rebuild_drawer:
             self._sync_queue_drawer()
+        else:
+            self._update_queue_duration_label()
+
+    def _update_queue_duration_label(self) -> None:
+        if not hasattr(self, "queue_duration_label"):
+            return
+        known_ms = sum(max(0, int(item.duration_ms)) for item in self.queue)
+        unknown = sum(int(item.duration_ms) <= 0 for item in self.queue)
+        minutes = (known_ms + 59_999) // 60_000
+        duration = f"{minutes} min"
+        suffix = f" • {unknown} unknown" if unknown else ""
+        self.queue_duration_label.setText(
+            f"{len(self.queue)} track{'s' if len(self.queue) != 1 else ''} • {duration}{suffix}"
+        )
 
     def play(self) -> None:
         log_diagnostic("PLAYER", "play requested")
@@ -5432,6 +5508,7 @@ class MediaLibraryPage(QWidget):
             self._remote_server = None
         self._scan_refresh_pending = False
         self.refresh_timer.stop()
+        self.library_change_timer.stop()
         application = QApplication.instance()
         if application is not None and self._application_event_filter_installed:
             application.removeEventFilter(self)
@@ -5456,10 +5533,6 @@ class MediaLibraryPage(QWidget):
             self._search_thread.requestInterruption()
             self._search_thread.quit()
             self._search_thread.wait(2000)
-        if self._recommendation_thread is not None:
-            self._recommendation_thread.requestInterruption()
-            self._recommendation_thread.quit()
-            self._recommendation_thread.wait(2000)
         if self._video_thumbnail_thread is not None:
             self._video_thumbnail_thread.requestInterruption()
             self._video_thumbnail_thread.quit()
@@ -5482,32 +5555,6 @@ class MediaLibraryPage(QWidget):
 def _suggestion_text(item: LibraryItem) -> str:
     year = f" ({item.year})" if item.year else ""
     return f"{item.title} — {item.artists} • {item.album}{year}"
-
-
-_MIN_RECOMMENDATION_RESULTS = 1
-_MAX_RECOMMENDATION_RESULTS = 20
-
-
-def _clamp_recommendation_results(value: int) -> int:
-    return max(
-        _MIN_RECOMMENDATION_RESULTS,
-        min(_MAX_RECOMMENDATION_RESULTS, int(value)),
-    )
-
-
-def _requested_result_limit(request: str, fallback: int) -> int:
-    """Honor an explicit 'N results/tracks/songs' count without involving the model."""
-
-    patterns = (
-        r"\b(?:return|show|give|find|suggest|play)\s+(?:me\s+)?(\d{1,2})"
-        r"\s+(?:results?|songs?|tracks?|matches?)\b",
-        r"\b(\d{1,2})\s+(?:results?|songs?|tracks?|matches?)\b",
-    )
-    for pattern in patterns:
-        match = re.search(pattern, request, flags=re.IGNORECASE)
-        if match:
-            return _clamp_recommendation_results(int(match.group(1)))
-    return _clamp_recommendation_results(fallback)
 
 
 def _match_rank(item: LibraryItem, query: str) -> tuple[int, int, str]:

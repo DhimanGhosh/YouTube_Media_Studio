@@ -14,8 +14,12 @@ import tarfile
 import tempfile
 import time
 import tomllib
+import zipfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from urllib.request import Request
+
+from youtube_audio_video_downloader.core.network import urlopen
 
 from youtube_audio_video_downloader.config.app_identity import (
     APP_DISPLAY_NAME,
@@ -30,6 +34,20 @@ from youtube_audio_video_downloader.config.app_identity import (
 ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / "dist"
 ASSETS = ROOT / "assets"
+LINUX_FFMPEG_ARCHIVE_URL = (
+    "https://johnvansickle.com/ffmpeg/old-releases/"
+    "ffmpeg-6.0.1-amd64-static.tar.xz"
+)
+LINUX_FFMPEG_ARCHIVE_SHA256 = (
+    "28268bf402f1083833ea269331587f60a242848880073be8016501d864bd07a5"
+)
+WINDOWS_FFMPEG_ARCHIVE_URL = (
+    "https://github.com/GyanD/codexffmpeg/releases/download/8.1.1/"
+    "ffmpeg-8.1.1-essentials_build.zip"
+)
+WINDOWS_FFMPEG_ARCHIVE_SHA256 = (
+    "6f58ce889f59c311410f7d2b18895b33c03456463486f3b1ebc93d97a0f54541"
+)
 
 
 @dataclass(frozen=True)
@@ -131,7 +149,55 @@ def check() -> None:
             "--ignore=tests/gui/test_media_player.py",
         ]
     )
-    run(["uv", "run", "--group", "dev", "pytest", "-q", "tests/gui/test_media_player.py"])
+    run_media_player_tests_batched()
+
+
+def run_media_player_tests_batched(*, batch_size: int = 1) -> None:
+    """Run Qt Multimedia cases in fresh, bounded processes.
+
+    Some headless Qt multimedia backends abort natively after enough player,
+    thumbnail, and full-screen lifecycles have accumulated in one process.
+    One fresh process per case still executes every collected test while
+    completely isolating multimedia backends and worker teardown.
+    """
+
+    test_file = "tests/gui/test_media_player.py"
+    collected = subprocess.run(
+        [
+            "uv",
+            "run",
+            "--group",
+            "dev",
+            "pytest",
+            "--collect-only",
+            "-q",
+            test_file,
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    node_ids = [
+        line.strip()
+        for line in collected.stdout.splitlines()
+        if line.strip().startswith(f"{test_file}::")
+    ]
+    if not node_ids:
+        raise RuntimeError(f"No tests were collected from {test_file}")
+    size = max(1, int(batch_size))
+    for start in range(0, len(node_ids), size):
+        run(
+            [
+                "uv",
+                "run",
+                "--group",
+                "dev",
+                "pytest",
+                "-q",
+                *node_ids[start : start + size],
+            ]
+        )
 
 
 def _generated_paths(*, include_ide: bool = False) -> list[Path]:
@@ -370,6 +436,8 @@ def build_desktop(target: str) -> Path:
             [
                 "--collect-all",
                 "yt_dlp_ejs",
+                "--collect-data",
+                "certifi",
                 "--copy-metadata",
                 PACKAGE_DISTRIBUTION,
                 "--add-data",
@@ -386,7 +454,7 @@ def build_desktop(target: str) -> Path:
             entry="run_app.py",
             output=gui_output,
             windowed=True,
-            onefile=target == "windows",
+            onefile=False,
         )
     )
     run(
@@ -415,6 +483,23 @@ def build_desktop(target: str) -> Path:
         create_macos_drag_drop_dmg(app_bundle, artifact)
         if notarized:
             sign_and_notarize_macos_dmg(artifact)
+        shutil.rmtree(payload)
+        print(f"Created {artifact}")
+        return artifact
+
+    if target == "windows":
+        artifact = DIST / f"{EXECUTABLE_BASENAME}-{version}-windows-{machine}-Setup.exe"
+        gui_bundle = gui_output / EXECUTABLE_BASENAME
+        verify_windows_gui_bundle(gui_bundle)
+        verify_packaged_application(gui_bundle / f"{EXECUTABLE_BASENAME}.exe")
+        build_windows_nsis_installer(
+            gui_bundle,
+            cli_executable,
+            icon_path,
+            artifact,
+            version,
+        )
+        verify_nsis_installer(artifact)
         shutil.rmtree(payload)
         print(f"Created {artifact}")
         return artifact
@@ -501,6 +586,66 @@ def build_desktop(target: str) -> Path:
     shutil.rmtree(installer_output)
     print(f"Created {artifact}")
     return artifact
+
+
+def build_windows_nsis_installer(
+    gui_bundle: Path,
+    cli_executable: Path,
+    icon_path: Path,
+    artifact: Path,
+    version: str,
+) -> None:
+    """Compile the native per-user Windows installer with NSIS Modern UI."""
+
+    script = ROOT / "installers" / "windows" / "installer.nsi"
+    makensis = shutil.which("makensis")
+    if not makensis:
+        candidates = (
+            Path(os.environ.get("PROGRAMFILES(X86)", "")) / "NSIS" / "makensis.exe",
+            Path(os.environ.get("PROGRAMFILES", "")) / "NSIS" / "makensis.exe",
+        )
+        makensis = next((str(path) for path in candidates if path.is_file()), "")
+    if not makensis:
+        raise RuntimeError("NSIS makensis was not found. Install NSIS before building Windows.")
+    if artifact.exists():
+        artifact.unlink()
+    run(
+        [
+            makensis,
+            f"/DVERSION={version}",
+            f"/DGUI_PAYLOAD_DIR={gui_bundle.resolve()}",
+            f"/DGUI_BUNDLE_EXE={EXECUTABLE_BASENAME}.exe",
+            f"/DCLI_PAYLOAD={cli_executable.resolve()}",
+            f"/DAPP_ICON={icon_path.resolve()}",
+            f"/DOUTPUT_FILE={artifact.resolve()}",
+            str(script),
+        ],
+        cwd=script.parent,
+    )
+
+
+def verify_windows_gui_bundle(gui_bundle: Path) -> None:
+    """Require the self-contained onedir runtime before compiling its installer."""
+
+    executable = gui_bundle / f"{EXECUTABLE_BASENAME}.exe"
+    python_dlls = list(gui_bundle.rglob("python3*.dll"))
+    runtime_dlls = list(gui_bundle.rglob("VCRUNTIME140*.dll"))
+    if not executable.is_file() or not python_dlls or not runtime_dlls:
+        raise RuntimeError(
+            "Windows GUI bundle is incomplete: expected the application executable, "
+            "Python runtime DLL, and Visual C++ runtime DLLs"
+        )
+
+
+def verify_nsis_installer(installer: Path) -> None:
+    """Perform a non-interactive structural smoke check on the NSIS executable."""
+
+    if not installer.is_file() or installer.stat().st_size < 64 * 1024:
+        raise RuntimeError(f"NSIS did not create a usable installer: {installer}")
+    with installer.open("rb") as executable:
+        header = executable.read(2)
+    if header != b"MZ":
+        raise RuntimeError(f"Windows installer is not a PE executable: {installer}")
 
 
 def create_macos_drag_drop_dmg(app_bundle: Path, artifact: Path) -> None:
@@ -640,15 +785,34 @@ def prepare_runtime_tools(target: str) -> list[Path]:
     if staging.exists():
         shutil.rmtree(staging)
     staging.mkdir(parents=True)
-    script = (
-        "import json\n"
-        "import deno\n"
-        "from portable_ffmpeg import FFmpegVersions, get_ffmpeg\n"
-        "ffmpeg, ffprobe = get_ffmpeg(FFmpegVersions.V7)\n"
-        "print('RUNTIME_TOOLS_JSON=' + json.dumps({"
-        "'ffmpeg': str(ffmpeg), 'ffprobe': str(ffprobe), "
-        "'deno': str(deno.find_deno_bin())}))\n"
-    )
+    if target == "linux":
+        ffmpeg, ffprobe = _download_pinned_linux_ffmpeg(staging)
+        script = (
+            "import json\n"
+            "import deno\n"
+            "print('RUNTIME_TOOLS_JSON=' + json.dumps({"
+            f"'ffmpeg': {str(ffmpeg)!r}, 'ffprobe': {str(ffprobe)!r}, "
+            "'deno': str(deno.find_deno_bin())}))\n"
+        )
+    elif target == "windows":
+        ffmpeg, ffprobe = _download_pinned_windows_ffmpeg(staging)
+        script = (
+            "import json\n"
+            "import deno\n"
+            "print('RUNTIME_TOOLS_JSON=' + json.dumps({"
+            f"'ffmpeg': {str(ffmpeg)!r}, 'ffprobe': {str(ffprobe)!r}, "
+            "'deno': str(deno.find_deno_bin())}))\n"
+        )
+    else:
+        script = (
+            "import json\n"
+            "import deno\n"
+            "from portable_ffmpeg import FFmpegVersions, get_ffmpeg\n"
+            "ffmpeg, ffprobe = get_ffmpeg(FFmpegVersions.V7)\n"
+            "print('RUNTIME_TOOLS_JSON=' + json.dumps({"
+            "'ffmpeg': str(ffmpeg), 'ffprobe': str(ffprobe), "
+            "'deno': str(deno.find_deno_bin())}))\n"
+        )
     command = [
         "uv",
         "run",
@@ -698,11 +862,107 @@ def prepare_runtime_tools(target: str) -> list[Path]:
         if not source.is_file():
             raise RuntimeError(f"Required packaging tool was not found: {source}")
         destination = staging / output_name
-        shutil.copy2(source, destination)
+        if source.resolve() != destination.resolve():
+            shutil.copy2(source, destination)
         destination.chmod(destination.stat().st_mode | 0o111)
         packaged.append(destination)
     _verify_runtime_tools(packaged)
     return packaged
+
+
+def _download_pinned_linux_ffmpeg(staging: Path) -> tuple[Path, Path]:
+    """Download and safely extract the checksum-pinned static Linux runtimes."""
+
+    machine = platform.machine().casefold()
+    if machine not in {"amd64", "x86_64"}:
+        raise RuntimeError(
+            f"The pinned Linux FFmpeg runtime supports x86_64 only, not {machine or 'unknown'}"
+        )
+    archive = staging / "ffmpeg-6.0.1-amd64-static.tar.xz"
+    request = Request(
+        LINUX_FFMPEG_ARCHIVE_URL,
+        headers={"User-Agent": "YouTube-Media-Studio release builder"},
+    )
+    destinations = (staging / "ffmpeg", staging / "ffprobe")
+    try:
+        digest = hashlib.sha256()
+        with urlopen(request, timeout=120) as response, archive.open("wb") as output:
+            while chunk := response.read(1024 * 1024):
+                output.write(chunk)
+                digest.update(chunk)
+        if digest.hexdigest() != LINUX_FFMPEG_ARCHIVE_SHA256:
+            raise RuntimeError("Pinned Linux FFmpeg archive failed SHA-256 verification")
+
+        with tarfile.open(archive, "r:xz") as bundle:
+            for name, destination in zip(("ffmpeg", "ffprobe"), destinations):
+                member = next(
+                    (
+                        candidate
+                        for candidate in bundle.getmembers()
+                        if candidate.isfile() and Path(candidate.name).name == name
+                    ),
+                    None,
+                )
+                if member is None:
+                    raise RuntimeError(f"Pinned Linux FFmpeg archive is missing {name}")
+                source = bundle.extractfile(member)
+                if source is None:
+                    raise RuntimeError(f"Could not read {name} from Linux FFmpeg archive")
+                with source, destination.open("wb") as output:
+                    shutil.copyfileobj(source, output)
+                destination.chmod(destination.stat().st_mode | 0o111)
+    except Exception:
+        for destination in destinations:
+            destination.unlink(missing_ok=True)
+        raise
+    finally:
+        archive.unlink(missing_ok=True)
+    return destinations
+
+
+def _download_pinned_windows_ffmpeg(staging: Path) -> tuple[Path, Path]:
+    """Download and safely extract checksum-pinned Windows media runtimes."""
+
+    machine = platform.machine().casefold()
+    if machine not in {"amd64", "x86_64"}:
+        raise RuntimeError(
+            "The pinned Windows FFmpeg runtime supports x86_64 only, "
+            f"not {machine or 'unknown'}"
+        )
+    archive = staging / "ffmpeg-8.1.1-essentials_build.zip"
+    request = Request(
+        WINDOWS_FFMPEG_ARCHIVE_URL,
+        headers={"User-Agent": "YouTube-Media-Studio release builder"},
+    )
+    destinations = (staging / "ffmpeg.exe", staging / "ffprobe.exe")
+    try:
+        digest = hashlib.sha256()
+        with urlopen(request, timeout=120) as response, archive.open("wb") as output:
+            while chunk := response.read(1024 * 1024):
+                output.write(chunk)
+                digest.update(chunk)
+        if digest.hexdigest() != WINDOWS_FFMPEG_ARCHIVE_SHA256:
+            raise RuntimeError("Pinned Windows FFmpeg archive failed SHA-256 verification")
+
+        with zipfile.ZipFile(archive) as bundle:
+            members = bundle.namelist()
+            for name, destination in zip(("ffmpeg.exe", "ffprobe.exe"), destinations):
+                member = next(
+                    (candidate for candidate in members if Path(candidate).name == name),
+                    None,
+                )
+                if member is None:
+                    raise RuntimeError(f"Pinned Windows FFmpeg archive is missing {name}")
+                with bundle.open(member) as source, destination.open("wb") as output:
+                    shutil.copyfileobj(source, output)
+                destination.chmod(destination.stat().st_mode | 0o111)
+    except Exception:
+        for destination in destinations:
+            destination.unlink(missing_ok=True)
+        raise
+    finally:
+        archive.unlink(missing_ok=True)
+    return destinations
 
 
 def _verify_runtime_tools(tools: list[Path]) -> None:
@@ -720,6 +980,51 @@ def _verify_runtime_tools(tools: list[Path]) -> None:
                 f"Bundled runtime check failed for {binary.name}: "
                 f"{completed.stderr or completed.stdout}"
             )
+
+    ffmpeg = next(binary for binary in tools if binary.stem == "ffmpeg")
+    ffprobe = next(binary for binary in tools if binary.stem == "ffprobe")
+    with tempfile.TemporaryDirectory() as temporary:
+        sample = Path(temporary) / "runtime-smoke.wav"
+        render = subprocess.run(
+            [
+                str(ffmpeg),
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "anullsrc=r=8000:cl=mono",
+                "-t",
+                "0.05",
+                "-c:a",
+                "pcm_s16le",
+                str(sample),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        probe = subprocess.run(
+            [
+                str(ffprobe),
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                str(sample),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if render.returncode != 0 or probe.returncode != 0 or not probe.stdout.strip():
+            detail = render.stderr or probe.stderr or "no duration returned"
+            raise RuntimeError(f"Bundled FFmpeg media smoke check failed: {detail}")
 
 
 def verify_packaged_application(executable: Path) -> None:

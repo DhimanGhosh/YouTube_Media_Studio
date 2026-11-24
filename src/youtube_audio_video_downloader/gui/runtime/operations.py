@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import tempfile
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +17,10 @@ from youtube_audio_video_downloader.core.cancellation import CancellationToken
 from youtube_audio_video_downloader.domain.models import DownloadResult
 from youtube_audio_video_downloader.gui.runtime.ai_usage import operation_ai_usage
 from youtube_audio_video_downloader.services.albums.album_splitter import YouTubeAlbumSplitter
-from youtube_audio_video_downloader.services.albums.album_consolidator import consolidate_albums
+from youtube_audio_video_downloader.services.albums.album_consolidator import (
+    SUPPORTED_AUDIO_EXTENSIONS,
+    consolidate_albums,
+)
 from youtube_audio_video_downloader.services.albums.album_metadata_enricher import (
     enrich_folder_metadata,
     enrich_media_files,
@@ -91,6 +94,7 @@ class OperationSummary:
     output_path: str = ""
     completed_items: tuple[str, ...] = ()
     failed_items: tuple[str, ...] = ()
+    failure_details: dict[str, str] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -170,16 +174,34 @@ def _run_album_consolidator(
     verified_audio_paths = None
     if agentic_model and perform_enrichment:
         print("[AGENT-PRE-MOVE] Verifying audio identity before folder routing")
-        pre_move_enrichment = enrich_folder_metadata(
-            source,
-            workers=workers,
-            retries=retries,
-            allow_empty=True,
-            tracker_path=params.get("tracker_path"),
-            cancellation_token=token,
-            agentic_model=agentic_model,
-        )
-        source = resolve_album_folder_successor(source)
+        enrichment_options = {
+            "workers": workers,
+            "retries": retries,
+            "tracker_path": params.get("tracker_path"),
+            "cancellation_token": token,
+            "agentic_model": agentic_model,
+        }
+        if source.is_file():
+            pre_move_enrichment = enrich_media_files([source], **enrichment_options)
+            current_paths = tuple(
+                dict.fromkeys(
+                    path
+                    for path in (
+                        *pre_move_enrichment.updated,
+                        *pre_move_enrichment.completed,
+                    )
+                    if path.is_file()
+                )
+            )
+            if len(current_paths) == 1:
+                source = current_paths[0]
+        else:
+            pre_move_enrichment = enrich_folder_metadata(
+                source,
+                allow_empty=True,
+                **enrichment_options,
+            )
+            source = resolve_album_folder_successor(source)
         verified_audio_paths = pre_move_enrichment.completed
     report = consolidate_albums(
         source,
@@ -268,34 +290,49 @@ def _run_album_consolidator(
 def _run_album_metadata_enricher(
     params: dict[str, Any], token: CancellationToken
 ) -> OperationSummary:
-    source = resolve_album_folder_successor(
+    requested_source = Path(
         str(params.get("source_folder", "") or "")
-    )
-    report = enrich_folder_metadata(
-        source,
-        additional_folders=(str(params.get("destination_folder", "") or ""),),
-        workers=int(params.get("workers", machine_parallel_workers()) or machine_parallel_workers()),
-        retries=int(params.get("retries", 3) or 3),
-        tracker_path=params.get("tracker_path"),
-        cancellation_token=token,
-        agentic_model=str(params.get("agentic_model", "") or ""),
-        ai_enabled=bool(params.get("ai_enabled", True)),
-        force_recheck=bool(params.get("force_recheck", False)),
-    )
+    ).expanduser().resolve()
+    source_is_file = requested_source.is_file()
+    common_options = {
+        "workers": int(
+            params.get("workers", machine_parallel_workers())
+            or machine_parallel_workers()
+        ),
+        "retries": int(params.get("retries", 3) or 3),
+        "tracker_path": params.get("tracker_path"),
+        "cancellation_token": token,
+        "agentic_model": str(params.get("agentic_model", "") or ""),
+        "ai_enabled": bool(params.get("ai_enabled", True)),
+        "force_recheck": bool(params.get("force_recheck", False)),
+    }
+    if source_is_file:
+        if requested_source.suffix.casefold() not in SUPPORTED_AUDIO_EXTENSIONS:
+            raise ValueError(f"Select a supported audio file: {requested_source}")
+        report = enrich_media_files([requested_source], **common_options)
+        source = requested_source
+    else:
+        source = resolve_album_folder_successor(requested_source)
+        report = enrich_folder_metadata(
+            source,
+            additional_folders=(str(params.get("destination_folder", "") or ""),),
+            **common_options,
+        )
     reordered = 0
     failed_ordering_folders: set[Path] = set()
     album_groups: dict[tuple[Path, str], str] = {}
-    for path in report.completed:
-        try:
-            album = read_media_metadata(path).album.strip()
-        except (OSError, RuntimeError, ValueError):
-            continue
-        if album:
-            album_base, _album_year = split_album_folder_name(album)
-            album_groups.setdefault(
-                (path.parent.resolve(), album_base.casefold()), album
-            )
-    if bool(params.get("wikipedia_track_order", True)):
+    if not source_is_file:
+        for path in report.completed:
+            try:
+                album = read_media_metadata(path).album.strip()
+            except (OSError, RuntimeError, ValueError):
+                continue
+            if album:
+                album_base, _album_year = split_album_folder_name(album)
+                album_groups.setdefault(
+                    (path.parent.resolve(), album_base.casefold()), album
+                )
+    if album_groups and bool(params.get("wikipedia_track_order", True)):
         if album_groups:
             print(
                 "[PROGRESS-PHASE] Wikipedia album ordering "
@@ -324,15 +361,18 @@ def _run_album_metadata_enricher(
             ),
             verification_policy_key(params.get("agentic_model")),
         )
+    output_path = source.parent if source_is_file else source
+    if source_is_file and len(report.updated) == 1:
+        output_path = report.updated[0]
     return OperationSummary(
         operation="album_metadata_enricher",
-        total=report.scanned,
+        total=1 if source_is_file else report.scanned,
         tagged=len(report.updated),
         reordered=reordered,
         skipped=len(report.skipped),
         tracked=report.tracked,
         failed=len(report.failed),
-        output_path=str(Path(str(params.get("source_folder", "") or "")).expanduser().resolve()),
+        output_path=str(output_path),
         completed_items=tuple(path.name for path in report.updated),
         failed_items=report.failed,
     )
@@ -562,6 +602,9 @@ def _run_album(params: dict[str, Any], token: CancellationToken) -> OperationSum
         "album", results, enrichment, output_roots=[enrichment_root]
     )
     completed_albums = _completed_album_entries(params.get("input_data"), results)
+    completed_albums = tuple(name for name in completed_albums
+                             if not any(item == name or item.startswith(name + " / ")
+                                        for item in summary.failed_items))
     if completed_albums:
         summary = replace(
             summary,
@@ -618,6 +661,9 @@ def _run_jukebox(params: dict[str, Any], token: CancellationToken) -> OperationS
     completed_jukeboxes = _completed_album_entries(
         params.get("input_data"), results
     )
+    completed_jukeboxes = tuple(name for name in completed_jukeboxes
+                                if not any(item == name or item.startswith(name + " / ")
+                                           for item in summary.failed_items))
     if completed_jukeboxes:
         summary = replace(
             summary,
@@ -674,7 +720,7 @@ def _run_edit_media(params: dict[str, Any], token: CancellationToken) -> Operati
     action = str(params.get("action", "metadata") or "metadata")
     if action == "video_display":
         raise ValueError(
-            "Video crop/aspect must be saved as a Media Library playback profile"
+            "Video crop/aspect must be saved as a Media Player playback profile"
         )
     output_paths = edit_media_file(
         str(params.get("input_path", "") or ""),
@@ -843,13 +889,39 @@ def _summarize_results(
         failed_items=tuple(
             result.song for result in results if result.status.value == "failed"
         ),
+        failure_details={result.song: result.reason or "Download failed; see Live Logs."
+                         for result in results if result.status.value == "failed"},
     )
     if enrichment is None:
         return summary
+    failure_details = dict(summary.failure_details)
+    detailed = getattr(enrichment, "failure_details", ())
+    failures = detailed or tuple((Path(message.split(": ", 1)[0]), message)
+                                 for message in enrichment.failed)
+    for path, reason in failures:
+        matches = []
+        for result in results:
+            for raw_name in str(result.file_name or "").split(" + "):
+                candidate = Path(raw_name)
+                if detailed:
+                    candidates = ([candidate] if candidate.is_absolute() else
+                                  [root / candidate for root in output_roots or []])
+                    matched = any(value.resolve() == path.resolve() for value in candidates)
+                else:
+                    matched = candidate.name == path.name
+                if matched:
+                    matches.append(result.song)
+                    break
+        for name in matches or [str(path)]:
+            failure_details[name] = f"Metadata enrichment: {reason}"
+    failed_items = tuple(dict.fromkeys((*summary.failed_items, *failure_details)))
     return replace(
         summary,
         tagged=summary.tagged + len(enrichment.updated),
         failed=summary.failed + len(enrichment.failed),
+        failed_items=failed_items,
+        failure_details=failure_details,
+        completed_items=tuple(item for item in summary.completed_items if item not in failed_items),
     )
 
 

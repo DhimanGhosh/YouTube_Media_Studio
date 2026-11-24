@@ -76,6 +76,7 @@ class MetadataEnrichmentReport:
     repaired_folders: tuple[Path, ...] = ()
     completed: tuple[Path, ...] = ()
     tracked: int = 0
+    failure_details: tuple[tuple[Path, str], ...] = ()
 
 
 def enrich_folder_metadata(
@@ -203,6 +204,7 @@ def enrich_folder_metadata(
         tuple(dict.fromkeys(repaired_folders)),
         completed,
         tracked,
+        report.failure_details,
     )
 
 
@@ -290,6 +292,7 @@ def enrich_media_files(
         report.repaired_folders,
         completed,
         tracked,
+        report.failure_details,
     )
 
 
@@ -389,6 +392,7 @@ def _enrich_candidates(
     language_by_path: dict[Path, str] = {}
     skipped: list[str] = []
     failed: list[str] = []
+    failure_details: list[tuple[Path, str]] = []
     with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="metadata-enrich") as pool:
         futures = {
             pool.submit(_enrich_one_file_with_retries, path, token, retries): path
@@ -410,6 +414,7 @@ def _enrich_candidates(
             except Exception as exc:  # One lookup failure must not stop other files.
                 message = f"{path.name}: {exc}"
                 failed.append(message)
+                failure_details.append((path, str(exc)))
                 print(f"[ENRICH-FAILED] {message}")
                 continue
             if is_complete:
@@ -436,6 +441,7 @@ def _enrich_candidates(
         updated=tuple(sorted(set(updated), key=lambda path: str(path).casefold())),
         skipped=tuple(sorted(skipped, key=str.casefold)),
         failed=tuple(sorted(failed, key=str.casefold)),
+        failure_details=tuple(failure_details),
         completed=tuple(sorted(set(completed_paths), key=lambda path: str(path).casefold())),
     )
 

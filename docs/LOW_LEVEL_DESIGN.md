@@ -33,16 +33,14 @@ parse arguments and delegate; GUI pages build parameter dictionaries and delegat
 | `gui/components/widgets.py` | Reusable controls, batch editors, download telemetry panels, collapsible sections, async form helpers |
 | `gui/runtime/workers.py` | Background execution, retries, log capture, cancellation, item and structured download-progress signals |
 | `gui/runtime/operations.py` | Map operation names to service calls and normalize summaries |
-| `gui/media/media_player.py` | Library scan/search, album browser, queue, playback, curator presentation |
+| `gui/media/media_player.py` | Library scan/search, album browser, queue, playback |
 | `domain/models.py` | Immutable normalized download and selection records |
 | `loaders/json_loader.py` | Validate batch JSON and construct domain models |
 | `services/downloads/` | Search, download, parallel-fragment telemetry, extraction, range, and redownload workflows |
 | `services/albums/` | Album discovery, editing, enrichment, splitting, ordering, and organization |
 | `services/media/` | Library scanning, playlists, local editing, metadata access, and remote media |
 | `services/metadata/` | Evidence gathering, verification, tracking, release years, and enrichment |
-| `services/ai/` | Provider construction, recommendation, preflight, and adjudication agents |
-| `services/ai/builtin_runtime.py` | Pinned download verification, safe extraction, CPU thread budget, and loopback llama.cpp lifecycle |
-| `services/ai/preference_profile.py` | Versioned path-free playlist taste profile for the current user |
+| `services/ai/` | Provider construction, preflight, and adjudication agents |
 | `config/app_storage.py` | Resolve/migrate persistent application-data directories |
 | `config/runtime_tools.py` | Find bundled/system tools and hide Windows subprocess consoles |
 | `core/*` | Cancellation, exceptions, file access retries, safe filesystem names |
@@ -266,7 +264,7 @@ flowchart LR
 The verifier groups compatible independent sources, checks local conflicts, and only
 returns writable values when the proposal belongs to a supported evidence group.
 
-## 9. Media Library internals
+## 9. Media Player internals
 
 ```mermaid
 classDiagram
@@ -293,9 +291,6 @@ classDiagram
     class LibrarySearchWorker {
       +run()
     }
-    class LibraryRecommendationWorker {
-      +run()
-    }
     class AlbumGridListWidget {
       +wheelEvent(event)
     }
@@ -308,7 +303,6 @@ classDiagram
 
     MediaLibraryPage --> LibraryScanner
     MediaLibraryPage --> LibrarySearchWorker
-    MediaLibraryPage --> LibraryRecommendationWorker
     MediaLibraryPage --> AlbumGridListWidget
     MediaLibraryPage --> MediaPlaylists
     MediaLibraryPage --> QMediaPlayer
@@ -331,7 +325,7 @@ from the largest visible value in each current column.
 `RemoteMediaServer` owns only serialized state, opaque media IDs, an allowlist of indexed
 paths, a random launch PIN/token, and a callback. Its request threads never touch Qt
 widgets. `MediaLibraryPage.remote_action_requested` carries accepted actions to the GUI
-thread, where existing queue, playlist persistence, and curator methods remain the sole
+thread, where existing queue, playlist persistence, and playback methods remain the sole
 mutation paths. State publication is revisioned and protected by a re-entrant lock; the
 browser polls only until the desktop stops the server during shutdown.
 
@@ -364,8 +358,33 @@ destination files and applies the new location on restart.
 - Add a GUI operation by implementing a service, an `_run_*` adapter returning
   `OperationSummary`, and one registry entry.
 - Add an AI provider by extending `ProviderDefinition` and model construction while
-  preserving provider-specific saved drafts and the lazy built-in CPU fallback.
+  preserving provider-specific saved drafts and Ollama fallback.
 - Add a media format by extending library suffix discovery and `media_metadata` read/write
   adapters, then covering artwork and numbering semantics.
 - Add a release target in `tools/release.py` and the GitHub Actions build matrix; artifact
   naming and checksum generation must remain versioned and deterministic.
+
+
+## Stable 2.x library and download synchronization
+
+Filesystem notifications debounce into background scans; completed batch items also
+request scans. The 15-second backup timer skips busy scans. Manual Refresh interrupts
+the current scan cooperatively and schedules one replacement. Scanner completion is
+emitted even on error; interrupted/error results never replace the existing index.
+File disappearance during metadata reading is tolerated. Changed modification times
+invalidate artwork, and indexed queue entries receive fresh metadata. Queue deletion
+preserves the playing file identity and removes only successfully deleted paths.
+Metadata replacement retains file permissions but advances modification time.
+
+`services/downloads/parallel_http.py` customizes each yt-dlp instance's progressive
+HTTP downloader. A one-byte probe verifies Content-Range, then bounded workers write
+validated disjoint ranges to private staging. Ranges retry transient failures;
+cancellation removes staging; only a complete joined file is published. Unsupported
+ranges fall back to native HTTP. DASH/HLS, live streams, and FFmpeg timestamp ranges
+keep their native downloaders. Source transfer telemetry retains its actual mode at
+completion and displays individual progress only for measured byte ranges.
+
+Album batch concurrency uses one pool for whole-album jobs and individual-track jobs.
+Each workspace run has its own pool, bounded by the saved worker count. Operation
+summaries carry per-item failure reasons into expanded editor entries for retry.
+See [the user guide](USER_GUIDE.md) for the current menu and Settings navigation.

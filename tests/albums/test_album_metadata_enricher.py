@@ -1127,6 +1127,29 @@ class AlbumMetadataEnricherTest(unittest.TestCase):
         self.assertEqual(enrich_mock.call_args.kwargs["workers"], 6)
         self.assertEqual(enrich_mock.call_args.kwargs["additional_folders"], ("",))
 
+    @patch("youtube_audio_video_downloader.gui.runtime.operations.enrich_media_files")
+    def test_single_file_operation_returns_its_renamed_path(self, enrich_mock) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            original = Path(directory) / "old.mp3"
+            renamed = Path(directory) / "Song - Album (2024) - Artist.mp3"
+            original.write_bytes(b"old")
+            renamed.write_bytes(b"renamed")
+            enrich_mock.return_value = MetadataEnrichmentReport(
+                scanned=1,
+                updated=(renamed,),
+                skipped=(),
+                failed=(),
+                completed=(renamed,),
+            )
+
+            summary = execute_operation(
+                "album_metadata_enricher",
+                {"source_folder": str(original)},
+                CancellationToken(),
+            )
+
+            self.assertEqual(summary.output_path, str(renamed))
+
     @patch(
         "youtube_audio_video_downloader.gui.runtime.operations._reorder_album_from_wikipedia",
         return_value=2,

@@ -13,6 +13,24 @@ from youtube_audio_video_downloader.services.downloads.download_progress import 
 
 
 class DownloadProgressTest(unittest.TestCase):
+    def test_completion_preserves_measured_parallel_transfer_mode(self):
+        from youtube_audio_video_downloader.services.downloads.youtube_resilience import (
+            _emit_download_lifecycle,
+        )
+        options = accelerated_download_options("Album", 4)
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            options["progress_hooks"][0]({
+                "status": "finished", "filename": "album.webm",
+                "downloaded_bytes": 100, "total_bytes": 100,
+                "parallel_ranges": 4, "range_progress": [100] * 4,
+            })
+            _emit_download_lifecycle("Album", options, "finished", 100)
+        event = parse_download_event(output.getvalue().splitlines()[-1])
+        self.assertEqual(event["parallel_ranges"], 4)
+        self.assertEqual(event["connections_used"], 4)
+        self.assertEqual(event["downloaded"], 100)
+
     def test_options_enable_bounded_parallel_fragments(self) -> None:
         options = accelerated_download_options("Song", 99)
         self.assertEqual(options["concurrent_fragment_downloads"], 32)

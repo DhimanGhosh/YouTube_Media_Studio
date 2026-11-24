@@ -7,7 +7,9 @@ import os
 import tempfile
 import time
 import unittest
+from dataclasses import replace
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -16,8 +18,8 @@ import numpy as np
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtCore import (  # noqa: E402
-    QBuffer, QByteArray, QEvent, QIODevice, QPoint, QPointF, QRect, QRectF, QSettings,
-    QSize, Qt, QTimer,
+    QBuffer, QByteArray, QEvent, QIODevice, QItemSelectionModel, QPoint, QPointF,
+    QRect, QRectF, QSettings, QSize, Qt, QTimer,
 )
 from PyQt6.QtGui import QColor, QIcon, QPixmap, QWheelEvent  # noqa: E402
 from PyQt6.QtMultimedia import QAudioBuffer, QAudioFormat, QMediaPlayer  # noqa: E402
@@ -37,9 +39,6 @@ from youtube_audio_video_downloader.gui.media.media_player import (  # noqa: E40
 )
 from youtube_audio_video_downloader.gui.components.widgets import (  # noqa: E402
     BlankClickSelectionFilter,
-)
-from youtube_audio_video_downloader.services.ai.library_recommendations import (  # noqa: E402
-    LibraryRecommendation,
 )
 from youtube_audio_video_downloader.services.media.artist_canonicalizer import (  # noqa: E402
     ArtistRenameSuggestion,
@@ -130,6 +129,174 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.assertEqual(self.page.queue, [])
         self.assertEqual(self.page.playlists["List"], [])
 
+    def test_cloud_playlist_snapshot_uses_identity_instead_of_local_path(self) -> None:
+        self.page.playlists = {"Portable": [self.page.items[0].path]}
+
+        snapshot = self.page.cloud_playlist_snapshot()
+
+        self.assertEqual(snapshot["Portable"][0]["title"], "Short")
+        self.assertNotIn("path", snapshot["Portable"][0])
+
+    def test_cloud_playlist_import_matches_this_machines_library(self) -> None:
+        changed = QSignalSpy(self.page.cloud_profile_changed)
+
+        added, missing = self.page.import_cloud_playlist_entries(
+            "From cloud",
+            [
+                {"title": "Short", "artists": "Test Artist"},
+                {"title": "Not installed", "artists": "Someone"},
+            ],
+        )
+
+        self.assertEqual(added, 1)
+        self.assertEqual(missing, ["Not installed"])
+        self.assertEqual(self.page.playlists["From cloud"], [self.page.items[0].path])
+        self.assertEqual(len(changed), 1)
+
+    def test_delete_key_removes_selected_queue_track_without_deleting_file(self) -> None:
+        self.page.queue = list(self.page.items)
+        self.page._queue_source = list(self.page.items)
+        self.page.queue_index = 0
+        self.page._sync_queue_drawer()
+        self.page.show()
+        self.page._toggle_queue_drawer(True)
+        self.page.queue_list.setFocus()
+        self.page.queue_list.setCurrentRow(1)
+
+        QTest.keyClick(self.page.queue_list, Qt.Key.Key_Delete)
+        QTest.qWait(10)
+
+        self.assertEqual([item.title for item in self.page.queue], ["Short"])
+        self.assertEqual(self.page.queue_index, 0)
+
+    def test_queue_heading_totals_cached_durations_and_marks_unknown_tracks(self) -> None:
+        self.page.queue = [self.page.items[0], self.page.items[1], media("Unknown", 2020, 0)]
+        self.page._update_queue_status()
+
+        self.assertEqual(
+            self.page.queue_duration_label.text(),
+            "3 tracks • 11 min • 1 unknown",
+        )
+
+    def test_removing_current_and_earlier_queue_rows_advances_to_next(self) -> None:
+        first, second = self.page.items
+        current = media("Current", 2010, 120_000)
+        following = media("Following", 2011, 130_000)
+        self.page.queue = [first, second, current, following]
+        self.page._queue_source = list(self.page.queue)
+        self.page.queue_index = 2
+        self.page._sync_queue_drawer()
+        selection = self.page.queue_list.selectionModel()
+        flags = (
+            QItemSelectionModel.SelectionFlag.Select
+            | QItemSelectionModel.SelectionFlag.Rows
+        )
+        selection.select(self.page.queue_list.model().index(0, 0), flags)
+        selection.select(self.page.queue_list.model().index(2, 0), flags)
+
+        with patch.object(self.page, "_load_current") as load_current:
+            self.page._remove_selected_queue_entries()
+
+        self.assertEqual(
+            [item.title for item in self.page.queue],
+            ["Long", "Following"],
+        )
+        self.assertEqual(self.page.queue_index, 1)
+        load_current.assert_called_once()
+
+    def test_play_next_moves_existing_tracks_after_current_without_duplicates(self) -> None:
+        first, second = self.page.items
+        third = media("Third", 2010, 120_000)
+        self.page.queue = [first, second, third]
+        self.page._queue_source = list(self.page.queue)
+        self.page.queue_index = 0
+
+        added = self.page._play_next([third, second, third])
+
+        self.assertEqual(added, 2)
+        self.assertEqual(
+            [item.title for item in self.page.queue],
+            ["Short", "Third", "Long"],
+        )
+
+    def test_song_context_menu_queues_one_or_multiple_tracks(self) -> None:
+        first, second = self.page.items
+        current = media("Current", 2024, 180_000)
+        self.page.queue = [current]
+        self.page._queue_source = [current]
+        self.page.queue_index = 0
+
+        with patch.object(QMenu, "exec"):
+            single_menu = self.page._show_song_context_menu([first], QPoint())
+        self.assertIsNotNone(single_menu)
+        self.assertEqual(
+            [action.text() for action in single_menu.actions()[:2]],
+            ["Play next", "Queue"],
+        )
+        single_menu.actions()[1].trigger()
+        self.assertEqual([item.title for item in self.page.queue], ["Current", "Short"])
+
+        with patch.object(QMenu, "exec"):
+            multiple_menu = self.page._show_song_context_menu([second, first], QPoint())
+        self.assertIsNotNone(multiple_menu)
+        self.assertEqual(
+            [action.text() for action in multiple_menu.actions()[:2]],
+            ["Play selected next", "Queue selected"],
+        )
+        multiple_menu.actions()[0].trigger()
+        self.assertEqual(
+            [item.title for item in self.page.queue],
+            ["Current", "Long", "Short"],
+        )
+
+    def test_selected_track_play_next_buttons_are_available(self) -> None:
+        labels = {
+            button.text()
+            for button in self.page.findChildren(type(self.page.queue_toggle_button))
+        }
+
+        self.assertIn("Play selected next", labels)
+        self.assertIn("Play next", labels)
+
+    def test_now_playing_links_open_album_artist_and_exact_year(self) -> None:
+        collaboration = LibraryItem(
+            path="C:/collab.mp3",
+            title="Collab",
+            album="Other Album",
+            artists="Test Artist, Guest",
+            year=2005,
+            duration_ms=1000,
+            media_type="audio",
+            modified_ns=1,
+        )
+        self.page.items.append(collaboration)
+        self.page.apply_filters()
+
+        self.page.search.setText("Short")
+        self.page.year_from.setValue(2005)
+        self.page.year_to.setValue(2005)
+        self.page.media_type_filter.setCurrentIndex(
+            self.page.media_type_filter.findData("video")
+        )
+        self.page.apply_filters()
+        self.assertEqual(self.page.filtered, [])
+
+        self.page._now_playing_link_activated("album:Test%20Album")
+        self.assertEqual(self.page._open_album_name, "Test Album")
+        self.assertEqual(len(self.page._open_album_items), 2)
+        self.assertEqual(self.page.search.text(), "")
+        self.assertEqual(self.page.year_from.value(), 0)
+        self.assertEqual(self.page.year_to.value(), 0)
+        self.assertEqual(self.page.media_type_filter.currentIndex(), 0)
+
+        self.page._now_playing_link_activated("artist:Test%20Artist")
+        self.assertEqual(len(self.page.filtered), 3)
+
+        self.page._now_playing_link_activated("year:2005")
+        self.assertEqual(self.page.year_from.value(), 2005)
+        self.assertEqual(self.page.year_to.value(), 2005)
+        self.assertEqual({item.year for item in self.page.filtered}, {2005})
+
     def test_album_delete_warns_when_tracks_span_multiple_folders(self) -> None:
         paths = []
         items = []
@@ -200,6 +367,58 @@ class MediaPlayerPageTest(unittest.TestCase):
             self.page.settings.value("library/queue_drawer_width", type=int),
             sizes[2],
         )
+
+    def test_portrait_layout_keeps_only_the_last_opened_drawer_and_wraps_controls(self) -> None:
+        self.page.resize(1200, 1600)
+        self.page.show()
+        self.page.playlist_toggle_button.setChecked(True)
+        self.page.queue_toggle_button.setChecked(True)
+        self.assertTrue(
+            wait_until(
+                lambda: not self.page.playlist_toggle_button.isChecked()
+                and self.page._compact_library_layout
+            )
+        )
+
+        self.assertFalse(self.page.playlist_toggle_button.isChecked())
+        self.assertTrue(self.page.queue_toggle_button.isChecked())
+        self.assertTrue(self.page._compact_library_layout)
+        self.assertLess(
+            self.page.folder_controls.mapTo(self.page, QPoint(0, 0)).y(),
+            self.page.search_controls.mapTo(self.page, QPoint(0, 0)).y(),
+        )
+        action_index = self.page.track_actions_layout.indexOf(
+            self.page.add_selected_to_playlist_button
+        )
+        row, _column, _row_span, _column_span = (
+            self.page.track_actions_layout.getItemPosition(action_index)
+        )
+        self.assertGreater(row, 0)
+        volume_row, *_rest = self.page.player_grid.getItemPosition(
+            self.page.player_grid.indexOf(self.page.volume)
+        )
+        controls_row, *_rest = self.page.player_grid.getItemPosition(
+            self.page.player_grid.indexOf(self.page.player_controls)
+        )
+        self.assertGreater(volume_row, controls_row)
+        self.assertGreater(self.page.player_card.minimumHeight(), 166)
+
+        self.page.playlist_toggle_button.setChecked(True)
+        self.assertTrue(
+            wait_until(lambda: not self.page.queue_toggle_button.isChecked())
+        )
+        self.assertTrue(self.page.playlist_toggle_button.isChecked())
+        self.assertFalse(self.page.queue_toggle_button.isChecked())
+
+        self.page.playlist_toggle_button.setChecked(False)
+        self.assertTrue(wait_until(lambda: not self.page._compact_library_layout))
+        volume_row, *_rest = self.page.player_grid.getItemPosition(
+            self.page.player_grid.indexOf(self.page.volume)
+        )
+        controls_row, *_rest = self.page.player_grid.getItemPosition(
+            self.page.player_grid.indexOf(self.page.player_controls)
+        )
+        self.assertEqual(volume_row, controls_row)
 
     def test_artist_and_track_sections_are_horizontally_resizable(self) -> None:
         self.assertIs(
@@ -498,18 +717,102 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.page._scan_finished(list(self.page.items))
         self.page.apply_filters.assert_not_called()
 
+    def test_future_only_year_metadata_stays_clamped_to_current_year(self) -> None:
+        current_year = datetime.now().year
+
+        self.page._scan_finished([media("Future", current_year + 50, 1_000)])
+
+        self.assertEqual(self.page.year_from.maximum(), current_year)
+        self.assertEqual(self.page.year_to.maximum(), current_year)
+        self.assertEqual(
+            self.page.year_from.lineEdit().placeholderText(),
+            f"From {current_year}",
+        )
+
     def test_refresh_requested_during_scan_is_queued(self) -> None:
         self.page._scanner_thread = Mock()
 
         self.page.refresh_library()
 
         self.assertTrue(self.page._scan_refresh_pending)
-        self.assertEqual(self.page.library_refresh_button.text(), "Refresh queued")
+        self.assertTrue(self.page.library_refresh_button.isEnabled())
+        self.page._scanner_thread.requestInterruption.assert_called_once()
+        self.assertEqual(self.page.library_refresh_button.text(), "Refresh")
         with patch.object(QTimer, "singleShot") as single_shot:
             self.page._scanner_thread_finished()
         single_shot.assert_called_once_with(0, self.page.refresh_library)
         self.assertIsNone(self.page._scanner_thread)
         self.assertTrue(self.page.library_refresh_button.isEnabled())
+
+    def test_scan_exception_releases_worker_and_refresh_can_retry(self) -> None:
+        with patch.object(self.page, "folders", return_value=[self.temporary.name]), patch(
+            "youtube_audio_video_downloader.gui.media.media_player.scan_library",
+            side_effect=RuntimeError("Unreadable folder"),
+        ):
+            original = list(self.page.items)
+            self.page.refresh_library()
+            self.assertTrue(wait_until(lambda: self.page._scanner_thread is None))
+            self.assertEqual(self.page.items, original)
+            self.assertTrue(self.page.library_refresh_button.isEnabled())
+            self.assertIn("Unreadable folder", self.page.queue_status.text())
+        with patch.object(self.page, "folders", return_value=[self.temporary.name]):
+            self.page.library_refresh_button.click()
+            self.assertTrue(wait_until(lambda: self.page._scanner_thread is None))
+            self.assertEqual(self.page.items, [])
+
+    def test_scan_replaces_stale_queue_metadata_and_artwork(self) -> None:
+        old = self.page.items[0]
+        updated = replace(old, modified_ns=2, title="Edited title")
+        self.page.queue = [old]
+        self.page._queue_source = [old]
+        self.page.queue_index = 0
+        self.page._artwork_cache[old.path] = QIcon()
+        with patch.object(self.page, "_set_now_playing_art") as art:
+            self.page._scan_finished([updated])
+        self.assertNotIn(old.path, self.page._artwork_cache)
+        self.assertEqual(self.page.queue, [updated])
+        art.assert_called_once_with(updated)
+
+    def test_filesystem_watcher_syncs_new_and_deleted_tracks_without_manual_refresh(self) -> None:
+        self.page.refresh_timer.stop()
+        folder = Path(self.temporary.name) / "album"
+        folder.mkdir()
+        with patch.object(self.page, "folders", return_value=[self.temporary.name]):
+            self.page.refresh_library()
+            self.assertTrue(wait_until(lambda: self.page._scanner_thread is None))
+            song = folder / "new.mp3"
+            song.write_bytes(b"test media")
+            self.assertTrue(wait_until(lambda: any(item.path == str(song.resolve())
+                                                 for item in self.page.items)))
+            song.unlink()
+            self.assertTrue(wait_until(lambda: not self.page.items))
+
+
+    def test_queue_duration_rounds_up_to_minutes_even_above_one_hour(self) -> None:
+        for milliseconds, expected in [(240000, 4), (247000, 5), (1739000, 29),
+                                       (3600000, 60), (3600001, 61)]:
+            self.page.queue = [media("Song", 2020, milliseconds)]
+            self.page._update_queue_duration_label()
+            self.assertEqual(self.page.queue_duration_label.text(), f"1 track • {expected} min")
+
+    def test_permanent_delete_before_current_track_preserves_playing_identity(self) -> None:
+        tracks = []
+        for index in range(5):
+            path = Path(self.temporary.name) / f"{index}.mp3"
+            path.write_bytes(b"media")
+            tracks.append(replace(media(str(index), 2020, 1000), path=str(path.resolve())))
+        self.page.items = tracks
+        self.page.queue = list(tracks)
+        self.page._queue_source = list(tracks)
+        self.page.queue_index = 3
+        with patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes), \
+                patch.object(QMessageBox, "information"), patch.object(self.page, "refresh_library"), \
+                patch.object(self.page, "stop") as stop:
+            self.page._permanently_delete_media([tracks[1]])
+        self.assertEqual(self.page.queue_index, 2)
+        self.assertEqual(self.page.queue[2], tracks[3])
+        self.assertFalse(Path(tracks[1].path).exists())
+        stop.assert_not_called()
 
     def test_refresh_without_folders_clears_stale_library_rows(self) -> None:
         self.assertTrue(self.page.items)
@@ -714,6 +1017,85 @@ class MediaPlayerPageTest(unittest.TestCase):
                 ]
             ),
             2,
+        )
+
+    def test_album_context_menu_appends_all_tracks_from_both_album_views(self) -> None:
+        current = media("Already Playing", 2024, 180_000)
+        pending = media("Already Queued", 2024, 180_000)
+        album_tracks = list(self.page.items)
+        self.page._load_current = Mock()
+
+        for opened in (False, True):
+            with self.subTest(opened=opened):
+                self.page.queue = [current, pending]
+                self.page._queue_source = list(self.page.queue)
+                self.page.queue_index = 0
+                if opened:
+                    self.page.open_album(self.page.albums.item(0))
+                    self.page.album_tracks.selectRow(0)
+
+                def trigger_queue(menu, _position):
+                    self.assertEqual(
+                        [action.text() for action in menu.actions()[:2]],
+                        ["Play album next", "Queue album"],
+                    )
+                    menu.actions()[1].trigger()
+
+                with patch.object(QMenu, "exec", new=trigger_queue):
+                    if opened:
+                        self.page._show_open_album_context_menu(QPoint())
+                    else:
+                        entry = self.page.albums.item(0)
+                        position = self.page.albums.visualItemRect(entry).center()
+                        self.page._show_album_context_menu(position)
+
+                self.assertEqual(self.page.queue, [current, pending, *album_tracks])
+                self.assertEqual(self.page._queue_source, self.page.queue)
+                self.assertEqual(self.page.queue_index, 0)
+                self.assertEqual(self.page.queue_list.count(), 4)
+                self.page._load_current.assert_not_called()
+
+    def test_album_context_menu_queue_handles_empty_queue_and_existing_tracks(self) -> None:
+        tracks = list(self.page.items)
+
+        def trigger_queue(menu, _position):
+            menu.actions()[1].trigger()
+
+        self.page._load_current = Mock()
+        with patch.object(QMenu, "exec", new=trigger_queue):
+            for _ in range(2):
+                self.page._show_album_folder_context_menu("Test Album", [], tracks, QPoint())
+
+        self.assertEqual(self.page.queue, tracks)
+        self.assertEqual(self.page._queue_source, tracks)
+        self.assertEqual(self.page.queue_index, 0)
+        self.page._load_current.assert_not_called()
+
+    def test_album_play_selected_next_preserves_selected_row_order(self) -> None:
+        current = media("Already Playing", 2024, 180_000)
+        self.page.queue = [current]
+        self.page._queue_source = [current]
+        self.page.queue_index = 0
+        self.page.open_album(self.page.albums.item(0))
+        selection = self.page.album_tracks.selectionModel()
+        flags = (
+            QItemSelectionModel.SelectionFlag.Select
+            | QItemSelectionModel.SelectionFlag.Rows
+        )
+        selection.select(self.page.album_tracks.model().index(1, 0), flags)
+        selection.select(self.page.album_tracks.model().index(0, 0), flags)
+        selected_titles = [
+            item.title
+            for item in self.page._selected_items(
+                self.page.album_tracks, self.page._open_album_items
+            )
+        ]
+
+        self.page.play_album_tracks("next", selected_only=True)
+
+        self.assertEqual(
+            [item.title for item in self.page.queue],
+            ["Already Playing", *selected_titles],
         )
 
     def test_queue_drawer_reorders_tracks_and_preserves_current_identity(self) -> None:
@@ -1025,24 +1407,6 @@ class MediaPlayerPageTest(unittest.TestCase):
             page.shutdown()
             page.deleteLater()
 
-    def test_phone_curator_request_uses_desktop_ai_configuration(self) -> None:
-        self.page.request_ai_recommendations = Mock()
-
-        self.page._handle_remote_action(
-            {
-                "type": "curate",
-                "query": "relaxing Bengali songs from the 2000s",
-                "limit": 12,
-            }
-        )
-
-        self.assertTrue(self.page.recommendation_ai_enabled.isChecked())
-        self.assertEqual(
-            self.page.recommendation_request.text(),
-            "relaxing Bengali songs from the 2000s",
-        )
-        self.assertEqual(self.page.recommendation_limit.value(), 12)
-        self.page.request_ai_recommendations.assert_called_once_with()
 
     def test_playlist_filter_searches_metadata_and_reorders_visible_matches(self) -> None:
         items = [
@@ -1321,141 +1685,6 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.assertEqual(len(online_spy), 1)
         self.assertEqual(online_spy[0][0], "Definitely missing")
 
-    def test_ai_recommendations_use_global_model_and_render_grounded_local_result(self) -> None:
-        local_path = Path(self.temporary.name) / "recommended.mp3"
-        local_path.write_bytes(b"audio")
-        item = LibraryItem(
-            str(local_path), "Calm Song", "Evening", "Test Artist",
-            2022, 1000, "audio", 1,
-        )
-        self.page.items = [item]
-        self.page.playlists = {"Calm favourites": [item.path]}
-        self.page.settings.setValue("defaults/agentic_model", "library-agent:test")
-        self.page.ai_identity_resolver = Mock(
-            return_value=("Groq", "openai/gpt-oss-120b")
-        )
-        expected = [LibraryRecommendation(item, "Artist matches the request", True)]
-        with patch(
-            "youtube_audio_video_downloader.gui.media.media_player.recommend_library_tracks",
-            return_value=expected,
-        ) as recommendation_mock:
-            self.page.recommendation_request.setText("calm Test Artist songs")
-            self.page.request_ai_recommendations()
-            self.assertTrue(
-                wait_until(
-                    lambda: self.page.recommendations.isVisibleTo(self.page)
-                    and self.page.recommendation_button.isEnabled()
-                ),
-                "recommendations did not render and finish worker cleanup",
-            )
-
-        recommendation_mock.assert_called_once()
-        self.assertEqual(
-            recommendation_mock.call_args.kwargs["model"], "openai/gpt-oss-120b"
-        )
-        self.page.ai_identity_resolver.assert_called_once_with()
-        self.assertEqual(recommendation_mock.call_args.kwargs["limit"], 10)
-        self.assertEqual(
-            recommendation_mock.call_args.kwargs["playlists"],
-            {"Calm favourites": [item.path]},
-        )
-        self.assertTrue(self.page.recommendations.isVisibleTo(self.page))
-        self.assertIn("[LOCAL] Calm Song", self.page.recommendations.item(0).text())
-        self.assertTrue(self.page.recommendation_button.isEnabled())
-        self.assertEqual(self.page.recommendation_button.text(), "Find in my library")
-
-    def test_prompt_result_count_overrides_visible_recommendation_limit(self) -> None:
-        self.page.recommendation_limit.setValue(5)
-        self.page.recommendation_request.setText("slow bengali songs, return 12 results")
-        with patch(
-            "youtube_audio_video_downloader.gui.media.media_player.recommend_library_tracks",
-            return_value=[],
-        ) as recommendation_mock:
-            self.page.request_ai_recommendations()
-            QTest.qWait(100)
-
-        self.assertEqual(recommendation_mock.call_args.kwargs["limit"], 12)
-
-    def test_prompt_result_counts_cover_noun_pattern_clamping_and_years(self) -> None:
-        cases = (
-            ("find 3 tracks", 3),
-            ("40 songs", 20),
-            ("0 results", 1),
-            ("songs from 1999", 5),
-        )
-        self.page.recommendation_limit.setValue(5)
-        for request, expected in cases:
-            with self.subTest(request=request), patch(
-                "youtube_audio_video_downloader.gui.media.media_player.recommend_library_tracks",
-                return_value=[],
-            ) as recommendation_mock:
-                self.page.recommendation_request.setText(request)
-                self.page.request_ai_recommendations()
-                QTest.qWait(100)
-                self.assertEqual(
-                    recommendation_mock.call_args.kwargs["limit"], expected
-                )
-
-    def test_mix_appends_verified_continuation_without_duplicates(self) -> None:
-        exact = self.page.items[0]
-        continuation = self.page.items[1]
-        self.page._replace_queue([exact])
-        self.page._last_recommendations = [
-            LibraryRecommendation(exact, "Matches Bengali, slow", True)
-        ]
-        self.page._finish_recommendation_mix(
-            [
-                LibraryRecommendation(exact, "Matches Bengali", True),
-                LibraryRecommendation(continuation, "Matches Bengali", True),
-            ],
-            "",
-        )
-
-        self.assertEqual(self.page.queue, [exact, continuation])
-        self.assertIn("related track(s) queued", self.page.recommendation_status.text())
-
-    def test_mix_handles_missing_exact_files_and_empty_continuation(self) -> None:
-        missing = self.page.items[0]
-        self.page._last_recommendations = [
-            LibraryRecommendation(missing, "Matches Bengali", False)
-        ]
-        self.page.start_recommendation_mix()
-        self.assertEqual(
-            self.page.recommendation_status.text(), "Matching local files are missing"
-        )
-
-        self.page.queue = [self.page.items[1]]
-        self.page._queue_source = [self.page.items[1]]
-        self.page.queue_index = 0
-        self.page._finish_recommendation_mix([], "")
-        self.assertEqual(self.page.queue, [self.page.items[1]])
-        self.assertIn("Mix playing 1 track(s)", self.page.recommendation_status.text())
-
-    def test_ai_suggestions_can_be_cleared_and_routed_to_youtube(self) -> None:
-        self.page.recommendation_request.setText("Atif songs")
-        self.page.recommendations.addItem("old result")
-        self.page.recommendations.setVisible(True)
-        online_spy = QSignalSpy(self.page.request_search_song)
-
-        self.page.search_recommendation_online()
-        self.assertEqual(len(online_spy), 1)
-        self.assertEqual(online_spy[0][0], "Atif songs")
-
-        self.page.clear_ai_recommendations()
-        self.assertEqual(self.page.recommendation_request.text(), "")
-        self.assertEqual(self.page.recommendations.count(), 0)
-        self.assertFalse(self.page.recommendations.isVisible())
-        self.assertEqual(self.page.recommendation_status.text(), "AI idle")
-
-    def test_no_local_ai_match_stays_in_library_until_online_search_is_requested(self) -> None:
-        self.page.recommendation_request.setText("Atif songs")
-        self.page._last_recommendation_request = "Atif songs"
-        online_spy = QSignalSpy(self.page.request_search_song)
-        self.page._recommendations_finished([], "")
-        QTest.qWait(10)
-        self.assertEqual(len(online_spy), 0)
-        self.assertEqual(self.page.recommendation_status.text(), "No matching local tracks")
-        self.assertIn("Search YouTube too", self.page.recommendations.item(0).text())
 
     def test_clicking_seekbar_animates_to_clicked_position_without_blocking(self) -> None:
         slider = self.page.position

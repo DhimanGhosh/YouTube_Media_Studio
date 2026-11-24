@@ -1,8 +1,8 @@
 # YouTube Media Studio user guide
 
 This is the complete desktop-application guide for a first-time user. It covers every
-sidebar workspace, the controls inside each workspace, automatic internet and AI
-assistance, the local Media Library, phone access, playback, and the checks to perform
+menu-accessible workspace, the controls inside each workspace, automatic internet and AI
+assistance, the local Media Player, phone access, playback, and the checks to perform
 before changing files. No Python or command-line knowledge is required.
 
 For installation packages and platform requirements, see the
@@ -14,7 +14,7 @@ For installation packages and platform requirements, see the
 - [First-time setup](#first-time-setup)
 - [How the interface works](#how-the-interface-works)
 - [Screen reference](#screen-reference)
-- [Configure Global Settings](#configure-global-settings)
+- [Configure application Settings](#configure-application-settings)
 - [How AI and internet evidence work](#how-ai-and-internet-evidence-work)
 - [Use Dashboard](#use-dashboard)
 - [Find and download a song](#find-and-download-a-song)
@@ -26,7 +26,7 @@ For installation packages and platform requirements, see the
 - [Edit an album folder](#edit-an-album-folder)
 - [Enrich and organize an existing music folder](#enrich-and-organize-an-existing-music-folder)
 - [Use Utilities](#use-utilities)
-- [Use the local media library](#use-the-local-media-library)
+- [Use the local media player](#use-the-local-media-player)
 - [Read Live Logs](#read-live-logs)
 - [File-safety rules](#file-safety-rules)
 - [Troubleshooting](#troubleshooting)
@@ -47,23 +47,42 @@ borders so the application's own labels remain visible. The numbered table immed
 after an image explains the matching area. A screenshot shows where a control is; the
 text remains the authoritative description of what it does.
 
+## Your first album in five steps
+
+1. Open **Organize → Album Splitter** from the menu at the top.
+2. Enter the album name and use **Auto fill album**; review the songs it finds. For a
+   jukebox URL, choose **YouTube URL** under Source media. For a file already on your
+   computer, choose **Local file** and use **Browse**.
+3. Choose an output folder with **Browse**. Check the songs you want and start the job
+   with **Start album split**. You can open another workspace while it works.
+4. Click **Media Player** at the top right. Add the output folder with **+** (add folder)
+   if it is not already listed. Completed songs appear automatically; **Refresh**
+   forces another scan at any time.
+5. Open an album, select songs, and use the play or queue actions. The queue drawer
+   lets you reorder songs while the current song continues playing.
+
+If an album says **Needs attention**, read the error shown directly below that album's header.
+It means one or more downloads or processing steps failed. Successful songs remain
+available. Fix the named link or setting, leave unfinished songs checked, then run
+again. **View → Live Logs** contains the detailed error and recovery attempts.
+
 ## First-time setup
 
 1. Install and start **YouTube Media Studio** from the Windows Start menu, macOS
    Applications, or the Linux application menu.
-2. Open **Global Settings**. Select the application data directory, output quality,
+2. Open **File → Settings…**. Select the application data directory, output quality,
    worker count, network retry behavior, and playback seek interval.
 3. Decide whether AI should be enabled by default. Ordinary deterministic downloading,
    editing, timestamp parsing, and playback do not require AI.
-4. If AI is needed, the default **Built-in CPU AI** requires no setup. Its approximately
-   630 MB verified model/runtime download starts on first AI use. Advanced users can
-   instead choose Ollama or a hosted provider. Optionally add a SerpApi key for
-   additional Google Search and Google Images evidence.
+4. If AI is needed, choose a provider and model. Hosted providers require the user's own
+   key; local Ollama does not. Optionally add a SerpApi key for additional Google Search
+   and Google Images evidence.
 5. Select **Save and apply defaults**.
-6. Open **Search Song** when only a plain-language description is known. Open a
-   downloader or splitter directly when the source URL is already known.
-7. Watch **Dashboard** for overall progress and **Live Logs** for the result of each
-   individual item.
+6. Choose **Download → Search Song** when only a plain-language description is known.
+   Open a downloader or splitter directly from **Download** or **Organize** when the
+   source URL is already known.
+7. Use **View → Dashboard** for overall progress and **View → Live Logs** for the result
+   of each individual item.
 
 The installer bundles the desktop runtime and required media tools. Normal desktop use
 does not require a separate Python, FFmpeg, FFprobe, Deno, or yt-dlp installation.
@@ -93,9 +112,13 @@ open /Applications/YouTubeMediaStudio.app
 
 ## How the interface works
 
-The sidebar selects one of 14 workspaces. A selected workspace remains available while
-other jobs run in the background. The application disables only the run button for a
-workspace that already has a job, preventing that same task from being started twice.
+The standard top menu bar opens every workspace. **Download** contains search and
+download tools; **Organize** contains splitters, reorder, consolidation, and utilities;
+**Edit** contains file and album editors; **View** contains Dashboard and Live Logs; and
+the dedicated **Media Player** action opens playback directly. Menu icons mirror each tool, and logical separators divide related
+commands. A selected workspace remains available while other jobs run in the background.
+The application disables only the run button for a workspace that already has a job,
+preventing that same task from being started twice.
 
 - **Browse** selects a local file or folder without typing its path.
 - **Use AI for this task** is saved separately for each supported workspace.
@@ -104,14 +127,14 @@ workspace that already has a job, preventing that same task from being started t
 - **Open output** opens the latest completed output folder.
 - The bottom **Stop** button requests cancellation of every active workspace job. Wait
   for the cancellation result in Live Logs before changing or deleting involved files.
-- **Version x.y.z** under the sidebar is the installed application version. Include it
-  in a bug report.
+- **Version x.y.z** below the compact visualizer in the bottom status area is the
+  installed application version. Include it in a bug report.
 - Form state, output folders, statuses, and history are restored after restart when
-  workspace persistence is enabled in Global Settings.
+  workspace persistence is enabled in **File → Settings…**.
 
 ## Screen reference
 
-| Sidebar page | Primary purpose | Detailed section |
+| Menu workspace | Primary purpose | Detailed section |
 | --- | --- | --- |
 | **Dashboard** | Monitor session activity and open common workspaces. | [Use Dashboard](#use-dashboard) |
 | **Search Song** | Turn a plain-language request into previewable YouTube matches. | [Find and download a song](#find-and-download-a-song) |
@@ -125,50 +148,95 @@ workspace that already has a job, preventing that same task from being started t
 | **Album Consolidator** | Enrich metadata, then route verified tracks to album folders. | [Enrich and organize](#enrich-and-organize-an-existing-music-folder) |
 | **Utilities** | Format artist credits and parse timestamp text into JSON. | [Use Utilities](#use-utilities) |
 | **Live Logs** | Inspect, copy, clear, or save detailed operation output. | [Read Live Logs](#read-live-logs) |
-| **Global Settings** | Configure shared processing, playback, AI, privacy, and storage defaults. | [Configure Global Settings](#configure-global-settings) |
-| **Media Library** | Scan, filter, play, curate, queue, playlist, and serve local media. | [Use the local media library](#use-the-local-media-library) |
+| **Media Player** | Scan, filter, play, queue, playlist, and serve local media. | [Use the local media player](#use-the-local-media-player) |
 
-## Configure Global Settings
+## Configure application Settings
 
-Global Settings controls values shared by the other workspaces. Expand only the group
-being changed, then select **Save and apply defaults**. **Reset app** clears tool forms,
+Choose **File → Settings…** or press `Ctrl+,` to open the separate, resizable Settings
+window. Select a category on the left, edit its controls on the right, then select
+**Save and apply defaults**. The processing workspaces remain available behind this
+non-modal window. **Reset app** clears tool forms,
 saved provider credentials/models, saved state, and restored defaults; it does not act as
-a media-library deletion command.
+a media-player deletion command. Saved playlists and media files are preserved even
+when configured library folders are cleared.
 
-![Global processing settings](media/user-guide/workspaces/global-settings-processing.png)
+The category list contains Software updates, Connected services, Batch processing and
+network, Audio and metadata, Media playback, AI providers and online evidence,
+Application behavior and privacy, and Storage and appearance.
 
-| Callout | Area | Use |
-| --- | --- | --- |
-| 1 | Settings actions | Reset all application settings or save the edited defaults. |
-| 2 | Batch processing and network | Set parallel item workers, per-download connections, randomized delays, retries, retry delay, and the longer rate-limit wait. |
-| 3 | Audio and metadata defaults | Expand for MP3 bitrate, sample rate, and Wikipedia track-order behavior. |
-| 4 | Media Playback | Expand for audio/video seek controls and video display memory. |
-| 5 | AI providers and online evidence | Expand for provider, model, credentials, Ollama fallback, and SerpApi. |
+### Settings screen tour
+
+The left category list switches between these screens. In every Settings screenshot,
+**1** is the reset/save area and **2** is the selected category's controls. Choose
+**Save and apply defaults** after editing. Close the window to return to your job.
+
+| Category | What to use it for |
+| --- | --- |
+| Software updates | Check the installed version, choose the stable 2.x channel, and install an update. |
+| Connected services | Optional Google sign-in, backup, restore, and playlist import. |
+| Batch processing and network | Parallel workers, per-download connections, delays, and retries. |
+| Audio and metadata | Sound quality, album ordering, and silence-splitting defaults. |
+| Media playback | Seek distance and remembered video framing. |
+| AI providers and online evidence | Optional provider, model, and credentials. |
+| Application behavior and privacy | Save workspace state and control optional diagnostics. |
+| Storage and appearance | Application data location and appearance preferences. |
+
+![Batch processing and network](media/user-guide/workspaces/global-settings-processing.png)
+
+![Audio and metadata](media/user-guide/workspaces/global-settings-audio-playback.png)
+
+![Media playback](media/user-guide/workspaces/global-settings-playback.png)
+
+![AI providers](media/user-guide/workspaces/global-settings-ai.png)
+
+![Application behavior and privacy](media/user-guide/workspaces/global-settings-behavior-storage.png)
+
+![Storage and appearance](media/user-guide/workspaces/global-settings-storage.png)
+
+![Connected services](media/user-guide/workspaces/global-settings-services.png)
+
+![Software updates](media/user-guide/workspaces/global-settings-updates.png)
+
+### Google Cloud Profile
+
+Google sign-in is optional and is not used for application updates. Under **Connected
+services**, select the Google OAuth desktop-client JSON supplied for the application,
+then choose **Sign in with Google**. Authorization opens in the system browser; the
+refresh token is kept in the operating-system credential vault.
+
+- **Back up now** writes portable settings and playlist identities to the application's
+  private Google Drive app-data area.
+- **Restore** applies those settings and matches playlist identities against media
+  indexed on this machine. Restart to apply every restored preference.
+- **Automatically back up** syncs later playlist and saved-setting changes.
+- **Import YouTube playlist** lists the signed-in user's playlists and imports locally
+  matched songs into the player.
+- **Disconnect** revokes the account token and removes it from this device.
+
+The backup never contains media files, local paths, API/provider keys, OAuth tokens, or
+crash reports. Tracks unavailable in the current machine's library are reported and are
+not downloaded automatically. Consequently, users may use the same Google account on
+multiple machines while keeping each machine's media storage independent.
 
 ### Batch processing and network
 
 - **Parallel workers** controls how many independent items can run together, up to the
   safe machine-specific maximum shown by the control.
-- **Connections per download** controls how many fragments one media item may transfer
-  concurrently (1–32, default 8). DASH/HLS sources use genuine parallel fragment
-  connections; a progressive source that cannot be segmented accurately uses one
-  stream. This is separate from Parallel workers, so their product is the potential
-  upper bound on simultaneous network connections.
+- **Connections per download** sets the maximum connections for each source (1–32,
+  default 8). Ordinary HTTP media uses parallel byte ranges after the server proves
+  it supports them; DASH/HLS uses parallel fragments. Small files, live streams,
+  timestamp-only downloads, and servers that reject ranges can use one connection.
+  The transfer panel explains a range fallback. Parallel workers controls separate
+  albums/tracks; connections controls pieces of each source. For example, 3 workers
+  and 4 connections can transfer 3 independent items with up to 12 connections.
+  Separate workspace jobs each have their own worker pool.
 - **Minimum delay / Maximum delay** define randomized pacing between download requests.
 - **Retries** is the bounded number of attempts for retryable work.
 - **Retry delay** is the normal wait between failed attempts.
 - **Rate-limit wait** is the longer pause used when a service asks the app to slow down.
-
-![Audio and playback settings](media/user-guide/workspaces/global-settings-audio-playback.png)
-
-| Callout | Area | Use |
-| --- | --- | --- |
-| 1 | Settings actions | Save the values after editing. |
-| 2 | Batch processing | Collapsed here; expand to change network/concurrency defaults. |
-| 3 | Audio and metadata defaults | Select MP3 bitrate, sample rate, and verified Wikipedia ordering. |
-| 4 | Media Playback | Set the `<<`/`>>` and keyboard seek interval and choose whether crop/aspect carries to the next video. |
-| 5 | AI and online evidence | Collapsed provider group. |
-| 6 | Application behavior and privacy | Collapsed state, diagnostics, and suggestion group. |
+- **Downloader diagnostics…** reports yt-dlp age, FFmpeg, FFprobe, Deno, and
+  detected browser-cookie support. Source checkouts can update yt-dlp directly.
+  Packaged installations receive downloader updates through app releases.
 
 ### Audio, metadata, and playback
 
@@ -176,20 +244,17 @@ a media-library deletion command.
 - **Default sample rate** offers 44.1 or 48 kHz.
 - **Album track ordering** uses verified Wikipedia ordering and compresses a downloaded
   subset to `1..N` when enabled.
+- **Album silence threshold**, **Album minimum silence**, and **Album minimum track**
+  control fallback silence detection when explicit timestamps are unavailable.
+- **Album trim padding** retains a small amount around detected boundaries. These four
+  saved defaults apply to every Album Splitter job and are no longer repeated in its
+  workspace form.
 - **Seek interval** is used by the `<<` and `>>` player buttons and the Left/Right keys.
   Shift+Left/Right seeks twice this number.
 - **Crop/aspect memory** off means each newly loaded video starts at Default. On carries
   the last display choices to the next video and the next application session.
 
-![AI provider settings](media/user-guide/workspaces/global-settings-ai.png)
-
-| Callout | Area | Use |
-| --- | --- | --- |
-| 1 | Settings actions | Apply the selected provider and credentials. |
-| 2–4 | Other collapsed groups | Processing, audio, and playback defaults remain independent. |
-| 5 | AI providers and online evidence | Choose built-in CPU AI, an override provider, optional Ollama fallback, managed model actions, and optional SerpApi. |
-
-Supported primary providers are Built-in CPU AI, Ollama, NVIDIA NIM, OpenAI, Anthropic, Google Gemini,
+Supported primary providers are Ollama, NVIDIA NIM, OpenAI, Anthropic, Google Gemini,
 Groq, Hugging Face Inference, OpenRouter, OpenCode Zen, and a custom
 OpenAI-compatible endpoint. Each provider retains its own draft key, model, and base
 URL when the provider selector changes. Keys are password-masked and never printed in
@@ -197,26 +262,22 @@ operation logs.
 
 - **Provider base URL** is normally filled automatically. Enter it for a custom
   OpenAI-compatible endpoint.
-- **Built-in AI assets** reports whether the private CPU model is installed. Install or
-  repair runs in the background; Remove model keeps preferences and downloads it again
-  automatically if a later AI request needs it.
-- **Optional Ollama override** is used directly when Ollama is primary or before
-  built-in AI after a hosted provider fails. Leave it blank when Ollama is not installed.
+- **Ollama local / fallback** is the local model used directly when Ollama is primary or
+  after a hosted provider fails.
 - **SerpApi key** does not run a language model. It supplies optional Google Search and
   Google Images evidence when built-in catalog sources are insufficient.
-
-![Behavior and storage settings](media/user-guide/workspaces/global-settings-behavior-storage.png)
-
-| Callout | Area | Use |
-| --- | --- | --- |
-| 1 | Settings actions | Save or reset. |
-| 2–5 | Other setting groups | Expand any independent group without losing values in another. |
-| 6 | Application behavior and privacy | Restore workspace state, opt into local crash reports, and set the Media Library suggestion count. |
-| 7 | Storage and appearance | Move the application-data folder, open it, and tune the live glass “Crystalness” level. |
 
 Changing the application-data folder safely copies existing application data and takes
 effect on the next start. Crash reporting is local and opt-in. **Open data folder** opens
 the exact active location.
+
+Application updates use public GitHub Releases and require no Google sign-in. The
+stable 2.x channel is used for all updates.
+Use the dedicated, expanded **Software updates** section or choose **Help → Check for
+Updates…** from the application menu bar. Every normal application launch also starts
+the same check on a background thread. It stays silent when the installed version is
+current and automatically opens the update dialog when a newer release exists on the
+selected channel.
 
 ## How AI and internet evidence work
 
@@ -224,9 +285,8 @@ AI is optional and never replaces the application's evidence and safety rules.
 
 1. A workspace with **Use AI for this task** enabled may ask the selected provider to
    understand, preflight, extract, rank, or verify information.
-2. A hosted-provider failure falls back to an explicitly configured Ollama model and
-   then the managed built-in CPU model. Ollama itself also falls back to built-in AI.
-3. If no model is usable, the workflow continues with deterministic rules and
+2. A hosted-provider failure falls back to the configured Ollama model when available.
+3. If neither model is usable, the workflow continues with deterministic rules and
    supported internet/catalog evidence where possible.
 4. Ambiguous or conflicting identity evidence leaves a file unchanged for review.
 
@@ -235,16 +295,13 @@ Splitter can still search Wikipedia, catalogs, cover sources, and YouTube when A
 off. The footer and Live Logs identify the effective path:
 
 - `[AI-PROVIDER]` — selected model provider used;
-- `[AI-PROVIDER-FALLBACK]` — the selected provider failed and a local fallback was tried;
+- `[AI-PROVIDER-FALLBACK]` — hosted provider failed and Ollama was tried;
 - `[AI-NOT-USED]` — no model call was necessary;
 - `[AI-STATIC-FALLBACK]` — deterministic processing continued without a model;
 - `[AI-REVIEW]`, `[METADATA-REVIEW]`, or `[AGENT-REVIEW]` — safety rules left the
   item unchanged.
 
 Provider and SerpApi requests may count against the user's own plan or quota.
-Built-in AI uses no provider account or paid quota. See the
-[built-in AI guide](BUILT_IN_AI.md) for exact system requirements, first-use download,
-privacy, preference-profile behavior, and troubleshooting.
 
 ## Use Dashboard
 
@@ -257,7 +314,7 @@ privacy, preference-profile behavior, and troubleshooting.
 | 3 | Completed | Count of completed tasks. |
 | 4 | Failed | Count of failed tasks. |
 | 5 | Default workers | Current shared parallel-worker value. |
-| 6 | Quick launch | Opens Media Library, Search Song, downloaders, splitters, Track Reorder, Edit File, Album Consolidator, or Utilities. |
+| 6 | Quick launch | Opens Media Player, Search Song, downloaders, splitters, Track Reorder, Edit File, Album Consolidator, or Utilities. |
 | 7 | Session history | Shows time, workflow, status, item count, and detail. **Clear** removes displayed session history and counters, not media. |
 
 Dashboard is a monitor and launcher. It does not contain media-job inputs. A background
@@ -317,7 +374,7 @@ From scratch:
 
 The output filename is generated from `Title - Album - Artists`. The saved MP3 receives
 title, album, normalized artists, year, artwork, and track numbering. Download pacing,
-retries, bitrate, sample rate, worker count, and connections come from Global Settings.
+retries, bitrate, sample rate, worker count, and connections come from **File → Settings…**.
 The activity card and Live Logs update during transfer; fragment lines include the
 segment position when the source exposes it.
 
@@ -367,8 +424,35 @@ percentages.
 Audio Downloader, Video Downloader, Album Splitter, Jukebox Splitter, and the Edit File
 replacement action use the same activity panel. **Live Logs** simultaneously receives
 compact `[DOWNLOAD]` lines with the same values and a segment index/count when yt-dlp
-exposes fragmented progress. The panel reports “single source stream” when the selected
-source cannot use parallel fragments.
+exposes fragmented progress. There is one main bar for the source download. Thin bars
+appear only for real HTTP byte ranges and show each range's own progress. The bottom
+application bar describes the overall job, which can still be splitting or tagging
+after the source download reaches 100%. Completion keeps the actual transfer mode;
+it no longer replaces parallel-transfer information with a generic single-stream message. Live Logs also show yt-dlp version age, selected
+player client, browser-cookie fallback, 403 recovery, and exponential backoff.
+
+### Local files and errors, illustrated
+
+![Local album source](media/user-guide/workspaces/album-local-file.png)
+
+Choose **Local file** in **Source media**, then **Browse** to select audio or video
+already on your computer. You do not need a YouTube URL. In this screenshot, **1** is
+the optional AI switch, **2** is the job/output area, and **3** is the album editor.
+
+![An album needing attention](media/user-guide/workspaces/album-needs-attention.png)
+
+This example shows an unavailable local source. The same numbered areas apply; the
+reason and retry instruction appear directly under the album header in **3**. Choose
+a valid source with Browse, then select **Start album split**. Your successful downloads
+are unchecked automatically, so you can concentrate on the unfinished items.
+
+### Parallel albums and individual-song links
+
+Album Splitter shares one worker pool across the submitted batch. A full jukebox album
+occupies one worker while it downloads, splits, and tags. Individual-song albums put
+each selected song into that same pool, so several songs—even from different albums—
+can run together. **File → Settings… → Batch processing and network → Parallel workers**
+sets this limit. The UI runs separately from these workers.
 
 ## Split an album or jukebox
 
@@ -393,27 +477,37 @@ This is the complete **Auto fill album** workflow:
 1. Enter the album name. Include a four-digit year in the name when two releases share
    the same title; an explicitly entered year is treated as strong evidence.
 2. Select **Auto fill album**.
-3. The app searches online release evidence for the year, searches for square cover art,
-   and searches YouTube for a suitable full-album/jukebox source.
-4. When a full-album source is found, the app immediately extracts timestamped tracks
+3. **Search individual full songs** is enabled by default. It reads Wikipedia's track
+   list, or an exact album/year match in the Apple Music catalog when Wikipedia has no
+   usable list, and finds a separate full-length YouTube audio source for every song.
+   Turn it off to find a timestamped full-album/jukebox source.
+4. The app also searches online release evidence for the year and square cover art.
+5. When a full-album source is found, the app immediately extracts timestamped tracks
    and singer credits from its description. With the workspace AI switch on, the
    configured model assists extraction and the result is independently validated. With
    AI off, internet metadata and deterministic parsing are used.
-5. If no suitable full-album video is found, the app searches for individual album-track
-   links and builds per-track rows instead of inventing a jukebox URL.
-6. The album row reports the stage—finding metadata, extracting tracks, completed, or a
-   specific failure. Live Logs lists each source and fallback.
-7. Review every populated value. Auto-fill is a starting point, not permission to skip
+6. In individual-song mode, the single source field is cleared and the app builds one
+   row per Wikipedia track. Only close-duration audio/lyrical matches are enabled.
+7. The album row reports the stage—finding metadata, extracting tracks, completed, or a
+   specific failure. Live Logs lists each source.
+8. Review every populated value. Auto-fill is a starting point, not permission to skip
    identity, boundary, artist, and artwork checks.
 
-Auto-fill can populate **Release Year**, **Album Art**, **Ytb Link**, and **Tracks**.
+Auto-fill can populate **Release Year**, **Album Art**, **Source media**, and **Tracks**.
 It does not select the final output/overwrite policy or approve the job on the user's
 behalf.
 
 #### Correct one field manually
 
-- **Find on YouTube** searches for the first full-album result using album name/year and
-  then starts track extraction.
+- Choose **YouTube URL** in **Source media** to paste or find an online source.
+- Choose **Local file** and **Browse…** to select audio/video already downloaded by
+  another tool. The source is never deleted or replaced.
+- With individual-song search disabled, **Find on YouTube** finds a timestamped
+  full-album result and starts track extraction. Repeated presses exclude every result
+  already returned for that album.
+- Leave **Search individual full songs (Wikipedia or music catalog)** on when using
+  **Find on YouTube** or **Auto fill album** to populate separate full-song links instead
+  of searching for a jukebox. This switch is on by default on every album card.
 - **Find year** searches Wikipedia release evidence.
 - **Find cover** searches for a square cover; selecting it again excludes the current
   URL so another candidate can be found.
@@ -433,9 +527,8 @@ Verify it manually because an incorrect first boundary shifts the entire album.
 
 - **Download** disables an album or track without deleting its entered data.
 - **Track numbering** writes sequential track tags when enabled.
-- **Silence threshold**, **Minimum silence**, and **Minimum track** control fallback
-  silence detection when explicit timestamps are unavailable.
-- **Trim padding** retains a small amount around detected boundaries.
+- Silence detection and trim behavior use the saved values under **File → Settings… →
+  Audio and metadata**.
 - **Keep temporary source audio** is useful for diagnosis but consumes extra disk space.
 - **Write result report** records batch outcomes when explicitly enabled; it is disabled
   by default in every downloader and splitter.
@@ -451,13 +544,16 @@ Verify it manually because an incorrect first boundary shifts the entire album.
 | 1 | AI policy | Controls AI-assisted mixed-track extraction and metadata validation. |
 | 2 | Jukebox extraction job | Add/import compilations, choose output/temp/report/overwrite behavior, and start. |
 | 3 | Jukebox editor | Name the compilation, find/paste its link, enable numbering, then add or extract tracks. |
-| 4 | Shared defaults reminder | Worker, retry, delay, bitrate, and sample-rate values come from Global Settings. |
+| 4 | Shared defaults reminder | Worker, retry, delay, bitrate, and sample-rate values come from **File → Settings…**. |
 
 Jukebox track rows contain **Start**, **End**, **Album**, **Artists**, **Album Art**, and
 **Release Year** because the values may differ for every song. After extraction, each
 track can use **Find album**, **Find artists**, **Find year**, **Find cover**, and cover
 **Preview**. A catalog metadata lookup updates album, artists, year, and art as one
 consistent unit instead of mixing unrelated results.
+
+The Jukebox **Source media** row offers the same explicit **YouTube URL** and **Local
+file** choices. Local sources use manual track timings and are never deleted or replaced.
 
 Mashup, remix, and lo-fi titles are not blindly auto-enriched as ordinary releases.
 Review all boundaries and identities before selecting **Start jukebox split**.
@@ -535,7 +631,7 @@ destination before selecting **Redownload and edit**.
 ### Save a video playback crop / aspect profile
 
 Choose **Playback crop ratio**, **Playback aspect ratio**, or both, then select **Save
-playback settings**. These values are application metadata stored by the Media Library
+playback settings**. These values are application metadata stored by the Media Player
 for that video path. The video is not re-encoded, cropped, renamed, or written to in any
 way, and its encoded dimensions and original pixels remain unchanged.
 
@@ -544,7 +640,7 @@ how it fills the available viewing area. Other videos keep their own profiles or
 normal defaults. Opening this action from the active player copies its current Crop and
 Aspect selections into the editor. Saving both values as **Default** removes the profile.
 
-The Media Library can open a selected track directly in Edit File. A video context menu
+The Media Player can open a selected track directly in Edit File. A video context menu
 also exposes the playback crop/aspect profile action.
 
 ## Edit an album folder
@@ -578,7 +674,7 @@ artist. Each file is written through a temporary copy; failures are listed indiv
 | Callout | Area | Use |
 | --- | --- | --- |
 | 1 | AI policy | Enables optional metadata and pre-move identity verification. |
-| 2 | Album enricher | Repair metadata recursively without moving files. |
+| 2 | Album enricher | Repair one audio file or a folder recursively without moving files. |
 | 3 | Move into album folders | Choose destination and enrichment scope, then route approved files. |
 | 4 | Consolidation rules | On-screen summary of matching, naming, duplicate, skip, and ordering rules. |
 
@@ -586,7 +682,8 @@ Album Consolidator has two intentionally separate stages.
 
 ### Stage 1: Album enricher
 
-1. Select the source folder containing incoming tracks.
+1. Select a single audio file to enrich only that track, or select a source folder to
+   enrich supported tracks recursively. Pasted file paths are accepted in the same field.
 2. **Enable destination path for enrichment** only when the destination should also be
    part of the enrichment scan.
 3. Enable **Recheck files already marked complete** to repair a previously accepted but
@@ -594,6 +691,9 @@ Album Consolidator has two intentionally separate stages.
 4. Select **Run album enricher**.
 5. Inspect `[ENRICHED]`, `[METADATA-REVIEW]`, and `[ENRICH-SKIPPED]` lines. Correct an
    unresolved file in Edit File or rerun when better evidence is available.
+
+Single-file enrichment does not run album-wide Wikipedia ordering, so sibling tracks in
+the selected file's folder are not modified.
 
 Enrichment searches built-in sources such as Wikipedia and Apple's catalog. With a
 SerpApi key, Google Search and Images are fallbacks when built-in evidence is
@@ -657,32 +757,36 @@ Callout 1 contains the complete tab:
 6. Select **Parse timestamps** and review **Generated JSON** before importing it into a
    splitter.
 
-## Use the local media library
+## Use the local media player
 
-Media Library scans user-selected folders, derives a local index, browses artists and
+Media Player scans user-selected folders, derives a local index, browses artists and
 albums, filters all media, plays audio/video, manages a persistent queue and playlists,
-offers AI-assisted local curation, and optionally serves a phone client over trusted
-same-Wi-Fi access.
+and optionally serves a phone client over trusted same-Wi-Fi access.
 
 ### Add, scan, search, and browse
 
-![Media Library overview](media/user-guide/media-library/overview.png)
+![Media Player overview](media/user-guide/media-library/overview.png)
 
 | Callout | Area | Use |
 | --- | --- | --- |
 | 1 | Library folders | Add folders with `+`; chips scroll horizontally and each `×` removes that folder from the index. |
 | 2 | Search and filters | Search any indexed text, choose All media/Music/Videos, enter numeric From/To years, clear text/years, or search online. |
-| 3 | Smart Library Curator | Expand the natural-language local-library assistant. |
-| 4 | Artists and matching tracks | Multi-select artists, sort/select tracks, switch video view, add/play/queue selected items, play matches, or shuffle. |
-| 5 | Albums | Browse all or selected-artist albums, open one, add it to a playlist, and use album actions. |
-| 6 | Player | Artwork/video, title, queue status, timeline, transport controls, volume, and video-only display controls. |
+| 3 | Artists and matching tracks | Multi-select artists, sort/select tracks, switch video view, add/play/queue selected items, play matches, or shuffle. |
+| 4 | Albums | Browse all or selected-artist albums, open one, add it to a playlist, and use album actions. |
+| 5 | Player | Artwork/video, title, queue status, timeline, transport controls, volume, and video-only display controls. |
 
 1. Select `+` and add one or more library folders. Folder chips use 30% of the compact
    top row and scroll horizontally; the search area uses the remaining 70%.
-2. Select **Refresh** after external file/tag changes. The scan updates titles and column
+2. Additions, deletions, and metadata edits automatically request a background scan.
+   **Refresh** stays clickable during scanning: click it to restart a scan of all
+   configured folders. Playback continues and the current queue is retained. A failed
+   scan displays an error and can be retried without restarting the app. A backup scan
+   runs every 15 seconds for changes missed by the filesystem watcher.
+   The scan updates titles and column
    widths from the current metadata rather than preserving stale long values.
 3. Search across title, album, artist, year, and filename. **From year** and **To year**
-   accept digits only, and To must be greater than or equal to From.
+   accept digits only, and To must be greater than or equal to From. From starts at the
+   earliest indexed release year; To cannot exceed the current calendar year.
 4. **Clear** resets search text and both year fields but preserves the explicitly chosen
    All media/Music/Videos filter.
 5. Selecting one or several artists filters tracks and albums. Use **All tracks** or
@@ -692,37 +796,17 @@ same-Wi-Fi access.
 7. Table columns recalculate to the largest visible value whenever the album, artist,
    search, or filter result changes.
 
+Right-click an album card or the open album's heading and choose **Queue album** to
+append its tracks to the end of Now Playing without interrupting playback. Tracks
+already queued are skipped, matching the existing song and playlist Queue actions.
+**Play album next** places the album directly after the current track instead.
+Queue album follows the current shuffle setting, just like other Queue actions.
+
 In Videos mode the album browser hides so the video list and cinema player receive the
 space. **Thumbnails view** displays larger 16:9 preview tiles; **List view** shows Title,
 Artwork, Artist, Album, Year, Type, and Length. Selection and actions persist when
 switching views. A preview uses embedded artwork first, otherwise a representative frame
 is extracted without modifying the video.
-
-### Smart Library Curator
-
-![Smart Library Curator](media/user-guide/media-library/smart-curator.png)
-
-| Callout | Area | Use |
-| --- | --- | --- |
-| 1–2 | Folder and broad filters | Define the locally indexed/filterable scope. |
-| 3 | Curator request | Enable AI, describe a mix, set result count, find locally, start a mix, search YouTube explicitly, or clear. |
-| 4–7 | Browser, albums, and player | Curator results feed the same selection, playlist, queue, and playback controls. |
-
-Enter a request such as `latest Arijit Singh Hindi dance songs`, `old Bengali songs`, or
-`return 5 calm tracks`. With AI on, the desktop model plans constraints and ranks only
-IDs already present in the scanned library. Language, mood, style, activity, energy, and
-tempo remain evidence gates; unsupported model claims are rejected.
-
-- **Find in my library** returns exact verified local matches.
-- A number in the request overrides the result-count control.
-- **Start mix** plays exact matches, then adds evidence-verified related local tracks.
-- Saved playlist names and songs act as bounded taste examples for every request. A
-  versioned, path-free profile is refreshed locally for whichever user is running the
-  software; release model weights are not retrained and contain no developer taste.
-- **Search YouTube too** is explicit and never automatic. Local file paths are never
-  placed in AI or online-search context.
-- With AI off, the action becomes a plain internet search instead of local semantic
-  curation.
 
 ### Repair artist names
 
@@ -750,7 +834,7 @@ After **Apply fixes**, affected metadata is updated and the library refreshes.
 | Callout | Area | Use |
 | --- | --- | --- |
 | 1 | Playlist drawer | Create, rename, delete, filter, select, and close playlists. |
-| 2–7 | Main library areas | Search/browse while the resizable drawer remains open. |
+| 2–6 | Main library areas | Search/browse while the resizable drawer remains open. |
 
 Create a playlist, then use track/album/artist context menus or **Add to playlist**.
 When a path is already present, choose **Skip duplicates** to add only new selections or
@@ -761,6 +845,8 @@ When a path is already present, choose **Skip duplicates** to add only new selec
 - **Search all playlists** returns matching tracks across every created playlist.
 - Right-click a playlist track to Edit File, add it elsewhere, or remove it.
 - Play, queue, and remove actions operate on the selected playlist rows.
+- **Play next** on a song, selection, or album moves it directly after the current
+  track. Existing queue copies are moved into the requested order instead of duplicated.
 - Drag the divider beside the drawer to resize it; the width is remembered.
 
 ### Permanently delete library media
@@ -786,17 +872,26 @@ reported separately.
 
 | Callout | Area | Use |
 | --- | --- | --- |
-| 1–6 | Main library | Browse and add more media without stopping playback. |
-| 7 | Current queue | Drag tracks into playback order, play a selection, remove it, or clear the queue. |
+| 1 | Current queue | Read total minutes, drag tracks into playback order, play a selection, remove it, or clear the queue. |
+| 2–6 | Main library | Browse and add more media without stopping playback. |
+
+The total time rounds **up to the next whole minute**: 4:00 shows 4 min, 4:07 shows
+5 min, and 28:59 shows 29 min. Totals above an hour stay in minutes (61:01 shows
+62 min). Unknown lengths are marked separately. Deleting a song before the currently
+playing song keeps the highlight on the song you are actually hearing.
 
 The queue order is independent of playlist order. Previous/Next follow the queue. Drag
-its divider to resize the drawer; the width is remembered.
+its divider to resize the drawer; the width is remembered. Select one or several queue
+rows and press **Delete** to remove them from the queue only; no media file is deleted.
+In the Now Playing heading, select the album to open its tracks, an individual artist
+to show every solo/collaboration credit containing that artist, or the year to set both
+year filters to that exact year.
 
 ### Player controls
 
 Transport controls are ordered **Shuffle, Backward, Previous, Play/Pause, Next,
 Forward, Stop, Repeat**. Backward and Forward use solid double-triangle icons and the
-Global Settings seek interval. Video adds **Aspect**, **Crop**, and **Full screen**;
+the **File → Settings… → Media playback** seek interval. Video adds **Aspect**, **Crop**, and **Full screen**;
 those controls are hidden for audio.
 
 - Clicking anywhere on the seek slider jumps/animates to that position.
@@ -845,7 +940,7 @@ screen, while the volume controls stay aligned to the right.
 Keyboard playback controls activate only when playback—not a search/edit field—has
 focus.
 
-### Use the Media Library from a phone
+### Use the Media Player from a phone
 
 1. Connect PC and phone to the same trusted Wi-Fi.
 2. Turn **Phone access** on. Select **Details**, open a displayed address in a current
@@ -855,9 +950,7 @@ focus.
    **Queue** appends it to the desktop queue.
 5. Create playlists, add/remove tracks, and drag or use arrow controls to reorder. Every
    mutation is saved by the desktop immediately and synchronized to other clients.
-6. Use Curator to send a natural-language request to the desktop. The PC uses its local
-   index, configured AI/evidence sources, and compute.
-7. Turn Phone access off to stop the LAN server and disconnect clients. Active phone
+6. Turn Phone access off to stop the LAN server and disconnect clients. Active phone
    playback is terminated rather than continuing until the browser closes.
 
 The server prefers port 8765 and selects a fallback when needed. It is PIN/token
@@ -905,6 +998,16 @@ actions. Clear affects displayed log text only.
   is recorded.
 
 ## Troubleshooting
+
+| What you see | What to do |
+| --- | --- |
+| A completed download is missing from Media Player | Add its output folder to the player, clear search/year filters, then click Refresh. |
+| A scan reports an error | Check that the folder or external drive is accessible, then click Refresh. No restart is needed. |
+| Old album artwork | Save the album edit and let the scan finish, or click Refresh. Artwork is reloaded when the file changes. |
+| Needs attention | Read the reason directly below the album header; open View → Live Logs for details, correct the problem, and retry unfinished items. |
+| Download is at 100% but the job is still running | Source transfer is complete; splitting, conversion, or tagging may still be running. Read the bottom job status. |
+| Only one download connection | Check Connections per download. Some sources cannot support ranges, and timestamp-only transfers use FFmpeg. Read the panel's fallback reason. |
+
 
 1. Open Live Logs and copy the block from `[START]` through `[COMPLETE]` or `[FAILED]`.
 2. Distinguish an intentional skip/review from an actual error.

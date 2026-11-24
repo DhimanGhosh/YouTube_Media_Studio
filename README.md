@@ -18,6 +18,7 @@
   <a href="#command-line"><b>CLI</b></a> ·
   <a href="#develop"><b>Develop</b></a> ·
   <a href="CHANGELOG.md"><b>Changelog</b></a> ·
+  <a href="docs/UPDATES_AND_RELEASE_CHANNELS.md"><b>Updates</b></a> ·
   <a href="PRIVACY.md"><b>Privacy</b></a>
 </p>
 
@@ -26,10 +27,26 @@ PyQt6 desktop application with a scriptable command line to download permitted m
 write metadata and artwork, split albums and jukeboxes, edit files,
 and manage a local playback library.
 
-> **The desktop runtime travels with the installer.** Python, FFmpeg, FFprobe, Deno,
-> yt-dlp, and application dependencies are bundled—no developer environment or
-> administrator access is required. The optional built-in AI model is securely
-> downloaded and verified on first AI use so ordinary upgrades stay smaller.
+> **Everything required by the desktop app travels with the installer.** Python,
+> FFmpeg, FFprobe, Deno, yt-dlp, and application dependencies are bundled—no developer
+> environment and no administrator access are required.
+
+## Start with the desktop app
+
+Use the menus along the top: **Download** for songs/videos, **Organize** for albums
+and jukeboxes, **Edit** for tags and artwork, and **View** for Dashboard and Live Logs.
+**Media Player** is at the top right; **File → Settings…** opens a separate settings
+window. No coding is needed.
+
+Start with [your first album in five steps](docs/USER_GUIDE.md#your-first-album-in-five-steps),
+or follow the [illustrated screen-by-screen guide](docs/USER_GUIDE.md).
+
+The 2.x line includes automatic library updates, an always-clickable Refresh button,
+artwork refresh after editing, stable queue selection after deletion, and total queue
+time rounded up in minutes. Download acceleration uses validated parallel HTTP byte
+ranges as well as segmented streams. Set **Parallel workers** and **Connections per
+download** in Settings. Album errors explain what needs attention and how to retry.
+The experimental 3.x built-in AI line has been retired.
 
 ## See it running
 
@@ -98,15 +115,6 @@ Get the newest tested build from **[GitHub Releases](https://github.com/DhimanGh
 
 Checksums for every artifact are published as `SHA256SUMS.txt` in the same release.
 
-### System requirements
-
-The desktop app requires a supported 64-bit operating system. Built-in CPU AI requires
-no GPU or CUDA. Plan for at least a 2-core 64-bit CPU, 8 GB RAM, and 2 GB free space;
-4+ modern cores, 16 GB RAM, an SSD, and 4 GB free space are recommended. The first
-built-in-AI request downloads and verifies approximately 630 MB of managed assets.
-
-**[Open the complete built-in AI, privacy, and system requirements guide →](docs/BUILT_IN_AI.md)**
-
 <details>
 <summary><b>Windows installation</b></summary>
 
@@ -117,14 +125,12 @@ built-in-AI request downloads and verifies approximately 630 MB of managed asset
 
 The per-user installer does not request administrator access. Remove it later from
 **Settings → Apps → Installed apps → YouTube Media Studio**. The uninstaller can
-optionally retain or remove settings, history, and application data.
+remove application binaries and shortcuts; settings, playlists, history, and media are
+retained in application data.
 
-When a previous release is installed, Setup automatically detects its registered
-folder and offers **Upgrade**, **Repair**, and **Uninstall**. Upgrade and Repair close
-the running app if necessary, remove the old application files, and install fresh
-binaries in place while preserving settings, history, and application data. Uninstall
-can optionally remove that data. Setup matches the complete executable path, so another
-program with a similar process name is never closed.
+The native NSIS wizard detects the registered installation folder. Installing a newer
+release closes the running app if necessary and replaces its binaries in place while
+preserving settings, playlists, history, and application data.
 
 </details>
 
@@ -133,7 +139,18 @@ program with a similar process name is never closed.
 
 1. On an Apple-silicon Mac, download the ARM64 DMG.
 2. Open it and drag `YouTubeMediaStudio.app` to **Applications**.
-3. Launch `YouTubeMediaStudio.app` from Applications.
+3. Prefer a signed and notarized release when available. For an unsigned release,
+   verify that the download came from this repository’s official GitHub Releases
+   and compare its SHA-256 digest with the published `SHA256SUMS.txt` through a
+   trusted channel before removing quarantine. The commands below bypass the
+   Gatekeeper quarantine check; use them only after that verification:
+
+   ```sh
+   xattr -dr com.apple.quarantine /Applications/YouTubeMediaStudio.app
+   open /Applications/YouTubeMediaStudio.app
+   ```
+
+   After the first successful launch, open it normally from Applications.
 
 Unsigned releases can be installed, but macOS Gatekeeper may block the first launch
 because Apple cannot verify the app with its notarization service. After dragging the
@@ -228,7 +245,7 @@ available on the Pi. Remove the package with `youtube-media-studio-uninstall`.
 The desktop interface is organized as task-focused pages: search, download, split,
 edit, consolidate, inspect logs, configure defaults, and play the finished library.
 
-1. Open **Global Settings** once to confirm download and application-data defaults.
+1. Open **File → Settings…** once to confirm download and application-data defaults.
 2. Use **Search Song** to find a source, or open a downloader/splitter directly when
    you already have its URL.
 3. Review metadata and output locations before starting an operation.
@@ -238,13 +255,13 @@ edit, consolidate, inspect logs, configure defaults, and play the finished libra
 
 | I want to… | Instructions |
 | --- | --- |
-| Understand every sidebar screen | [Screen reference](docs/USER_GUIDE.md#screen-reference) |
+| Understand every menu workspace | [Screen reference](docs/USER_GUIDE.md#screen-reference) |
 | Find and download a song | [Song workflow](docs/USER_GUIDE.md#find-and-download-a-song) |
 | Split an album or jukebox | [Splitter workflow](docs/USER_GUIDE.md#split-an-album-or-jukebox) |
 | Repair or trim a local file | [Edit File guide](docs/USER_GUIDE.md#edit-a-local-media-file) |
 | Retag a complete album folder | [Edit Album guide](docs/USER_GUIDE.md#edit-an-album-folder) |
 | Enrich and move an existing music folder | [Album Consolidator guide](docs/USER_GUIDE.md#enrich-and-organize-an-existing-music-folder) |
-| Browse and play my local collection | [Media Library guide](docs/USER_GUIDE.md#use-the-local-media-library) |
+| Browse and play my local collection | [Media Player guide](docs/USER_GUIDE.md#use-the-local-media-player) |
 | Understand a skip, review, or failure | [Live Log glossary](docs/USER_GUIDE.md#read-live-logs) |
 | Use the application safely | [File-safety rules](docs/USER_GUIDE.md#file-safety-rules) |
 
@@ -258,12 +275,13 @@ edit, consolidate, inspect logs, configure defaults, and play the finished libra
 | --- | --- |
 | **Audio Downloader** | Download permitted audio with an independent start/end range for each song, write tags, embed artwork, and normalize filenames |
 | **Video Downloader** | Inspect formats and download video/audio with an independent timestamp range for each batch entry |
-| **Album Splitter** | Turn a full-album source and timestamps into individual tagged tracks |
-| **Jukebox Splitter** | Split compilation videos and organize the resulting songs |
+| **Album Splitter** | Turn a YouTube or already-downloaded full-album source and timestamps into individual tagged tracks |
+| **Jukebox Splitter** | Split YouTube or local compilation audio/video and organize the resulting songs |
 | **Search Song** | Find tracks, albums, release years, performers, and cover artwork |
 | **Metadata tools** | Inspect, repair, reorder, retag, trim, rename, and consolidate local media |
 | **Edit Album** | Change album name, year, track artist(s), and optional album artwork across every supported file in a folder |
-| **Media Library** | Browse dynamically sized track tables, filter, create persistent ordered playlists, play, queue, permanently delete confirmed files/albums, semantically curate local media, and control it from a phone on the same Wi-Fi |
+| **Media Player** | Browse dynamically sized track tables, filter, create persistent ordered playlists, play, queue, permanently delete confirmed files/albums, and control it from a phone on the same Wi-Fi |
+| **Google Cloud Profile** | Optionally use one Google account to synchronize portable settings and playlist identities between machines and import private YouTube playlists already present in the local library |
 | **Utilities** | Normalize artist names and convert timestamps to splitter-ready JSON |
 | **Live Logs** | Follow background operations and diagnose failures without leaving the app |
 | **Automation** | Run the same core workflows through stable CLI commands and JSON job files |
@@ -271,19 +289,21 @@ edit, consolidate, inspect logs, configure defaults, and play the finished libra
 The application stores settings and working data in a writable per-user directory,
 and the GUI can persist a custom location.
 
+Google sign-in is optional and is not required for OTA updates. **File → Settings… →
+Connected services** provides cloud backup/restore and read-only YouTube playlist import.
+The profile uses Google Drive's private app-data area and excludes media files, local
+paths, API keys, OAuth tokens, and crash reports. See the [Google Cloud Profile guide](docs/USER_GUIDE.md#google-cloud-profile).
+
 ## How AI helps
 
-AI is an optional verification and library-curation assistant for workflows that expose
-**Use AI for this task**. Agno coordinates specialized planning, evidence, semantic
-verification, and ranking agents for **Smart Library Curator**, while the existing
-safety agents review metadata evidence and conflicting identities. Downloads, editing,
-splitting, playback, and deterministic catalog matching continue to work with AI off.
+AI is an optional verification assistant for workflows that expose
+**Use AI for this task**. Safety agents review metadata evidence and conflicting identities.
+Downloads, editing, splitting, playback, and deterministic catalog matching continue to work with AI off.
 
 | Mode | Setup | What happens |
 | --- | --- | --- |
-| **Built-in CPU AI (default)** | No AI setup. On first AI use the app downloads and verifies its pinned Qwen3-0.6B model and llama.cpp runtime. No GPU, CUDA, API key, or coding knowledge is required. | Prompts and responses remain on the device. The managed model can be installed, repaired, or removed from Global Settings. |
-| **Local AI with Ollama** | Install and run Ollama separately, download a compatible model, then select **Ollama (local)** and the model under **Global Settings → AI providers and online evidence**. No API key is required. | Ollama overrides the built-in model. If unavailable, the task falls back to built-in CPU AI. |
-| **Hosted AI with an API key** | Select NVIDIA NIM, OpenAI, Anthropic, Google Gemini, Groq, Hugging Face Inference, OpenRouter, or OpenCode Zen; then save that provider's key and model. | The selected provider runs through Agno. Its password-masked draft is retained independently; explicit Ollama and then built-in CPU AI are local fallbacks. |
+| **Local AI with Ollama** | Install and run Ollama separately, download a compatible model, then select **Ollama (local)** and the model under **File → Settings… → AI providers and online evidence**. No API key is required. | Prompts and model responses stay on the user's computer. Internet evidence is still contacted when the selected workflow requires it. |
+| **Hosted AI with an API key** | Select NVIDIA NIM, OpenAI, Anthropic, Google Gemini, Groq, Hugging Face Inference, OpenRouter, or OpenCode Zen; then save that provider's key and model. | The selected provider runs through Agno. Its password-masked key/model draft is retained independently, and Ollama is the local fallback. |
 | **Compatible endpoint** | Select **Custom OpenAI-compatible**, enter its `/v1` base URL and model, and add a key only if the endpoint requires one. | Self-hosted and other compatible services can participate without provider-specific application code. |
 | **No AI** | Leave **Use AI for this task** off. | Wikipedia, catalog, web evidence, SerpApi (when separately configured), and deterministic rules perform the work without model calls. |
 
@@ -292,33 +312,16 @@ cannot establish a safe identity, the file remains unchanged and Live Logs repor
 review outcome. A SerpApi key is separate from an AI-provider key: it enables authenticated
 Google Search and Google Images evidence, not language-model inference.
 
-Smart Library Curator exposes a 1–20 result control and also understands explicit counts
-such as `return 10 results`. **Start mix** queues the exact mood/style matches first, then
-uses a second evidence-grounded pass to continue with other local tracks in the requested
-language. Language, mood, style, activity, energy, and tempo labels must agree with catalog
-or web evidence; a model assertion alone cannot admit a track or invent extra result traits.
-When a related term such as `melancholic` supports `sad`, the verifier must cite that
-exact phrase from the bounded evidence for the same recording.
-Saved playlist names and their indexed track metadata also act as positive taste examples.
-The configured AI model semantically decides which playlist themes relate to each request;
-there is no fixed synonym mapping, so a model can connect differently worded concepts such
-as a playlist's tempo/theme and the requested listening activity. Relevant playlist members
-may be included as personal taste matches, and a concise version of the same context is used
-when **Search YouTube too** is selected. This is request-time contextual personalization,
-not permanent model-weight training. The profile belongs to whichever user is running the
-software—not to the developer—and is refreshed locally when that user's playlists change.
-Media paths and files are not stored in the profile or sent to the model.
-
 Provider keys are stored separately: switching providers does not copy one provider's
 credential into another, and clearing a key remains cleared after **Save and apply
 defaults** and restart. See the [desktop user guide](docs/USER_GUIDE.md#how-ai-and-internet-evidence-work)
 for configuration, fallback order, privacy notes, and log meanings.
-The [built-in AI guide](docs/BUILT_IN_AI.md) documents its pinned runtime/model,
-system requirements, local preference profile, first-use download, and troubleshooting.
 
 Album Enricher uses Wikipedia and Apple's public catalog by default. Users may add
-their own optional [SerpApi](https://serpapi.com/) key under **Global Settings** to use
+their own optional [SerpApi](https://serpapi.com/) key under **File → Settings…** to use
 Google Search as a fallback when those sources cannot identify an album or movie.
+Its source field accepts either one audio file (only that track is enriched) or a folder
+for recursive batch enrichment.
 
 ## Command line
 
@@ -348,7 +351,8 @@ Run `youtube-media-studio <command> --help` for command-specific options.
 
 ## How the release pipeline works
 
-Every successful push to `main` produces a complete, versioned release:
+Every successful push to `main` produces a complete, stable 2.x release.
+The experimental 3.x release line has been retired.
 
 ```mermaid
 flowchart LR
@@ -452,19 +456,19 @@ src/youtube_audio_video_downloader/
   gui/                               PyQt6 desktop packages
     application/                     Entry point and main window
     components/                      Shared resources, theme, and widgets
-    media/                           Media Library player and visualization
+    media/                           Media Player player and visualization
     runtime/                         Operations, workers, diagnostics, and AI usage
   loaders/                           Job-file loading
   metadata/                          Media tagging
   services/                          Categorized application services
-    ai/                              Providers, agents, and recommendations
+    ai/                              Providers and agents
     albums/                          Album enrichment, splitting, and organization
     downloads/                       Search, download, extraction, and redownload
     media/                           Local library, editing, playlists, and remote access
     metadata/                        Evidence, verification, and metadata tracking
   utils/                             Parsing and normalization helpers
 tests/                               Categorized automated test suite
-  ai/                                AI providers, agents, and recommendations
+  ai/                                AI providers and agents
   albums/                            Album enrichment and organization
   core/                              Public API, storage, loading, and runtime
   downloads/                         Search, download, extraction, and trimming
@@ -472,7 +476,8 @@ tests/                               Categorized automated test suite
   media/                             Library, playlists, remote access, and editing
   metadata/                          Evidence, tagging, verification, and tracking
   release/                           Packaging, installers, versions, and workflows
-tools/desktop_installer.py           Native graphical installer/uninstaller
+installers/windows/installer.nsi     Native Windows NSIS installer/uninstaller
+tools/desktop_installer.py           Linux graphical installer/uninstaller
 tools/release.py                     Validation, packaging, and release entry point
 ```
 

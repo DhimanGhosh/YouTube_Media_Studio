@@ -18,7 +18,7 @@ flowchart LR
     Desktop --> Core["YouTube Media Studio service layer"]
     CLI --> Core
 
-    Core --> LocalMedia["Local media library and output folders"]
+    Core --> LocalMedia["Local media player and output folders"]
     Core --> Settings["Per-user settings, trackers, diagnostics"]
     Core --> YouTube["YouTube via yt-dlp"]
     Core --> Catalogs["Wikipedia, Apple catalog, SerpApi, DuckDuckGo evidence"]
@@ -108,15 +108,15 @@ flowchart LR
     Result --> Worker
     Worker --> Logs["Live Logs and progress"]
     Worker --> Dashboard["Session history"]
-    Worker --> Refresh["Media Library refresh"]
+    Worker --> Refresh["Media Player refresh"]
 ```
 
-The Media Library is a persistent page with its own background scanner, search worker,
-recommendation worker, path-based playlist store, queue, and `QMediaPlayer`. Playback
+The Media Player is a persistent page with its own background scanner, search worker,
+path-based playlist store, queue, and `QMediaPlayer`. Playback
 continues while the user visits other pages. While the desktop runs, its embedded
 `ThreadingHTTPServer` publishes a path-hiding snapshot to PIN-authenticated browsers on
 the private LAN. Phone actions cross a Qt signal boundary before mutating the desktop
-queue, playlists, or curator, and clients poll snapshot revisions for bidirectional sync.
+queue or playlists, and clients poll snapshot revisions for bidirectional sync.
 
 ## 5. Deployment view
 
@@ -157,7 +157,7 @@ flowchart LR
     Services --> Media["Media files and tags"]
     Services --> Reports["JSON result reports and logs"]
 
-    SettingsUI["Global Settings and workspace"] --> Ini["settings.ini via QSettings"]
+    SettingsUI["Settings window and workspace state"] --> Ini["settings.ini via QSettings"]
     Enrichment["Metadata verifier"] --> Tracker["album_enrichment_tracker.json"]
     Crash["Crash reporter"] --> Diagnostics["crash_reports/"]
     Pointer["Storage location pointer"] --> AppData["Selected application-data folder"]
@@ -178,39 +178,32 @@ Key ownership rules:
 
 ```mermaid
 flowchart LR
-    Request["Operation or curator request"] --> Planner["Structured Agno agent"]
+    Request["Metadata operation"] --> Planner["Structured Agno agent"]
     Planner --> Primary{"Configured provider available?"}
     Primary -->|Yes| Hosted["Selected hosted/local model"]
-    Primary -->|No| Fallback["Explicit Ollama model"]
-    Fallback -->|Unavailable| BuiltIn["Managed CPU model"]
-    BuiltIn -->|Unavailable| Static["Deterministic fallback"]
+    Primary -->|No| Fallback["Configured Ollama model"]
+    Fallback -->|Unavailable| Static["Deterministic fallback"]
 
     Hosted --> Proposed["Structured proposal"]
     Fallback --> Proposed
-    BuiltIn --> Proposed
     Proposed --> Evidence["Catalog and bounded web evidence"]
     Static --> Evidence
     Evidence --> Gate{"Identity and semantic gates pass?"}
-    Gate -->|Yes| Apply["Rank result or apply metadata"]
+    Gate -->|Yes| Apply["Apply verified metadata"]
     Gate -->|No| Review["Reject, skip, or request review"]
 ```
 
-Provider definitions are centralized. Built-in CPU AI, Ollama, NVIDIA NIM, OpenAI, Anthropic, Google
+Provider definitions are centralized. Ollama, NVIDIA NIM, OpenAI, Anthropic, Google
 Gemini, Groq, Hugging Face Inference, OpenRouter, OpenCode Zen, and custom
 OpenAI-compatible endpoints resolve into Agno model objects. Hosted failure triggers one
-direct local retry and then a lazy managed-CPU retry. Constrained curator filters fail closed when neither model nor
-independent evidence can safely establish the requested property.
+direct local retry. Metadata changes require independent evidence.
 
 ## 8. Security, privacy, and safety boundaries
 
 - API keys are password-masked, stored per provider in local settings, omitted from logs,
   and removable by saving an explicitly blank value.
-- The curator sends bounded metadata/evidence, not media file contents, to model APIs.
-- Built-in and Ollama inference stay local, while evidence lookups may still use the internet.
-- Playlist personalization is stored as a versioned path-free profile for the current
-  user; no user's preferences are distributed in model weights.
-- Managed model/runtime downloads are pinned, checksum-verified, atomically installed,
-  and served on loopback only.
+- AI workflows send bounded metadata/evidence, not media file contents, to model APIs.
+- Local Ollama inference stays local, while evidence lookups may still use the internet.
 - File mutation services validate paths and formats, use collision-safe names, preserve
   tags where appropriate, and surface file locks rather than forcibly overwriting files.
 - Cancellation tokens coordinate worker pools and subprocess termination.
@@ -236,3 +229,17 @@ independent evidence can safely establish the requested property.
 - Ollama CPU/GPU placement is controlled by the Ollama runtime and available VRAM; the
   app limits context allocation but does not override the runtime's device scheduler.
 - GUI state is local to a user profile and is not a multi-user database.
+
+## Stable 2.x responsiveness and recovery
+
+A completed download or changed library file becomes visible without restarting the
+application. Refresh remains available while scanning and requests a fresh scan.
+Playback retains the current song when earlier queue entries disappear. Metadata
+edits update cached artwork, and displayed total time rounds up to whole minutes.
+
+Downloads have two independent concurrency controls: workers for albums/tracks and
+connections for pieces of one source. Progressive sources use validated byte ranges
+where supported; segmented sources retain native fragment downloading. Download
+completion and the later split/tag phase remain distinct. Failures identify the
+specific album or track and explain how to retry. The illustrated [user guide](USER_GUIDE.md)
+covers these controls and the current menu/Settings navigation.

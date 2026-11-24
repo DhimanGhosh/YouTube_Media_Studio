@@ -5,25 +5,39 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 import time
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
-from PyQt6.QtCore import QSettings, QStandardPaths, Qt, QThread, QTimer, QUrl, pyqtSignal
-from PyQt6.QtGui import QCloseEvent, QDesktopServices, QGuiApplication
+from PyQt6.QtCore import (
+    QObject,
+    QProcess,
+    QSettings,
+    QStandardPaths,
+    Qt,
+    QThread,
+    QTimer,
+    QUrl,
+    pyqtSignal,
+)
+from PyQt6.QtGui import QAction, QCloseEvent, QDesktopServices, QGuiApplication, QKeySequence
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
     QFormLayout,
-    QFrame,
     QGridLayout,
     QHBoxLayout,
     QHeaderView,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -35,12 +49,16 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSlider,
+    QSplitter,
     QSpinBox,
     QStackedWidget,
+    QStyle,
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
+    QTextBrowser,
     QTextEdit,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -89,9 +107,12 @@ from youtube_audio_video_downloader.services.media.audio_trimmer import (
 )
 from youtube_audio_video_downloader.services.albums.album_editor import inspect_album_folder
 from youtube_audio_video_downloader.services.media.media_metadata import read_media_metadata
-from youtube_audio_video_downloader.services.albums.album_folders import resolve_album_folder_successor
+from youtube_audio_video_downloader.services.albums.album_folders import (
+    resolve_album_folder_successor,
+)
 from youtube_audio_video_downloader.services.ai.ai_provider import (
     DEFAULT_NVIDIA_MODEL,
+    DEFAULT_OLLAMA_MODEL,
     NVIDIA_API_KEY_ENV,
     NVIDIA_MODEL_ENV,
     OLLAMA_MODEL_ENV,
@@ -109,16 +130,26 @@ from youtube_audio_video_downloader.services.ai.ai_provider_registry import (
     PROVIDERS,
     provider_definition,
 )
-from youtube_audio_video_downloader.services.ai.builtin_runtime import (
-    BUILTIN_MODEL_ID,
-    BUILTIN_PROVIDER_LABEL,
-    builtin_status,
-    ensure_builtin_server,
-    remove_builtin_assets,
-)
 from youtube_audio_video_downloader.services.downloads.song_search import (
     available_ollama_models,
     routed_result_title,
+)
+from youtube_audio_video_downloader.config.runtime_tools import configure_runtime_tools
+from youtube_audio_video_downloader.services.downloads.youtube_resilience import (
+    ytdlp_runtime_diagnostic,
+)
+from youtube_audio_video_downloader.services.updates import (
+    AvailableUpdate,
+    check_for_update,
+    download_update,
+)
+from youtube_audio_video_downloader.services.google_cloud_profile import (
+    PORTABLE_SETTING_KEYS,
+    GoogleCloudProfileClient,
+    GoogleOAuthConfig,
+    YouTubePlaylist,
+    build_cloud_profile,
+    validate_cloud_profile,
 )
 from youtube_audio_video_downloader.services.metadata.serpapi_metadata import (
     SERPAPI_API_KEY_ENV,
@@ -133,17 +164,214 @@ from youtube_audio_video_downloader.services.media.video_transformer import (
 from youtube_audio_video_downloader.version import application_version
 
 
-class BuiltinAIInstallThread(QThread):
-    """Install and smoke-test managed AI assets without blocking the GUI."""
+class UpdateWorker(QObject):
+    """Perform public GitHub update network work without blocking the GUI."""
 
-    completed = pyqtSignal(object, str)
+    checked = pyqtSignal(object, str)
+    downloaded = pyqtSignal(object, str)
+    progress = pyqtSignal(int)
+
+    def __init__(
+        self,
+        *,
+        update: AvailableUpdate | None = None,
+    ) -> None:
+        super().__init__()
+        self.update = update
 
     def run(self) -> None:
         try:
-            ensure_builtin_server()
-            self.completed.emit(builtin_status(), "")
+            if self.update is None:
+                result = check_for_update(application_version())
+                self.checked.emit(result, "")
+                return
+
+            def report(downloaded: int, total: int) -> None:
+                if total:
+                    self.progress.emit(min(100, round(downloaded * 100 / total)))
+
+            path = download_update(self.update, progress=report)
+            self.downloaded.emit(self.update, str(path))
+        except Exception as exc:  # network and filesystem errors belong in the UI
+            if self.update is None:
+                self.checked.emit(None, str(exc))
+            else:
+                self.downloaded.emit(self.update, str(exc))
+
+
+class GoogleCloudWorker(QObject):
+    """Run optional Google account operations outside the GUI thread."""
+
+    finished = pyqtSignal(str, object, str)
+
+    def __init__(
+        self,
+        action: str,
+        client: GoogleCloudProfileClient,
+        payload: object = None,
+    ) -> None:
+        super().__init__()
+        self.action = action
+        self.client = client
+        self.payload = payload
+
+    def run(self) -> None:
+        try:
+            if self.action == "connect":
+                result: object = self.client.connect()
+            elif self.action == "backup":
+                self.client.upload_profile(dict(self.payload or {}))
+                result = None
+            elif self.action == "restore":
+                result = self.client.download_profile()
+            elif self.action == "playlists":
+                result = self.client.youtube_playlists()
+            elif self.action == "entries":
+                result = self.client.youtube_playlist_entries(str(self.payload or ""))
+            elif self.action == "disconnect":
+                self.client.disconnect()
+                result = None
+            else:
+                raise ValueError(f"Unsupported Google cloud action: {self.action}")
+            self.finished.emit(self.action, result, "")
         except Exception as exc:
-            self.completed.emit({}, " ".join(str(exc).split())[:500])
+            self.finished.emit(self.action, None, str(exc))
+
+
+class ApplicationUpdateDialog(QDialog):
+    """Persistent release-details, download-progress, and install experience."""
+
+    download_requested = pyqtSignal(object)
+    install_requested = pyqtSignal(str)
+    open_folder_requested = pyqtSignal(str)
+
+    def __init__(self, update: AvailableUpdate, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.update = update
+        self.installer_path = ""
+        self._downloading = False
+        self.setWindowTitle(f"Software Update — {APP_DISPLAY_NAME}")
+        self.setModal(False)
+        self.setMinimumSize(680, 500)
+        self.resize(760, 580)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 18, 20, 18)
+        layout.setSpacing(12)
+
+        heading = QLabel(f"{APP_DISPLAY_NAME} {update.version} is ready")
+        heading.setObjectName("pageTitle")
+        layout.addWidget(heading)
+        channel = "Beta channel" if update.prerelease else "Stable channel"
+        summary = QLabel(
+            f"Installed {application_version()}  •  Available {update.version}  •  {channel}"
+        )
+        summary.setObjectName("mutedLabel")
+        layout.addWidget(summary)
+
+        notes_card = GlassCard()
+        notes_layout = QVBoxLayout(notes_card)
+        notes_layout.setContentsMargins(14, 12, 14, 12)
+        notes_layout.addWidget(QLabel("What’s new"))
+        self.notes = QTextBrowser()
+        self.notes.setOpenExternalLinks(True)
+        self.notes.setMarkdown(update.notes.strip() or "No release notes were supplied.")
+        notes_layout.addWidget(self.notes, 1)
+        layout.addWidget(notes_card, 1)
+
+        self.status = QLabel(
+            "Download the signed release installer when you are ready. "
+            "It will be verified before installation."
+        )
+        self.status.setWordWrap(True)
+        layout.addWidget(self.status)
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 100)
+        self.progress.setValue(0)
+        self.progress.setFormat("Waiting to download")
+        layout.addWidget(self.progress)
+
+        actions = QHBoxLayout()
+        self.release_button = QPushButton("View release")
+        self.release_button.setObjectName("secondaryButton")
+        self.release_button.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl(update.page_url))
+        )
+        self.folder_button = QPushButton("Open download folder")
+        self.folder_button.setObjectName("secondaryButton")
+        self.folder_button.setVisible(False)
+        self.folder_button.clicked.connect(
+            lambda: self.open_folder_requested.emit(self.installer_path)
+        )
+        self.later_button = QPushButton("Not now")
+        self.later_button.setObjectName("secondaryButton")
+        self.later_button.clicked.connect(self.close)
+        self.primary_button = QPushButton("Download update")
+        self.primary_button.setObjectName("primaryButton")
+        self.primary_button.clicked.connect(self._primary_clicked)
+        actions.addWidget(self.release_button)
+        actions.addWidget(self.folder_button)
+        actions.addStretch(1)
+        actions.addWidget(self.later_button)
+        actions.addWidget(self.primary_button)
+        layout.addLayout(actions)
+
+    def _primary_clicked(self) -> None:
+        if self.installer_path:
+            self.install_requested.emit(self.installer_path)
+        elif not self._downloading:
+            self.download_requested.emit(self.update)
+
+    def start_download(self) -> None:
+        self._downloading = True
+        self.primary_button.setEnabled(False)
+        self.later_button.setEnabled(False)
+        self.progress.setRange(0, 100)
+        self.progress.setValue(0)
+        self.progress.setFormat("Downloading… %p%")
+        self.status.setText(
+            "Downloading the installer. Keep this window open; checksum verification "
+            "will run automatically when the transfer finishes."
+        )
+
+    def set_download_progress(self, percent: int) -> None:
+        self.progress.setValue(max(0, min(100, int(percent))))
+
+    def set_ready(self, installer: Path) -> None:
+        self._downloading = False
+        self.installer_path = str(installer.resolve())
+        self.progress.setRange(0, 100)
+        self.progress.setValue(100)
+        self.progress.setFormat("Download complete • SHA-256 verified")
+        self.status.setText(
+            "The installer is verified and ready. Install now to close the application "
+            "and continue setup."
+        )
+        self.primary_button.setText("Install update")
+        self.primary_button.setEnabled(True)
+        self.later_button.setText("Install later")
+        self.later_button.setEnabled(True)
+        self.folder_button.setVisible(True)
+
+    def set_failed(self, message: str) -> None:
+        self._downloading = False
+        self.status.setText(f"The update could not be downloaded or verified.\n{message}")
+        self.progress.setRange(0, 100)
+        self.progress.setValue(0)
+        self.progress.setFormat("Download failed")
+        self.primary_button.setText("Retry download")
+        self.primary_button.setEnabled(True)
+        self.later_button.setEnabled(True)
+
+    def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
+        if self._downloading:
+            event.ignore()
+            self.status.setText(
+                "The verified installer is still downloading. This window will remain "
+                "open until the transfer finishes."
+            )
+            return
+        super().closeEvent(event)
 
 
 class MainWindow(QMainWindow):
@@ -156,8 +384,8 @@ class MainWindow(QMainWindow):
         data_directory: str | Path | None = None,
     ) -> None:
         super().__init__()
-        self.setWindowTitle(f"{APP_DISPLAY_NAME} {application_version()}")
-        self.setMinimumSize(1120, 720)
+        self.setWindowTitle(APP_DISPLAY_NAME)
+        self.setMinimumSize(1280, 800)
         self.resize(1380, 860)
         self.setWindowFlags(
             Qt.WindowType.Window
@@ -165,19 +393,13 @@ class MainWindow(QMainWindow):
             | Qt.WindowType.WindowMinMaxButtonsHint
             | Qt.WindowType.WindowCloseButtonHint
         )
-        self.settings = settings or QSettings(
-            ORGANIZATION_NAME, SETTINGS_APPLICATION_NAME
-        )
+        self.settings = settings or QSettings(ORGANIZATION_NAME, SETTINGS_APPLICATION_NAME)
         self._data_directory = (
             Path(data_directory).resolve() if data_directory is not None else None
         )
         self._configure_ai_from_settings()
-        self._apply_crystalness(
-            self._default_value("crystalness", 65), persist=False
-        )
-        app_data = QStandardPaths.writableLocation(
-            QStandardPaths.StandardLocation.AppDataLocation
-        )
+        self._apply_crystalness(self._default_value("crystalness", 65), persist=False)
+        app_data = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation)
         self._metadata_tracker_file = str(
             (self._data_directory or Path(app_data or Path.home() / ".youtube_media_studio"))
             / "album_enrichment_tracker.json"
@@ -200,7 +422,6 @@ class MainWindow(QMainWindow):
         self._last_output_folder = ""
         self._history: list[dict[str, Any]] = []
         self._form_runs: dict[str, QPushButton] = {}
-        self._nav_buttons: list[QPushButton] = []
         self._active_operation_name = ""
         self._active_entry_names: list[str] = []
         self._album_statuses: dict[str, str] = {}
@@ -209,15 +430,22 @@ class MainWindow(QMainWindow):
         self._tool_ai_checks: dict[str, QCheckBox] = {}
         self._background: LiquidBackground | None = None
         self._resize_idle_timer: QTimer | None = None
-        self._builtin_install_thread: BuiltinAIInstallThread | None = None
+        self._update_thread: QThread | None = None
+        self._update_worker: UpdateWorker | None = None
+        self._update_dialog: ApplicationUpdateDialog | None = None
+        self._google_thread: QThread | None = None
+        self._google_worker: GoogleCloudWorker | None = None
+        self._google_pending_playlists: list[YouTubePlaylist] = []
+        self._google_import_name = ""
+        self._applying_cloud_profile = False
+        self._google_restore_after_connect = False
+        self._google_backup_after_action = False
 
         self._build_window()
         self._resize_idle_timer = QTimer(self)
         self._resize_idle_timer.setSingleShot(True)
         self._resize_idle_timer.setInterval(140)
-        self._resize_idle_timer.timeout.connect(
-            lambda: self._set_background_interactive(False)
-        )
+        self._resize_idle_timer.timeout.connect(lambda: self._set_background_interactive(False))
         self._blank_click_selection_filter = BlankClickSelectionFilter(self)
         application = QApplication.instance()
         if application is not None:
@@ -228,8 +456,16 @@ class MainWindow(QMainWindow):
         self._workspace_autosave.setInterval(5000)
         self._workspace_autosave.timeout.connect(self._save_workspace_state)
         self._workspace_autosave.start()
+        self._cloud_autosave = QTimer(self)
+        self._cloud_autosave.setSingleShot(True)
+        self._cloud_autosave.setInterval(1500)
+        self._cloud_autosave.timeout.connect(self._auto_backup_google_profile)
+        self.media_library.cloud_profile_changed.connect(self._schedule_cloud_backup)
         self._restore_last_page()
-        self._append_log("Application ready. Select a workflow from the sidebar.")
+        self._append_log("Application ready. Select a workflow from the menu bar.")
+        QTimer.singleShot(500, self._report_downloader_health_on_startup)
+        if "PYTEST_CURRENT_TEST" not in os.environ:
+            QTimer.singleShot(2500, lambda: self._check_for_updates(interactive=False))
 
     # ------------------------------------------------------------------ shell
     def _build_window(self) -> None:
@@ -254,7 +490,7 @@ class MainWindow(QMainWindow):
         body_layout.setContentsMargins(14, 14, 14, 12)
         body_layout.setSpacing(14)
 
-        body_layout.addWidget(self._build_sidebar())
+        self.player_status = self._build_player_status()
         body_layout.addWidget(self._build_content(), 1)
         shell_layout.addWidget(body, 1)
         shell_layout.addWidget(self._build_activity_bar())
@@ -262,80 +498,267 @@ class MainWindow(QMainWindow):
         root_layout.setContentsMargins(0, 0, 0, 0)
         root_layout.addWidget(shell, 0, 0)
         self.setCentralWidget(root)
+        self._build_menu_bar()
 
-    def _build_sidebar(self) -> QWidget:
-        sidebar = QWidget()
-        sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(218)
-        layout = QVBoxLayout(sidebar)
-        layout.setContentsMargins(11, 14, 11, 14)
-        layout.setSpacing(5)
+    def _build_menu_bar(self) -> None:
+        """Expose standard application navigation and maintenance commands."""
 
-        section = QLabel("WORKSPACES")
-        section.setObjectName("mutedLabel")
-        section.setContentsMargins(10, 0, 0, 6)
-        layout.addWidget(section)
+        menu_bar = self.menuBar()
+        menu_bar.setNativeMenuBar(False)
 
-        navigation_scroll = QScrollArea()
-        navigation_scroll.setWidgetResizable(True)
-        navigation_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        navigation_scroll.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        file_menu = menu_bar.addMenu("File")
+        settings_action = file_menu.addAction(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView),
+            "Settings…",
         )
-        navigation_scroll.setVerticalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        settings_action.setShortcut(QKeySequence("Ctrl+,"))
+        settings_action.triggered.connect(lambda: self._open_settings_dialog())
+        file_menu.addSeparator()
+        self.menu_open_output_action = file_menu.addAction(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon),
+            "Open Last Output Folder",
         )
-        navigation_scroll.setStyleSheet("QScrollArea { background: transparent; }")
-        navigation = QWidget()
-        navigation.setStyleSheet("background: transparent;")
-        navigation_layout = QVBoxLayout(navigation)
-        navigation_layout.setContentsMargins(0, 0, 0, 0)
-        navigation_layout.setSpacing(5)
+        self.menu_open_output_action.setEnabled(False)
+        self.menu_open_output_action.triggered.connect(self._open_last_output)
+        file_menu.addSeparator()
+        exit_action = file_menu.addAction(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_DialogCloseButton),
+            "Exit",
+        )
+        exit_action.setShortcut(QKeySequence.StandardKey.Quit)
+        exit_action.triggered.connect(lambda: self.close())
 
-        items = [
-            ("⌂  Dashboard", 0),
-            ("⌕  Search Song", 1),
-            ("♫  Audio Downloader", 2),
-            ("▶  Video Downloader", 3),
-            ("▤  Album Splitter", 4),
-            ("≋  Jukebox Splitter", 5),
-            ("#  Track Reorder", 6),
-            ("✎  Edit File", 7),
-            ("▤  Edit Album", 8),
-            ("▣  Album Consolidator", 9),
-            ("⌘  Utilities", 10),
-            ("›_  Live Logs", 11),
-            ("⚙  Global Settings", 12),
-            ("♫  Media Library", 13),
-        ]
-        for text, index in items:
-            button = QPushButton(text)
-            button.setObjectName("navButton")
-            button.setCheckable(True)
-            button.clicked.connect(lambda checked=False, page=index: self._set_page(page))
-            navigation_layout.addWidget(button)
-            self._nav_buttons.append(button)
+        download_menu = menu_bar.addMenu("Download")
+        self._add_workspace_action(
+            download_menu,
+            "Search Song",
+            1,
+            QStyle.StandardPixmap.SP_FileDialogContentsView,
+            "Ctrl+F",
+        )
+        download_menu.addSeparator()
+        self._add_workspace_action(
+            download_menu,
+            "Audio Downloader",
+            2,
+            QStyle.StandardPixmap.SP_MediaVolume,
+        )
+        self._add_workspace_action(
+            download_menu,
+            "Video Downloader",
+            3,
+            QStyle.StandardPixmap.SP_MediaPlay,
+        )
 
-        navigation_layout.addStretch(1)
-        navigation_scroll.setWidget(navigation)
-        layout.addWidget(navigation_scroll, 1)
+        organize_menu = menu_bar.addMenu("Organize")
+        self._add_workspace_action(
+            organize_menu,
+            "Album Splitter",
+            4,
+            QStyle.StandardPixmap.SP_DirIcon,
+        )
+        self._add_workspace_action(
+            organize_menu,
+            "Jukebox Splitter",
+            5,
+            QStyle.StandardPixmap.SP_MediaSkipForward,
+        )
+        self._add_workspace_action(
+            organize_menu,
+            "Track Reorder",
+            6,
+            QStyle.StandardPixmap.SP_ArrowUp,
+        )
+        organize_menu.addSeparator()
+        self._add_workspace_action(
+            organize_menu,
+            "Album Consolidator",
+            9,
+            QStyle.StandardPixmap.SP_DirLinkIcon,
+        )
+        self._add_workspace_action(
+            organize_menu,
+            "Utilities",
+            10,
+            QStyle.StandardPixmap.SP_ComputerIcon,
+        )
+
+        edit_menu = menu_bar.addMenu("Edit")
+        self._add_workspace_action(
+            edit_menu,
+            "Edit File",
+            7,
+            QStyle.StandardPixmap.SP_FileDialogDetailedView,
+        )
+        self._add_workspace_action(
+            edit_menu,
+            "Edit Album",
+            8,
+            QStyle.StandardPixmap.SP_DirIcon,
+        )
+
+        view_menu = menu_bar.addMenu("View")
+        self._add_workspace_action(
+            view_menu,
+            "Dashboard",
+            0,
+            QStyle.StandardPixmap.SP_DesktopIcon,
+            "Ctrl+1",
+        )
+        self._add_workspace_action(
+            view_menu,
+            "Live Logs",
+            11,
+            QStyle.StandardPixmap.SP_FileDialogInfoView,
+            "Ctrl+Shift+L",
+        )
+
+        help_menu = menu_bar.addMenu("Help")
+        self.check_for_updates_action = help_menu.addAction(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload),
+            "Check for Updates…",
+        )
+        self.check_for_updates_action.triggered.connect(
+            lambda: self._check_for_updates(interactive=True)
+        )
+        diagnostics_action = help_menu.addAction(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation),
+            "Downloader Diagnostics…",
+        )
+        diagnostics_action.triggered.connect(self._diagnose_download_setup)
+        help_menu.addSeparator()
+        about_action = help_menu.addAction(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation),
+            f"About {APP_DISPLAY_NAME}",
+        )
+        about_action.triggered.connect(self._show_about)
+
+        self.media_player_action = QAction(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay),
+            "Media Player",
+            self,
+        )
+        self.media_player_action.setShortcut(QKeySequence("Ctrl+L"))
+        self.media_player_action.setToolTip("Open the Media Player (Ctrl+L)")
+        self.media_player_action.setCheckable(True)
+        self.media_player_action.triggered.connect(lambda: self._set_page(13))
+        self.addAction(self.media_player_action)
+
+        self.media_player_menu_button = QToolButton(menu_bar)
+        self.media_player_menu_button.setObjectName("mediaPlayerMenuButton")
+        self.media_player_menu_button.setDefaultAction(self.media_player_action)
+        self.media_player_menu_button.setToolButtonStyle(
+            Qt.ToolButtonStyle.ToolButtonTextBesideIcon
+        )
+        self.media_player_menu_button.setMinimumWidth(132)
+        self.media_player_menu_button.setToolTip("Open the Media Player (Ctrl+L)")
+        menu_bar.setCornerWidget(
+            self.media_player_menu_button,
+            Qt.Corner.TopRightCorner,
+        )
+        self._build_settings_dialog()
+
+    def _add_workspace_action(
+        self,
+        menu,
+        label: str,
+        page: int,
+        icon: QStyle.StandardPixmap,
+        shortcut: str = "",
+    ) -> None:
+        action = menu.addAction(self.style().standardIcon(icon), label)
+        if shortcut:
+            action.setShortcut(QKeySequence(shortcut))
+        action.triggered.connect(lambda _checked=False, page_index=page: self._set_page(page_index))
+
+    def _build_settings_dialog(self) -> None:
+        self._settings_dialog = QDialog(self)
+        self._settings_dialog.setWindowTitle(f"Settings — {APP_DISPLAY_NAME}")
+        self._settings_dialog.setModal(False)
+        self._settings_dialog.setMinimumSize(960, 640)
+        self._settings_dialog.resize(1380, 850)
+
+        layout = QVBoxLayout(self._settings_dialog)
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.settings_categories = QListWidget()
+        self.settings_categories.setMinimumWidth(240)
+        self.settings_categories.setMaximumWidth(340)
+        for label, key in (
+            ("Software updates", "software_updates"),
+            ("Connected services", "connected_services"),
+            ("Batch processing and network", "batch_network"),
+            ("Audio and metadata", "audio_metadata"),
+            ("Media playback", "video_playback"),
+            ("AI providers and online evidence", "ai_providers"),
+            ("Application behavior and privacy", "behavior_privacy"),
+            ("Storage and appearance", "storage_appearance"),
+        ):
+            item = QListWidgetItem(label)
+            item.setData(Qt.ItemDataRole.UserRole, key)
+            self.settings_categories.addItem(item)
+        self.settings_categories.currentRowChanged.connect(self._settings_category_changed)
+        splitter.addWidget(self.settings_categories)
+        splitter.addWidget(self.settings_page)
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([280, 1100])
+        layout.addWidget(splitter, 1)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(self._settings_dialog.close)
+        layout.addWidget(buttons)
+        self.settings_categories.setCurrentRow(0)
+
+    def _settings_category_changed(self, row: int) -> None:
+        item = self.settings_categories.item(row)
+        if item is None:
+            return
+        selected_key = str(item.data(Qt.ItemDataRole.UserRole) or "")
+        for key, section in self.settings_sections.items():
+            selected = key == selected_key
+            section.setVisible(selected)
+            if selected:
+                section.set_expanded(True)
+        section = self.settings_sections.get(selected_key)
+        if section is not None:
+            QTimer.singleShot(
+                0,
+                lambda target=section: self.settings_page.ensureWidgetVisible(target),
+            )
+
+    def _open_settings_dialog(self) -> None:
+        self._settings_dialog.show()
+        self._settings_dialog.raise_()
+        self._settings_dialog.activateWindow()
+
+    def _show_about(self) -> None:
+        QMessageBox.about(
+            self,
+            f"About {APP_DISPLAY_NAME}",
+            f"{APP_DISPLAY_NAME} {application_version()}\n\n"
+            "Download, enrich, organize, and play your local media.\n\n"
+            "Created by Dhiman Ghosh.",
+        )
+
+    def _build_player_status(self) -> GlassCard:
+        """Create the compact visualizer/version card used in the bottom status bar."""
 
         spectrum_card = GlassCard()
-        spectrum_card.setFixedHeight(108)
+        spectrum_card.setFixedSize(220, 96)
         spectrum_layout = QVBoxLayout(spectrum_card)
-        spectrum_layout.setContentsMargins(8, 5, 8, 5)
+        spectrum_layout.setContentsMargins(8, 6, 8, 6)
+        spectrum_layout.setSpacing(4)
         self.music_visualizer = MusicVisualizer()
+        self.music_visualizer.setMinimumHeight(56)
+        self.music_visualizer.setMaximumHeight(56)
         spectrum_layout.addWidget(self.music_visualizer)
-        layout.addWidget(spectrum_card)
         self.version_label = QLabel(f"Version {application_version()}")
         self.version_label.setObjectName("appVersionLabel")
         self.version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.version_label.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse
-        )
+        self.version_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.version_label.setToolTip(f"Installed {APP_DISPLAY_NAME} version")
-        layout.addWidget(self.version_label)
-        return sidebar
+        spectrum_layout.addWidget(self.version_label)
+        return spectrum_card
 
     def _build_content(self) -> QWidget:
         self.pages = QStackedWidget()
@@ -351,31 +774,23 @@ class MainWindow(QMainWindow):
         self.pages.addWidget(self._build_album_consolidator_page())
         self.pages.addWidget(self._build_utilities_page())
         self.pages.addWidget(self._build_logs_page())
-        self.pages.addWidget(self._build_settings_page())
+        self.settings_page = self._build_settings_page()
+        self.pages.addWidget(QWidget())  # Reserved legacy Global Settings page index.
         self.media_library = MediaLibraryPage(self.settings, self)
-        self.media_library.ai_identity_resolver = self._active_ai_identity
         self.media_library.request_search_song.connect(self._search_missing_library_song)
         self.media_library.request_edit_file.connect(self._edit_library_file)
-        self.media_library.request_edit_video_display.connect(
-            self._edit_library_video_display
-        )
+        self.media_library.request_edit_video_display.connect(self._edit_library_video_display)
         self.media_library.request_edit_album.connect(self._edit_library_album)
-        self.media_library.request_album_enricher.connect(
-            self._open_library_album_enricher
-        )
-        self.media_library.request_track_reorder.connect(
-            self._open_library_track_reorder
-        )
+        self.media_library.request_album_enricher.connect(self._open_library_album_enricher)
+        self.media_library.request_track_reorder.connect(self._open_library_track_reorder)
         self.media_library.spectrum_ready.connect(self.music_visualizer.set_levels)
-        self.media_library.visualizer_playback_changed.connect(
-            self.music_visualizer.set_playing
-        )
+        self.media_library.visualizer_playback_changed.connect(self.music_visualizer.set_playing)
         self.pages.addWidget(self.media_library)
         return self.pages
 
     def _build_activity_bar(self) -> QWidget:
         bar = QWidget()
-        bar.setFixedHeight(76)
+        bar.setFixedHeight(112)
         layout = QGridLayout(bar)
         layout.setContentsMargins(22, 7, 15, 9)
         layout.setHorizontalSpacing(10)
@@ -385,16 +800,13 @@ class MainWindow(QMainWindow):
         self.pulse_dot.setVisible(False)
         self.activity_label = QLabel("Idle")
         self.activity_label.setObjectName("mutedLabel")
-        provider_id = os.environ.get(AI_PROVIDER_ENV, "builtin").strip() or "builtin"
+        provider_id = os.environ.get(AI_PROVIDER_ENV, "ollama").strip() or "ollama"
         provider_key = os.environ.get(AI_PROVIDER_API_KEY_ENV, "").strip()
         ollama_model = os.environ.get(OLLAMA_MODEL_ENV, "").strip()
         ready_model = self._agentic_model()
         if not self.settings.value("defaults/ai_enabled", True, type=bool):
             ready_provider = "DISABLED"
             ready_model = "internet/deterministic mode"
-        elif provider_id == "builtin":
-            ready_provider = BUILTIN_PROVIDER_LABEL.upper()
-            ready_model = BUILTIN_MODEL_ID
         elif provider_id == "ollama" and ollama_model:
             ready_provider = "OLLAMA"
             ready_model = ollama_model
@@ -402,8 +814,7 @@ class MainWindow(QMainWindow):
             ready_provider = provider_definition(provider_id).label.upper()
             ready_model = os.environ.get(AI_PROVIDER_MODEL_ENV, "").strip()
         elif provider_key or (
-            provider_id == "nvidia"
-            and os.environ.get(NVIDIA_API_KEY_ENV, "").strip()
+            provider_id == "nvidia" and os.environ.get(NVIDIA_API_KEY_ENV, "").strip()
         ):
             ready_provider = provider_definition(provider_id).label.upper()
             ready_model = (
@@ -439,13 +850,14 @@ class MainWindow(QMainWindow):
             "Open the folder used by the most recently completed operation"
         )
         self.open_output_button.clicked.connect(self._open_last_output)
-        layout.addWidget(self.activity_progress, 0, 0, 1, 3)
-        layout.addWidget(self.pulse_dot, 1, 0)
-        layout.addWidget(self.activity_label, 1, 1)
-        layout.addWidget(self.ai_status_badge, 1, 2, Qt.AlignmentFlag.AlignRight)
-        layout.addWidget(self.open_output_button, 0, 3, 2, 1)
-        layout.addWidget(self.cancel_button, 0, 4, 2, 1)
-        layout.setColumnStretch(1, 1)
+        layout.addWidget(self.player_status, 0, 0, 2, 1)
+        layout.addWidget(self.activity_progress, 0, 1, 1, 3)
+        layout.addWidget(self.pulse_dot, 1, 1)
+        layout.addWidget(self.activity_label, 1, 2)
+        layout.addWidget(self.ai_status_badge, 1, 3, Qt.AlignmentFlag.AlignRight)
+        layout.addWidget(self.open_output_button, 0, 4, 2, 1)
+        layout.addWidget(self.cancel_button, 0, 5, 2, 1)
+        layout.setColumnStretch(2, 1)
         return bar
 
     def resizeEvent(self, event) -> None:  # noqa: N802
@@ -576,9 +988,9 @@ class MainWindow(QMainWindow):
         *,
         expanded: bool,
     ) -> tuple[CollapsibleSection, QVBoxLayout, QFormLayout]:
-        """Create a persistent collapsible group for related global settings."""
+        """Create one non-collapsible category page for the Settings window."""
 
-        section = CollapsibleSection(title, removable=False)
+        section = CollapsibleSection(title, removable=False, collapsible=False)
         section.setProperty("settingsGroup", key)
         body_layout = QVBoxLayout(section.body)
         body_layout.setContentsMargins(8, 4, 8, 8)
@@ -592,14 +1004,7 @@ class MainWindow(QMainWindow):
         form.setVerticalSpacing(11)
         form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         body_layout.addLayout(form)
-        section.set_expanded(
-            self._setting_bool(f"ui/settings_sections/{key}", expanded)
-        )
-        section.toggle.toggled.connect(
-            lambda value, setting_key=key: self.settings.setValue(
-                f"ui/settings_sections/{setting_key}", bool(value)
-            )
-        )
+        section.set_expanded(expanded)
         return section, body_layout, form
 
     def _capture_ai_provider_draft(self) -> None:
@@ -622,21 +1027,15 @@ class MainWindow(QMainWindow):
                 "base_url": definition.base_url,
             },
         )
-        is_local = definition.id in {"builtin", "ollama"}
+        is_local = definition.id == "ollama"
         self.settings_ai_api_key.setText(draft["api_key"])
         self.settings_ai_api_key.setPlaceholderText(
-            "Not required for local AI" if is_local else definition.key_placeholder
+            "Not required for local Ollama" if is_local else definition.key_placeholder
         )
         self.settings_ai_api_key.setEnabled(not is_local)
         self.settings_ai_model.setText(draft["model"])
         self.settings_ai_model.setPlaceholderText(
-            (
-                "Managed automatically on first AI use"
-                if definition.id == "builtin"
-                else "Uses the Ollama model below"
-            )
-            if is_local
-            else definition.default_model
+            "Uses the Ollama model below" if is_local else definition.default_model
         )
         self.settings_ai_model.setEnabled(not is_local)
         self.settings_ai_base_url.setText(draft["base_url"])
@@ -649,58 +1048,6 @@ class MainWindow(QMainWindow):
         self._capture_ai_provider_draft()
         self._active_ai_provider = str(self.settings_ai_provider.currentData())
         self._show_ai_provider_draft(self._active_ai_provider)
-
-    def _refresh_builtin_ai_status(self) -> None:
-        try:
-            status = builtin_status()
-            ready = bool(status["runtime_ready"] and status["model_ready"])
-            state = "Installed and ready" if ready else "Downloads on first AI use"
-            size_gib = int(status["download_bytes"]) / (1024**3)
-            self.settings_builtin_ai_status.setText(
-                f"{state} · {status['model']} · {size_gib:.1f} GB"
-            )
-            self.settings_builtin_ai_remove.setEnabled(ready)
-        except RuntimeError as exc:
-            self.settings_builtin_ai_status.setText(str(exc))
-            self.settings_builtin_ai_remove.setEnabled(False)
-
-    def _install_builtin_ai(self) -> None:
-        if self._builtin_install_thread is not None:
-            return
-        self.settings_builtin_ai_install.setEnabled(False)
-        self.settings_builtin_ai_status.setText(
-            "Downloading and verifying the private CPU model…"
-        )
-        thread = BuiltinAIInstallThread(self)
-        thread.completed.connect(self._builtin_ai_install_finished)
-        thread.finished.connect(thread.deleteLater)
-        self._builtin_install_thread = thread
-        thread.start()
-
-    def _builtin_ai_install_finished(self, _status: object, error: str) -> None:
-        self._builtin_install_thread = None
-        self.settings_builtin_ai_install.setEnabled(True)
-        self._refresh_builtin_ai_status()
-        if error:
-            QMessageBox.warning(self, "Built-in AI installation", error)
-        else:
-            QMessageBox.information(
-                self,
-                "Built-in AI ready",
-                "The private CPU model is installed and passed its startup check.",
-            )
-
-    def _remove_builtin_ai(self) -> None:
-        answer = QMessageBox.question(
-            self,
-            "Remove built-in AI model",
-            "Remove the managed model and runtime? Your local preference profile is kept. "
-            "The assets can be downloaded again on the next AI request.",
-        )
-        if answer != QMessageBox.StandardButton.Yes:
-            return
-        remove_builtin_assets()
-        self._refresh_builtin_ai_status()
 
     @staticmethod
     def _spin(minimum: int, maximum: int, value: int, suffix: str = "") -> QSpinBox:
@@ -732,7 +1079,9 @@ class MainWindow(QMainWindow):
         box.setChecked(checked)
         return box
 
-    def _run_row(self, operation: str, callback: Callable[[], dict[str, Any]], text: str) -> QWidget:
+    def _run_row(
+        self, operation: str, callback: Callable[[], dict[str, Any]], text: str
+    ) -> QWidget:
         row = QWidget()
         layout = QHBoxLayout(row)
         layout.setContentsMargins(0, 4, 0, 0)
@@ -766,9 +1115,7 @@ class MainWindow(QMainWindow):
         button = QPushButton(text)
         button.setObjectName("primaryButton")
         button.setMinimumWidth(170)
-        button.clicked.connect(
-            lambda checked=False: self._start_operation(operation, callback())
-        )
+        button.clicked.connect(lambda checked=False: self._start_operation(operation, callback()))
         header_layout.addWidget(button)
         outer.insertWidget(0, header)
         self._form_runs[operation] = button
@@ -816,7 +1163,12 @@ class MainWindow(QMainWindow):
             "Default workers",
             str(self._default_value("workers", machine_parallel_workers())),
         )
-        for card in (self.jobs_metric, self.completed_metric, self.failed_metric, self.workers_metric):
+        for card in (
+            self.jobs_metric,
+            self.completed_metric,
+            self.failed_metric,
+            self.workers_metric,
+        ):
             metrics.addWidget(card)
         layout.addLayout(metrics)
 
@@ -826,7 +1178,7 @@ class MainWindow(QMainWindow):
         actions_layout.addWidget(self._section_label("Quick launch"))
         buttons = QGridLayout()
         quick_items = [
-            ("Open media library", 13),
+            ("Open media player", 13),
             ("Search for music", 1),
             ("Download MP3", 2),
             ("Download video", 3),
@@ -862,7 +1214,9 @@ class MainWindow(QMainWindow):
         history_header_layout.addWidget(self.dashboard_clear_button)
         history_layout.addWidget(history_header)
         self.history_table = QTableWidget(0, 5)
-        self.history_table.setHorizontalHeaderLabels(["Time", "Workflow", "Status", "Items", "Details"])
+        self.history_table.setHorizontalHeaderLabels(
+            ["Time", "Workflow", "Status", "Items", "Details"]
+        )
         self.history_table.setAlternatingRowColors(True)
         self.history_table.verticalHeader().setVisible(False)
         self.history_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -1041,9 +1395,7 @@ class MainWindow(QMainWindow):
             return
         self._set_page(9)
         self.album_consolidator_source.set_text(str(folder))
-        self.album_consolidator_source.line_edit.setFocus(
-            Qt.FocusReason.OtherFocusReason
-        )
+        self.album_consolidator_source.line_edit.setFocus(Qt.FocusReason.OtherFocusReason)
         self._save_workspace_state()
         self._append_log(f"[LIBRARY] Opened Album Enricher for: {folder}")
 
@@ -1082,8 +1434,12 @@ class MainWindow(QMainWindow):
         self._song_search_results = [item for item in results if isinstance(item, dict)]
         parts = []
         for label, key in (
-            ("Title", "title"), ("Artist", "artists"), ("Album", "album"),
-            ("Movie", "movie"), ("Year", "release_year"), ("Workflow", "workflow"),
+            ("Title", "title"),
+            ("Artist", "artists"),
+            ("Album", "album"),
+            ("Movie", "movie"),
+            ("Year", "release_year"),
+            ("Workflow", "workflow"),
         ):
             value = str(self._song_search_intent.get(key) or "").strip()
             if value:
@@ -1092,7 +1448,8 @@ class MainWindow(QMainWindow):
         explanation = str(self._song_search_intent.get("explanation") or "")
         metadata_warning = str(self._song_search_intent.get("metadata_warnings") or "")
         self.song_search_understanding.setText(
-            " · ".join(parts) + f"\nUnderstanding: {engine}. {explanation}"
+            " · ".join(parts)
+            + f"\nUnderstanding: {engine}. {explanation}"
             + (f"\nMetadata note: {metadata_warning}" if metadata_warning else "")
         )
         workflow = str(self._song_search_intent.get("workflow") or "audio")
@@ -1114,7 +1471,9 @@ class MainWindow(QMainWindow):
             preview.setMinimumSize(116, 36)
             preview.setToolTip("Open this result on YouTube")
             preview.clicked.connect(
-                lambda checked=False, url=str(result.get("url") or ""): QDesktopServices.openUrl(QUrl(url))
+                lambda checked=False, url=str(result.get("url") or ""): QDesktopServices.openUrl(
+                    QUrl(url)
+                )
             )
             self.song_search_table.setCellWidget(row, 4, preview)
         if self._song_search_results:
@@ -1151,17 +1510,18 @@ class MainWindow(QMainWindow):
             )
             return
         elif workflow == "video":
-            self.video_input.add_entry(
-                routed_title, {"ytb_link": url, "file_name": routed_title}
-            )
+            self.video_input.add_entry(routed_title, {"ytb_link": url, "file_name": routed_title})
             target = 3
         elif workflow == "album":
             collection = str(intent.get("album") or intent.get("movie") or title).strip()
             self.album_input.add_entry(
-                collection, {
-                    "ytb_link": url, "album": collection,
-                    "release_year": year, "album_art": album_art,
-                }
+                collection,
+                {
+                    "ytb_link": url,
+                    "album": collection,
+                    "release_year": year,
+                    "album_art": album_art,
+                },
             )
             target = 4
         else:
@@ -1178,8 +1538,7 @@ class MainWindow(QMainWindow):
         self._save_workspace_state()
         self._set_page(target)
         self._append_log(
-            f"[ROUTE] Added {selected_title or title} to "
-            f"{workflow.replace('_', ' ').title()}."
+            f"[ROUTE] Added {selected_title or title} to {workflow.replace('_', ' ').title()}."
         )
 
     def _route_enriched_audio_song(self, output_text: str) -> None:
@@ -1235,13 +1594,18 @@ class MainWindow(QMainWindow):
         layout.addWidget(card)
         self.audio_download_progress = DownloadProgressPanel()
         layout.addWidget(self.audio_download_progress)
-        layout.addWidget(self._feature_card("Included", [
-            "Best-source audio extraction through yt-dlp and FFmpeg",
-            "Parallel downloads with independent randomized delays",
-            "ID3 title, album, artists, year, artwork, and track numbering",
-            "Safe existing-file handling and JSON result reports",
-            "Workers, delays, retries, MP3 quality, and sample rate are managed in Global Settings",
-        ]))
+        layout.addWidget(
+            self._feature_card(
+                "Included",
+                [
+                    "Best-source audio extraction through yt-dlp and FFmpeg",
+                    "Parallel downloads with independent randomized delays",
+                    "ID3 title, album, artists, year, artwork, and track numbering",
+                    "Safe existing-file handling and JSON result reports",
+                    "Workers, delays, retries, MP3 quality, and sample rate are managed in File → Settings…",
+                ],
+            )
+        )
         layout.addStretch(1)
         return page
 
@@ -1273,7 +1637,9 @@ class MainWindow(QMainWindow):
         self.video_mp3_mode.addItem("MP3 only when selected", "audio-only")
         self.video_mp3_mode.addItem("Selected video and MP3", "both")
         self.video_output = PathPicker(placeholder="Optional video output folder", mode="folder")
-        self.video_audio_output = PathPicker(placeholder="Optional MP3 output folder", mode="folder")
+        self.video_audio_output = PathPicker(
+            placeholder="Optional MP3 output folder", mode="folder"
+        )
         self.video_merge = QComboBox()
         self.video_merge.addItems(["mp4", "mkv", "webm"])
         self.video_report = self._check("Write result report", False)
@@ -1288,9 +1654,14 @@ class MainWindow(QMainWindow):
         layout.addWidget(card)
         self.video_download_progress = DownloadProgressPanel()
         layout.addWidget(self.video_download_progress)
-        layout.addWidget(self._feature_card("Global Settings", [
-            "Workers, download delays, retry behavior, MP3 quality, and sample rate are configured once in Global Settings.",
-        ]))
+        layout.addWidget(
+            self._feature_card(
+                "Shared settings",
+                [
+                    "Workers, download delays, retry behavior, MP3 quality, and sample rate are configured once from the Settings window.",
+                ],
+            )
+        )
         layout.addStretch(1)
         return page
 
@@ -1320,29 +1691,27 @@ class MainWindow(QMainWindow):
             retry_attempts=self._default_value("retries", 3),
         )
         self.album_input.log_requested.connect(self._append_log)
+        self.album_input.order_changed.connect(self._save_workspace_state)
         self.album_output = PathPicker(placeholder="Optional output folder", mode="folder")
-        self.album_threshold = self._double_spin(-90.0, -1.0, -35.0, 1.0, " dB")
-        self.album_silence = self._double_spin(0.1, 30.0, 1.5, 0.1, " s")
-        self.album_track_duration = self._double_spin(1.0, 3600.0, 45.0, 1.0, " s")
-        self.album_padding = self._double_spin(0.0, 10.0, 0.25, 0.05, " s")
         self.album_keep_temp = self._check("Keep temporary source audio")
         self.album_report = self._check("Write result report", False)
         self.album_overwrite = self._check("Overwrite existing tracks")
         form.addRow("Albums and tracks", self.album_input)
         form.addRow("Output folder", self.album_output)
-        form.addRow("Silence threshold", self.album_threshold)
-        form.addRow("Minimum silence", self.album_silence)
-        form.addRow("Minimum track", self.album_track_duration)
-        form.addRow("Trim padding", self.album_padding)
         form.addRow("Temporary files", self.album_keep_temp)
         form.addRow("Reporting", self.album_report)
         form.addRow("Existing files", self.album_overwrite)
         layout.addWidget(card)
         self.album_download_progress = DownloadProgressPanel()
         layout.addWidget(self.album_download_progress)
-        layout.addWidget(self._feature_card("Global Settings", [
-            "Workers, download delays, retries, MP3 bitrate, and sample rate are configured once in Global Settings.",
-        ]))
+        layout.addWidget(
+            self._feature_card(
+                "Shared settings",
+                [
+                    "Workers, download behavior, audio quality, and silence-detection defaults are configured once from the Settings window.",
+                ],
+            )
+        )
         layout.addStretch(1)
         return page
 
@@ -1350,10 +1719,10 @@ class MainWindow(QMainWindow):
         return {
             "input_data": self.album_input.data(),
             "output_dir": self.album_output.text(),
-            "silence_threshold_db": self.album_threshold.value(),
-            "min_silence_duration": self.album_silence.value(),
-            "min_track_duration": self.album_track_duration.value(),
-            "trim_silence_padding": self.album_padding.value(),
+            "silence_threshold_db": self._default_float_value("album_silence_threshold_db", -35.0),
+            "min_silence_duration": self._default_float_value("album_min_silence_duration", 1.5),
+            "min_track_duration": self._default_float_value("album_min_track_duration", 45.0),
+            "trim_silence_padding": self._default_float_value("album_trim_silence_padding", 0.25),
             "keep_temp": self.album_keep_temp.isChecked(),
             "write_report": self.album_report.isChecked(),
             "overwrite": self.album_overwrite.isChecked(),
@@ -1366,9 +1735,7 @@ class MainWindow(QMainWindow):
             "Extract manually timed songs from one or more compilation videos with per-song metadata and artwork.",
         )
         card, outer, form = self._form_card("Jukebox extraction job")
-        self._add_header_run_button(
-            outer, "jukebox", self._jukebox_params, "Start jukebox split"
-        )
+        self._add_header_run_button(outer, "jukebox", self._jukebox_params, "Start jukebox split")
         self.jukebox_input = JsonBatchEditor(
             "jukebox",
             retry_attempts=self._default_value("retries", 3),
@@ -1386,9 +1753,14 @@ class MainWindow(QMainWindow):
         layout.addWidget(card)
         self.jukebox_download_progress = DownloadProgressPanel()
         layout.addWidget(self.jukebox_download_progress)
-        layout.addWidget(self._feature_card("Global Settings", [
-            "Workers, download delays, retries, MP3 bitrate, and sample rate are configured once in Global Settings.",
-        ]))
+        layout.addWidget(
+            self._feature_card(
+                "Shared settings",
+                [
+                    "Workers, download delays, retries, MP3 bitrate, and sample rate are configured once from the Settings window.",
+                ],
+            )
+        )
         layout.addStretch(1)
         return page
 
@@ -1417,24 +1789,16 @@ class MainWindow(QMainWindow):
         self.track_reorder_list = QListWidget()
         self.track_reorder_list.setMinimumHeight(330)
         self.track_reorder_list.setAlternatingRowColors(True)
-        self.track_reorder_list.setSelectionMode(
-            QAbstractItemView.SelectionMode.ExtendedSelection
-        )
-        self.track_reorder_list.setDragDropMode(
-            QAbstractItemView.DragDropMode.InternalMove
-        )
+        self.track_reorder_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.track_reorder_list.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
         self.track_reorder_list.setDefaultDropAction(Qt.DropAction.MoveAction)
         self.track_reorder_list.setDropIndicatorShown(True)
-        self.track_reorder_list.model().rowsMoved.connect(
-            self._refresh_track_reorder_labels
-        )
+        self.track_reorder_list.model().rowsMoved.connect(self._refresh_track_reorder_labels)
         self._track_folder_load_timer = QTimer(self)
         self._track_folder_load_timer.setSingleShot(True)
         self._track_folder_load_timer.setInterval(180)
         self._track_folder_load_timer.timeout.connect(self._load_track_reorder_folder)
-        self.track_reorder_folder.line_edit.textChanged.connect(
-            self._queue_track_folder_load
-        )
+        self.track_reorder_folder.line_edit.textChanged.connect(self._queue_track_folder_load)
         form.addRow("Album folder", self.track_reorder_folder)
         form.addRow("Drag to reorder", self.track_reorder_list)
 
@@ -1443,15 +1807,11 @@ class MainWindow(QMainWindow):
         actions_layout.setContentsMargins(0, 4, 0, 0)
         reload_button = QPushButton("Reload folder")
         reload_button.setObjectName("secondaryButton")
-        reload_button.clicked.connect(
-            lambda checked=False: self._load_track_reorder_folder()
-        )
+        reload_button.clicked.connect(lambda checked=False: self._load_track_reorder_folder())
         clear_button = QPushButton("Clear")
         clear_button.setObjectName("secondaryButton")
         clear_button.setToolTip("Clear the selected album folder and track list")
-        clear_button.clicked.connect(
-            lambda checked=False: self._clear_track_reorder()
-        )
+        clear_button.clicked.connect(lambda checked=False: self._clear_track_reorder())
         run_button = QPushButton("Reorder track numbers")
         run_button.setObjectName("primaryButton")
         run_button.setMinimumWidth(190)
@@ -1467,11 +1827,16 @@ class MainWindow(QMainWindow):
         outer.addWidget(actions)
         self._form_runs["track_reorder"] = run_button
         layout.addWidget(card)
-        layout.addWidget(self._feature_card("Safety", [
-            "Only the track-number tag is changed to 1, 2, 3, and so on",
-            "An existing track total such as /8 is preserved",
-            "Songs are not renamed, moved, decoded, or re-encoded",
-        ]))
+        layout.addWidget(
+            self._feature_card(
+                "Safety",
+                [
+                    "Only the track-number tag is changed to 1, 2, 3, and so on",
+                    "An existing track total such as /8 is preserved",
+                    "Songs are not renamed, moved, decoded, or re-encoded",
+                ],
+            )
+        )
         layout.addStretch(1)
         return page
 
@@ -1556,9 +1921,7 @@ class MainWindow(QMainWindow):
         self.edit_file_action.addItem("Update metadata only", "metadata")
         self.edit_file_action.addItem("Trim the selected local file", "trim")
         self.edit_file_action.addItem("Replace media from YouTube", "redownload")
-        self.edit_file_action.addItem(
-            "Save video playback crop / aspect", "video_display"
-        )
+        self.edit_file_action.addItem("Save video playback crop / aspect", "video_display")
         self.edit_file_input = PathPicker(
             placeholder="Select the existing media file", file_filter=media_filter
         )
@@ -1574,9 +1937,7 @@ class MainWindow(QMainWindow):
         self.edit_file_download_start = QLineEdit("00:00")
         self.edit_file_download_start.setPlaceholderText("00:00")
         self.edit_file_download_end = QLineEdit()
-        self.edit_file_download_end.setPlaceholderText(
-            "Optional — download to the end"
-        )
+        self.edit_file_download_end.setPlaceholderText("Optional — download to the end")
         self.edit_file_start = QLineEdit("00:00")
         self.edit_file_end = QLineEdit()
         self.edit_file_end.setPlaceholderText("Loaded local file duration")
@@ -1668,14 +2029,19 @@ class MainWindow(QMainWindow):
         layout.addWidget(metadata_card)
         self.edit_download_progress = DownloadProgressPanel()
         layout.addWidget(self.edit_download_progress)
-        layout.addWidget(self._feature_card("Safe editing", [
-            "Metadata-only changes are written to a temporary copy and atomically replace the source",
-            "Trimming uses lossless stream copy and then applies the edited metadata",
-            "Redownload retains source container data before applying the edited fields",
-            "Video playback crop/aspect profiles change app playback only and never rewrite the file",
-            "Artwork accepts a local JPEG/PNG or HTTP(S) image URL; leave it empty to preserve the cover",
-            "Edited audio is renamed as Title - Album - Artists using filesystem-safe characters",
-        ]))
+        layout.addWidget(
+            self._feature_card(
+                "Safe editing",
+                [
+                    "Metadata-only changes are written to a temporary copy and atomically replace the source",
+                    "Trimming uses lossless stream copy and then applies the edited metadata",
+                    "Redownload retains source container data before applying the edited fields",
+                    "Video playback crop/aspect profiles change app playback only and never rewrite the file",
+                    "Artwork accepts a local JPEG/PNG or HTTP(S) image URL; leave it empty to preserve the cover",
+                    "Edited audio is renamed as Title - Album - Artists using filesystem-safe characters",
+                ],
+            )
+        )
         layout.addStretch(1)
         self._edit_file_action_changed()
         return page
@@ -1705,9 +2071,12 @@ class MainWindow(QMainWindow):
         except (OSError, RuntimeError, ValueError) as exc:
             self.edit_file_duration.setText(f"Could not read duration: {exc}")
         fields = {
-            "title": self.edit_meta_title, "album": self.edit_meta_album,
-            "artists": self.edit_meta_artists, "year": self.edit_meta_year,
-            "track_number": self.edit_meta_track, "track_total": self.edit_meta_track_total,
+            "title": self.edit_meta_title,
+            "album": self.edit_meta_album,
+            "artists": self.edit_meta_artists,
+            "year": self.edit_meta_year,
+            "track_number": self.edit_meta_track,
+            "track_total": self.edit_meta_track_total,
         }
         payload = metadata.as_dict()
         for name, widget in fields.items():
@@ -1735,9 +2104,7 @@ class MainWindow(QMainWindow):
         self.edit_file_aspect_ratio.setEnabled(video_display)
         self.edit_file_mode.setEnabled(not metadata_only and not video_display)
         self.edit_file_output.setEnabled(
-            not metadata_only
-            and not video_display
-            and not bool(self.edit_file_mode.currentData())
+            not metadata_only and not video_display and not bool(self.edit_file_mode.currentData())
         )
         if action == "trim":
             self.edit_file_action_help.setText(
@@ -1755,7 +2122,7 @@ class MainWindow(QMainWindow):
             self.edit_file_run_button.setText("Redownload and edit")
         elif video_display:
             self.edit_file_action_help.setText(
-                "Stores crop and aspect as a Media Library playback profile for this "
+                "Stores crop and aspect as a Media Player playback profile for this "
                 "video. The video file and its encoded dimensions are not changed."
             )
             self.edit_file_run_button.setText("Save playback settings")
@@ -1793,9 +2160,12 @@ class MainWindow(QMainWindow):
 
     def _edit_file_params(self) -> dict[str, Any]:
         metadata = {
-            "title": self.edit_meta_title.text(), "album": self.edit_meta_album.text(),
-            "artists": self.edit_meta_artists.text(), "year": self.edit_meta_year.text(),
-            "track_number": self.edit_meta_track.text(), "track_total": self.edit_meta_track_total.text(),
+            "title": self.edit_meta_title.text(),
+            "album": self.edit_meta_album.text(),
+            "artists": self.edit_meta_artists.text(),
+            "year": self.edit_meta_year.text(),
+            "track_number": self.edit_meta_track.text(),
+            "track_total": self.edit_meta_track_total.text(),
         }
         action = str(self.edit_file_action.currentData())
         range_start = (
@@ -1809,21 +2179,22 @@ class MainWindow(QMainWindow):
             else self.edit_file_end.text()
         )
         return {
-            "action": action, "input_path": self.edit_file_input.text(),
+            "action": action,
+            "input_path": self.edit_file_input.text(),
             "youtube_url": self.edit_file_url.text(),
             "media_mode": str(self.edit_file_content.currentData()),
-            "start_timestamp": range_start, "end_timestamp": range_end,
+            "start_timestamp": range_start,
+            "end_timestamp": range_end,
             "overwrite_source": (
                 True
                 if action in {"metadata", "video_display"}
                 else bool(self.edit_file_mode.currentData())
             ),
             "output_path": (
-                ""
-                if action in {"metadata", "video_display"}
-                else self.edit_file_output.text()
+                "" if action in {"metadata", "video_display"} else self.edit_file_output.text()
             ),
-            "metadata": metadata, "artwork_path": self.edit_meta_artwork.text(),
+            "metadata": metadata,
+            "artwork_path": self.edit_meta_artwork.text(),
             "remove_artwork": self.edit_meta_remove_artwork.isChecked(),
             "crop_ratio": self.edit_file_crop_ratio.currentText(),
             "aspect_ratio": self.edit_file_aspect_ratio.currentText(),
@@ -1879,8 +2250,12 @@ class MainWindow(QMainWindow):
         self._edit_file_suggested_output = ""
         self._edit_file_loaded_duration = ""
         for widget in (
-            self.edit_meta_title, self.edit_meta_album, self.edit_meta_artists,
-            self.edit_meta_year, self.edit_meta_track, self.edit_meta_track_total,
+            self.edit_meta_title,
+            self.edit_meta_album,
+            self.edit_meta_artists,
+            self.edit_meta_year,
+            self.edit_meta_track,
+            self.edit_meta_track_total,
         ):
             widget.clear()
         self.edit_meta_artwork.set_text("")
@@ -1982,7 +2357,8 @@ class MainWindow(QMainWindow):
         self.edit_album_artwork.set_text("")
         self.edit_album_remove_artwork.setChecked(False)
         mixed = (
-            " · mixed values: " + ", ".join(field.replace("_", " ") for field in summary.mixed_fields)
+            " · mixed values: "
+            + ", ".join(field.replace("_", " ") for field in summary.mixed_fields)
             if summary.mixed_fields
             else " · shared metadata detected"
         )
@@ -1992,9 +2368,7 @@ class MainWindow(QMainWindow):
             artwork = f"artwork embedded in {summary.artwork_files}/{len(summary.files)} files"
         else:
             artwork = "no embedded artwork"
-        self.edit_album_status.setText(
-            f"{len(summary.files)} supported file(s){mixed} · {artwork}"
-        )
+        self.edit_album_status.setText(f"{len(summary.files)} supported file(s){mixed} · {artwork}")
 
     def _start_edit_album(self) -> None:
         self._edit_album_load_timer.stop()
@@ -2065,9 +2439,7 @@ class MainWindow(QMainWindow):
         self.edit_album_artist.clear()
         self.edit_album_artwork.set_text("")
         self.edit_album_remove_artwork.setChecked(False)
-        self.edit_album_status.setText(
-            "Select an album folder to inspect its shared metadata."
-        )
+        self.edit_album_status.setText("Select an album folder to inspect its shared metadata.")
         self._save_workspace_state()
 
     # ------------------------------------------------------ album consolidator
@@ -2082,14 +2454,14 @@ class MainWindow(QMainWindow):
             "Search and complete metadata, then retag and rename songs recursively using verified matches.",
         )
         self.album_consolidator_source = PathPicker(
-            placeholder="Folder containing album tracks",
+            placeholder="Audio file or folder containing album tracks",
             mode="folder",
         )
         self.album_enrich_destination_enabled = self._check(
             "Enable destination path for enrichment",
             False,
         )
-        enrich_form.addRow("Source folder", self.album_consolidator_source)
+        enrich_form.addRow("Source file or folder", self.album_consolidator_source)
         enrich_form.addRow("Destination scan", self.album_enrich_destination_enabled)
         self.album_enrich_force_recheck = self._check(
             "Recheck files already marked complete (repairs a wrong year)", False
@@ -2144,9 +2516,7 @@ class MainWindow(QMainWindow):
         run_button.setObjectName("primaryButton")
         run_button.setMinimumWidth(210)
         run_button.clicked.connect(
-            lambda: self._start_operation(
-                "album_consolidator", self._album_consolidator_params()
-            )
+            lambda: self._start_operation("album_consolidator", self._album_consolidator_params())
         )
         action_layout.addWidget(clear_button)
         action_layout.addStretch(1)
@@ -2155,27 +2525,33 @@ class MainWindow(QMainWindow):
         move_outer.addWidget(action_row)
         layout.addWidget(enrich_card)
         layout.addWidget(move_card)
-        layout.addWidget(self._feature_card("Consolidation rules", [
-            "Album Enricher never moves files; Move enrichment is enabled by default",
-            "Disable move enrichment after stage 1 to route existing tags without repeating it",
-            "Track indexing still runs when move enrichment is disabled",
-            "Enable the move scope option to enrich the complete destination tree instead",
-            "Enriched files are renamed as Title - Album - Artists",
-            "Soundtrack, EP, and Single storefront suffixes are removed from Album tags and searches",
-            "Album values are written only from exact soundtrack, discography, or catalog matches",
-            "Album folders use Album name (release year) when track metadata provides the year",
-            "Matching album/year folders merge without deleting or overwriting any song",
-            "Untagged files named Title - Album - Artists are tagged automatically before moving",
-            "Album folder names are sanitized using the project's filename rules",
-            "Album Enricher searches for Unknown placeholders; Move leaves unresolved files in place",
-            "Files with blank, Unknown, or unreadable Album metadata are skipped",
-            "Album tags containing a credited artist are removed and those files are not moved",
-            "If a title already exists in its destination album folder, the source duplicate is deleted",
-            "Existing album folders are reused; existing files are never overwritten",
-            "After moving, Wikipedia order is compressed to the downloaded subset as 1, 2, 3…",
-            "Source and destination selections persist when the application closes",
-            "Workers, retries, network waits, audio defaults, and Wikipedia ordering are managed in Global Settings",
-        ]))
+        layout.addWidget(
+            self._feature_card(
+                "Consolidation rules",
+                [
+                    "Album Enricher accepts one audio file or a folder and never moves files",
+                    "A selected audio file is enriched alone; album-wide ordering is not run",
+                    "Disable move enrichment after stage 1 to route existing tags without repeating it",
+                    "Track indexing still runs when move enrichment is disabled",
+                    "Enable the move scope option to enrich the complete destination tree instead",
+                    "Enriched files are renamed as Title - Album - Artists",
+                    "Soundtrack, EP, and Single storefront suffixes are removed from Album tags and searches",
+                    "Album values are written only from exact soundtrack, discography, or catalog matches",
+                    "Album folders use Album name (release year) when track metadata provides the year",
+                    "Matching album/year folders merge without deleting or overwriting any song",
+                    "Untagged files named Title - Album - Artists are tagged automatically before moving",
+                    "Album folder names are sanitized using the project's filename rules",
+                    "Album Enricher searches for Unknown placeholders; Move leaves unresolved files in place",
+                    "Files with blank, Unknown, or unreadable Album metadata are skipped",
+                    "Album tags containing a credited artist are removed and those files are not moved",
+                    "If a title already exists in its destination album folder, the source duplicate is deleted",
+                    "Existing album folders are reused; existing files are never overwritten",
+                    "After moving, Wikipedia order is compressed to the downloaded subset as 1, 2, 3…",
+                    "Source and destination selections persist when the application closes",
+                    "Workers, retries, network waits, audio defaults, and Wikipedia ordering are managed in File → Settings…",
+                ],
+            )
+        )
         layout.addStretch(1)
         return page
 
@@ -2212,13 +2588,9 @@ class MainWindow(QMainWindow):
         resolved = resolve_album_folder_successor(requested)
         if resolved != requested:
             self.album_consolidator_source.set_text(str(resolved))
-            self.settings.setValue(
-                "workspace/album_consolidator_source", str(resolved)
-            )
+            self.settings.setValue("workspace/album_consolidator_source", str(resolved))
             self.settings.sync()
-            self._append_log(
-                f"[RESTORED] Album source path updated after rename: {resolved}"
-            )
+            self._append_log(f"[RESTORED] Album source path updated after rename: {resolved}")
         return str(resolved)
 
     def _clear_album_consolidator(self) -> None:
@@ -2255,12 +2627,19 @@ class MainWindow(QMainWindow):
         self.artist_output.setReadOnly(True)
         run = QPushButton("Format artist names")
         run.setObjectName("primaryButton")
-        run.clicked.connect(lambda: self._start_operation("format_artists", {
-            "input_text": self.artist_input.toPlainText(),
-        }))
+        run.clicked.connect(
+            lambda: self._start_operation(
+                "format_artists",
+                {
+                    "input_text": self.artist_input.toPlainText(),
+                },
+            )
+        )
         copy_button = QPushButton("Copy result")
         copy_button.setObjectName("secondaryButton")
-        copy_button.clicked.connect(lambda: QGuiApplication.clipboard().setText(self.artist_output.text()))
+        copy_button.clicked.connect(
+            lambda: QGuiApplication.clipboard().setText(self.artist_output.text())
+        )
         button_row = QHBoxLayout()
         button_row.addStretch(1)
         button_row.addWidget(copy_button)
@@ -2282,13 +2661,17 @@ class MainWindow(QMainWindow):
             file_filter="Text files (*.txt);;All files (*)",
         )
         self.tracks_text = QPlainTextEdit()
-        self.tracks_text.setPlaceholderText("00:00 - Song One by Artist\n04:12 - Song Two by Artist")
+        self.tracks_text.setPlaceholderText(
+            "00:00 - Song One by Artist\n04:12 - Song Two by Artist"
+        )
         self.tracks_end_field = QComboBox()
         self.tracks_end_field.addItem("end (jukebox)", "end")
         self.tracks_end_field.addItem("stop (album)", "stop")
         self.tracks_unknown = QLineEdit("Unknown")
         self.tracks_keep_case = self._check("Preserve title casing")
-        self.tracks_output_path = PathPicker(placeholder="Optional tracks.json", mode="save", file_filter="JSON files (*.json)")
+        self.tracks_output_path = PathPicker(
+            placeholder="Optional tracks.json", mode="save", file_filter="JSON files (*.json)"
+        )
         self.tracks_result = QPlainTextEdit()
         self.tracks_result.setReadOnly(True)
         controls = QGridLayout()
@@ -2299,14 +2682,19 @@ class MainWindow(QMainWindow):
         controls.addWidget(self.tracks_keep_case, 1, 0, 1, 2)
         run = QPushButton("Parse timestamps")
         run.setObjectName("primaryButton")
-        run.clicked.connect(lambda: self._start_operation("parse_tracks", {
-            "input_path": self.tracks_input_file.text(),
-            "input_text": self.tracks_text.toPlainText(),
-            "end_field": self.tracks_end_field.currentData(),
-            "unknown_artists": self.tracks_unknown.text(),
-            "keep_case": self.tracks_keep_case.isChecked(),
-            "output_path": self.tracks_output_path.text(),
-        }))
+        run.clicked.connect(
+            lambda: self._start_operation(
+                "parse_tracks",
+                {
+                    "input_path": self.tracks_input_file.text(),
+                    "input_text": self.tracks_text.toPlainText(),
+                    "end_field": self.tracks_end_field.currentData(),
+                    "unknown_artists": self.tracks_unknown.text(),
+                    "keep_case": self.tracks_keep_case.isChecked(),
+                    "output_path": self.tracks_output_path.text(),
+                },
+            )
+        )
         layout.addWidget(QLabel("Optional input file"))
         layout.addWidget(self.tracks_input_file)
         layout.addWidget(QLabel("Timestamp text"))
@@ -2331,7 +2719,9 @@ class MainWindow(QMainWindow):
         self.log_view = QPlainTextEdit()
         self.log_view.setReadOnly(True)
         self.log_view.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
-        self.log_view.setStyleSheet("font-family: 'Cascadia Mono', 'Consolas', monospace; font-size: 12px;")
+        self.log_view.setStyleSheet(
+            "font-family: 'Cascadia Mono', 'Consolas', monospace; font-size: 12px;"
+        )
         controls = QHBoxLayout()
         clear = QPushButton("Clear")
         clear.setObjectName("secondaryButton")
@@ -2341,7 +2731,9 @@ class MainWindow(QMainWindow):
         save.clicked.connect(self._save_log)
         copy = QPushButton("Copy all")
         copy.setObjectName("secondaryButton")
-        copy.clicked.connect(lambda: QGuiApplication.clipboard().setText(self.log_view.toPlainText()))
+        copy.clicked.connect(
+            lambda: QGuiApplication.clipboard().setText(self.log_view.toPlainText())
+        )
         controls.addStretch(1)
         controls.addWidget(copy)
         controls.addWidget(clear)
@@ -2354,8 +2746,8 @@ class MainWindow(QMainWindow):
     # ---------------------------------------------------------------- settings
     def _build_settings_page(self) -> QWidget:
         page, layout = self._page_container(
-            "Global Settings",
-            "Configure application-wide defaults. Expand only the section you need.",
+            "Settings",
+            "Configure application-wide defaults. Select a category on the left.",
         )
         self.settings_workers = self._spin(
             1,
@@ -2366,18 +2758,14 @@ class MainWindow(QMainWindow):
             f"Minimum value: 1 · Maximum for this machine: {MAX_PARALLEL_WORKERS}"
         )
         self.settings_min_delay = self._spin(0, 600, self._default_value("min_delay", 10), " s")
-        self.settings_connections = self._spin(
-            1, 32, self._default_value("connections", 8)
-        )
+        self.settings_connections = self._spin(1, 32, self._default_value("connections", 8))
         self.settings_connections.setToolTip(
-            "Maximum connections inside one download. Fragmented DASH/HLS sources use "
-            "parallel transfers; progressive sources accurately fall back to one stream."
+            "Maximum connections inside one download. HTTP sources use validated parallel "
+            "byte ranges; DASH/HLS uses parallel fragments. Unsupported ranges use one connection."
         )
         self.settings_max_delay = self._spin(0, 600, self._default_value("max_delay", 25), " s")
         self.settings_retries = self._spin(1, 20, self._default_value("retries", 3))
-        self.settings_retry_wait = self._spin(
-            0, 600, self._default_value("retry_wait", 60), " s"
-        )
+        self.settings_retry_wait = self._spin(0, 600, self._default_value("retry_wait", 60), " s")
         self.settings_rate_limit_wait = self._spin(
             1, 3600, self._default_value("rate_limit_wait", 180), " s"
         )
@@ -2390,6 +2778,34 @@ class MainWindow(QMainWindow):
         self.settings_sample_rate.addItems(["44100", "48000"])
         self.settings_sample_rate.setCurrentText(
             str(self.settings.value("defaults/sample_rate", "44100"))
+        )
+        self.settings_album_silence_threshold = self._double_spin(
+            -90.0,
+            -1.0,
+            self._default_float_value("album_silence_threshold_db", -35.0),
+            1.0,
+            " dB",
+        )
+        self.settings_album_min_silence = self._double_spin(
+            0.1,
+            30.0,
+            self._default_float_value("album_min_silence_duration", 1.5),
+            0.1,
+            " s",
+        )
+        self.settings_album_min_track = self._double_spin(
+            1.0,
+            3600.0,
+            self._default_float_value("album_min_track_duration", 45.0),
+            1.0,
+            " s",
+        )
+        self.settings_album_trim_padding = self._double_spin(
+            0.0,
+            10.0,
+            self._default_float_value("album_trim_silence_padding", 0.25),
+            0.05,
+            " s",
         )
         self.settings_video_seek_seconds = self._spin(
             1,
@@ -2427,35 +2843,24 @@ class MainWindow(QMainWindow):
             agent_models = available_ollama_models()
         except (OSError, ValueError, json.JSONDecodeError):
             agent_models = []
-        self.settings_agentic_model.addItems(agent_models)
+        self.settings_agentic_model.addItems(agent_models or ["qwen2.5:7b"])
         saved_ollama_model = self.settings.value("defaults/agentic_model", None)
         self.settings_agentic_model.setCurrentText(
-            "" if saved_ollama_model is None else str(saved_ollama_model or "").strip()
+            DEFAULT_OLLAMA_MODEL
+            if saved_ollama_model is None
+            else str(saved_ollama_model or "").strip()
         )
         self.settings_agentic_model.setToolTip(
-            "Optional Ollama model used when Ollama is selected or before the built-in "
-            "CPU fallback for hosted providers. Leave blank if Ollama is not installed."
+            "Local model used as the primary provider or automatic hosted-provider fallback."
         )
-        legacy_nvidia_key = self._saved_secret(
-            "defaults/nvidia_api_key", NVIDIA_API_KEY_ENV
-        )
+        legacy_nvidia_key = self._saved_secret("defaults/nvidia_api_key", NVIDIA_API_KEY_ENV)
         saved_provider = str(self.settings.value("defaults/ai_provider", "") or "").strip()
         if not saved_provider:
-            saved_provider = (
-                "nvidia"
-                if legacy_nvidia_key
-                else (
-                    "ollama"
-                    if saved_ollama_model is not None
-                    and str(saved_ollama_model or "").strip()
-                    else "builtin"
-                )
-            )
+            saved_provider = "nvidia" if legacy_nvidia_key else "ollama"
         self._ai_provider_drafts: dict[str, dict[str, str]] = {}
         for provider in PROVIDERS:
             key = str(
-                self.settings.value(f"defaults/ai_providers/{provider.id}/api_key", "")
-                or ""
+                self.settings.value(f"defaults/ai_providers/{provider.id}/api_key", "") or ""
             ).strip()
             model = str(
                 self.settings.value(
@@ -2472,11 +2877,7 @@ class MainWindow(QMainWindow):
             if provider.id == "nvidia":
                 key = key or legacy_nvidia_key
                 legacy_model = self.settings.value("defaults/nvidia_model", None)
-                model = (
-                    model
-                    if legacy_model is None
-                    else str(legacy_model or "").strip()
-                )
+                model = model if legacy_model is None else str(legacy_model or "").strip()
             self._ai_provider_drafts[provider.id] = {
                 "api_key": key,
                 "model": model,
@@ -2499,9 +2900,7 @@ class MainWindow(QMainWindow):
         self.settings_ai_base_url.setPlaceholderText(
             "Required only for a custom OpenAI-compatible provider"
         )
-        self.settings_ai_provider.currentIndexChanged.connect(
-            self._ai_provider_selection_changed
-        )
+        self.settings_ai_provider.currentIndexChanged.connect(self._ai_provider_selection_changed)
         self._show_ai_provider_draft(self._active_ai_provider)
         # Compatibility aliases retained for integrations that referenced the old controls.
         self.settings_nvidia_api_key = self.settings_ai_api_key
@@ -2525,8 +2924,47 @@ class MainWindow(QMainWindow):
             1, 20, self._default_value("search_suggestions", 10), " matches"
         )
         self.settings_search_suggestions.setToolTip(
-            "Maximum ranked matches shown beneath the Media Library search field."
+            "Maximum ranked matches shown beneath the Media Player search field."
         )
+        update_controls = QWidget()
+        update_controls_layout = QHBoxLayout(update_controls)
+        update_controls_layout.setContentsMargins(0, 0, 0, 0)
+        self.update_status = QLabel("Stable 2.x channel")
+        self.update_status.setObjectName("mutedLabel")
+        check_update = QPushButton("Check for updates")
+        check_update.setObjectName("secondaryButton")
+        check_update.clicked.connect(lambda: self._check_for_updates(interactive=True))
+        update_controls_layout.addWidget(self.update_status, 1)
+        update_controls_layout.addWidget(check_update)
+        self.google_oauth_config = PathPicker(
+            placeholder="Google OAuth desktop-client JSON", mode="file"
+        )
+        self.google_oauth_config.set_text(
+            str(self.settings.value("cloud/google_oauth_config", "") or "")
+        )
+        self.google_account_status = QLabel(
+            str(self.settings.value("cloud/google_email", "Not connected") or "Not connected")
+        )
+        self.google_account_status.setObjectName("mutedLabel")
+        self.google_auto_sync = self._check(
+            "Automatically back up portable settings and playlists after changes",
+            self._setting_bool("cloud/auto_sync", True),
+        )
+        google_actions = QWidget()
+        google_actions_layout = QHBoxLayout(google_actions)
+        google_actions_layout.setContentsMargins(0, 0, 0, 0)
+        for label, handler in (
+            ("Sign in with Google", self._connect_google_account),
+            ("Back up now", self._backup_google_profile),
+            ("Restore", self._restore_google_profile),
+            ("Import YouTube playlist", self._import_google_playlist),
+            ("Disconnect", self._disconnect_google_account),
+        ):
+            button = QPushButton(label)
+            button.setObjectName("secondaryButton")
+            button.clicked.connect(lambda _checked=False, callback=handler: callback())
+            google_actions_layout.addWidget(button)
+        google_actions_layout.addStretch(1)
         self.settings_data_directory = PathPicker(
             placeholder="Folder for settings, enrichment history, and diagnostics",
             mode="folder",
@@ -2554,13 +2992,9 @@ class MainWindow(QMainWindow):
         self._crystal_preview_timer.setSingleShot(True)
         self._crystal_preview_timer.setInterval(40)
         self._crystal_preview_timer.timeout.connect(
-            lambda: self._apply_crystalness(
-                self.settings_crystalness.value(), persist=False
-            )
+            lambda: self._apply_crystalness(self.settings_crystalness.value(), persist=False)
         )
-        self.settings_crystalness_value = QLabel(
-            f"{self.settings_crystalness.value()}%"
-        )
+        self.settings_crystalness_value = QLabel(f"{self.settings_crystalness.value()}%")
         self.settings_crystalness_value.setMinimumWidth(42)
         self.settings_crystalness.valueChanged.connect(self._preview_crystalness)
         crystal_layout.addWidget(self.settings_crystalness, 1)
@@ -2584,6 +3018,45 @@ class MainWindow(QMainWindow):
         layout.addWidget(actions_card)
 
         self.settings_sections: dict[str, CollapsibleSection] = {}
+        updates_section, updates_body, updates_form = self._settings_group(
+            "Software updates",
+            "Check GitHub Releases for stable 2.x updates.",
+            "software_updates",
+            expanded=True,
+        )
+        installed_version = QLabel(application_version())
+        installed_version.setObjectName("mutedLabel")
+        updates_form.addRow("Installed version", installed_version)
+        updates_form.addRow("Channel status", update_controls)
+        update_note = QLabel(
+            "Updates follow public stable 2.x releases."
+        )
+        update_note.setObjectName("mutedLabel")
+        update_note.setWordWrap(True)
+        updates_body.addWidget(update_note)
+        self.settings_sections["software_updates"] = updates_section
+        layout.addWidget(updates_section)
+
+        google_section, google_body, google_form = self._settings_group(
+            "Connected services",
+            "Use one optional Google account for private cloud profile backup and YouTube playlist import.",
+            "connected_services",
+            expanded=False,
+        )
+        google_form.addRow("OAuth desktop client", self.google_oauth_config)
+        google_form.addRow("Google account", self.google_account_status)
+        google_form.addRow("Cloud sync", self.google_auto_sync)
+        google_body.addWidget(google_actions)
+        google_note = QLabel(
+            "Only portable preferences and playlist identities are backed up. Media files, "
+            "local folders, API keys, OAuth tokens, and crash reports stay on this device."
+        )
+        google_note.setObjectName("mutedLabel")
+        google_note.setWordWrap(True)
+        google_body.addWidget(google_note)
+        self.settings_sections["connected_services"] = google_section
+        layout.addWidget(google_section)
+
         batch_section, _batch_body, batch_form = self._settings_group(
             "Batch processing and network",
             "Concurrency, pacing, retry, and rate-limit defaults used by download workflows.",
@@ -2597,6 +3070,13 @@ class MainWindow(QMainWindow):
         batch_form.addRow("Retries", self.settings_retries)
         batch_form.addRow("Retry delay", self.settings_retry_wait)
         batch_form.addRow("Rate-limit wait", self.settings_rate_limit_wait)
+        download_diagnostics = QPushButton("Downloader diagnostics…")
+        download_diagnostics.setObjectName("secondaryButton")
+        download_diagnostics.setToolTip(
+            "Check yt-dlp, FFmpeg, Deno, and browser-cookie recovery support"
+        )
+        download_diagnostics.clicked.connect(self._diagnose_download_setup)
+        batch_form.addRow("Downloader health", download_diagnostics)
         self.settings_sections["batch_network"] = batch_section
         layout.addWidget(batch_section)
 
@@ -2609,6 +3089,13 @@ class MainWindow(QMainWindow):
         audio_form.addRow("Default MP3 bitrate", self.settings_audio_quality)
         audio_form.addRow("Default sample rate", self.settings_sample_rate)
         audio_form.addRow("Album track ordering", self.settings_wikipedia_order)
+        audio_form.addRow(
+            "Album silence threshold",
+            self.settings_album_silence_threshold,
+        )
+        audio_form.addRow("Album minimum silence", self.settings_album_min_silence)
+        audio_form.addRow("Album minimum track", self.settings_album_min_track)
+        audio_form.addRow("Album trim padding", self.settings_album_trim_padding)
         self.settings_sections["audio_metadata"] = audio_section
         layout.addWidget(audio_section)
 
@@ -2619,17 +3106,14 @@ class MainWindow(QMainWindow):
             expanded=False,
         )
         video_form.addRow("Seek interval", self.settings_video_seek_seconds)
-        video_form.addRow(
-            "Crop/aspect memory", self.settings_remember_video_display_modes
-        )
+        video_form.addRow("Crop/aspect memory", self.settings_remember_video_display_modes)
         self.settings_sections["video_playback"] = video_section
         layout.addWidget(video_section)
 
         ai_section, _ai_body, ai_form = self._settings_group(
             "AI providers and online evidence",
-            "The built-in CPU model needs no AI setup and downloads verified assets on first "
-            "use. Ollama and hosted providers override it; failures return to local AI. "
-            "Credentials remain local and are never logged.",
+            "Choose a local or hosted Agno provider. Hosted providers automatically fall back "
+            "to the selected Ollama model. Credentials remain local and are never logged.",
             "ai_providers",
             expanded=True,
         )
@@ -2638,28 +3122,14 @@ class MainWindow(QMainWindow):
         ai_form.addRow("Provider API key", self.settings_ai_api_key)
         ai_form.addRow("Provider model", self.settings_ai_model)
         ai_form.addRow("Provider base URL", self.settings_ai_base_url)
-        ai_form.addRow("Optional Ollama override", self.settings_agentic_model)
+        ai_form.addRow("Ollama local / fallback", self.settings_agentic_model)
         ai_form.addRow("SerpApi key", self.settings_serpapi_api_key)
-        builtin_controls = QWidget()
-        builtin_layout = QHBoxLayout(builtin_controls)
-        builtin_layout.setContentsMargins(0, 0, 0, 0)
-        self.settings_builtin_ai_status = QLabel()
-        self.settings_builtin_ai_status.setObjectName("mutedLabel")
-        self.settings_builtin_ai_install = QPushButton("Install / repair")
-        self.settings_builtin_ai_install.clicked.connect(self._install_builtin_ai)
-        self.settings_builtin_ai_remove = QPushButton("Remove model")
-        self.settings_builtin_ai_remove.clicked.connect(self._remove_builtin_ai)
-        builtin_layout.addWidget(self.settings_builtin_ai_status, 1)
-        builtin_layout.addWidget(self.settings_builtin_ai_install)
-        builtin_layout.addWidget(self.settings_builtin_ai_remove)
-        ai_form.addRow("Built-in AI assets", builtin_controls)
-        self._refresh_builtin_ai_status()
         self.settings_sections["ai_providers"] = ai_section
         layout.addWidget(ai_section)
 
         behavior_section, _behavior_body, behavior_form = self._settings_group(
             "Application behavior and privacy",
-            "Control workspace restoration, local diagnostics, and Media Library suggestion size.",
+            "Control workspace restoration, local diagnostics, and Media Player suggestion size.",
             "behavior_privacy",
             expanded=False,
         )
@@ -2716,11 +3186,14 @@ class MainWindow(QMainWindow):
         return card
 
     def _set_page(self, index: int) -> None:
+        if index == 12:
+            self._open_settings_dialog()
+            return
         if not 0 <= index < self.pages.count():
             index = 0
         self.pages.setCurrentIndex(index)
-        for button_index, button in enumerate(self._nav_buttons):
-            button.setChecked(button_index == index)
+        if hasattr(self, "media_player_action"):
+            self.media_player_action.setChecked(index == 13)
         self.settings.setValue("window/last_page", index)
         operation = {
             1: "search_song",
@@ -2741,6 +3214,8 @@ class MainWindow(QMainWindow):
         try:
             index = int(self.settings.value("window/last_page", 0))
         except (TypeError, ValueError):
+            index = 0
+        if index == 12:
             index = 0
         # Preserve the selected workflow as new pages are inserted.
         schema = int(self.settings.value("window/navigation_schema", 1))
@@ -2763,6 +3238,8 @@ class MainWindow(QMainWindow):
             index += 1
         if schema < 8 and index >= 8:
             index += 1
+        if index == 12:
+            index = 0
         self.settings.setValue("window/navigation_schema", 8)
         self._set_page(index)
 
@@ -2793,15 +3270,9 @@ class MainWindow(QMainWindow):
         params["retries"] = self._default_value("retries", 3)
         params["retry_wait"] = self._default_value("retry_wait", 60)
         params["rate_limit_wait"] = self._default_value("rate_limit_wait", 180)
-        params["preferred_mp3_quality"] = str(
-            self.settings.value("defaults/audio_quality", "320")
-        )
-        params["audio_sample_rate"] = str(
-            self.settings.value("defaults/sample_rate", "44100")
-        )
-        params["wikipedia_track_order"] = self._setting_bool(
-            "defaults/wikipedia_track_order", True
-        )
+        params["preferred_mp3_quality"] = str(self.settings.value("defaults/audio_quality", "320"))
+        params["audio_sample_rate"] = str(self.settings.value("defaults/sample_rate", "44100"))
+        params["wikipedia_track_order"] = self._setting_bool("defaults/wikipedia_track_order", True)
         ai_enabled = self._ai_enabled_for(operation)
         params["ai_enabled"] = ai_enabled
         params["agentic_model"] = self._agentic_model() if ai_enabled else ""
@@ -2813,7 +3284,9 @@ class MainWindow(QMainWindow):
         self._show_ai_usage(operation, params)
         self._active_operation_name = operation
         input_data = params.get("input_data")
-        self._active_entry_names = list(input_data) if isinstance(input_data, dict) else []
+        self._active_entry_names = (
+            self._enabled_album_names(input_data) if operation == "album" else []
+        )
         if operation == "album":
             for name in self._active_entry_names:
                 self._album_statuses[name] = "Running"
@@ -2851,18 +3324,14 @@ class MainWindow(QMainWindow):
             "album_enrichment" if operation == "album_metadata_enricher" else "main"
         )
         self._active_progress_unit = self._progress_unit(operation, self._active_eta_phase)
-        self._active_eta_key = self._eta_profile_key(
-            operation, params, self._active_eta_phase
-        )
+        self._active_eta_key = self._eta_profile_key(operation, params, self._active_eta_phase)
         self._operation_started_at = time.monotonic()
         self._active_progress_current = 0
         self._active_progress_total = 0
         self._session_jobs += 1
         self.jobs_metric.set_value(self._session_jobs)
         self.dashboard_state_badge.setText("RUNNING")
-        self.activity_label.setText(
-            running_operation_text(operation, "Preparing operation")
-        )
+        self.activity_label.setText(running_operation_text(operation, "Preparing operation"))
         self.pulse_dot.setVisible(True)
         self.activity_progress.setRange(0, 0)
         self.activity_progress.setFormat("Preparing…")
@@ -2882,9 +3351,7 @@ class MainWindow(QMainWindow):
             self.album_consolidator_destination,
         ):
             picker.line_edit.deselect()
-        self.album_enrich_destination_enabled.setFocus(
-            Qt.FocusReason.OtherFocusReason
-        )
+        self.album_enrich_destination_enabled.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def _start_parallel_operation(self, operation: str, params: dict[str, Any]) -> None:
         """Run a different workspace without interrupting existing jobs."""
@@ -2904,15 +3371,9 @@ class MainWindow(QMainWindow):
         params["retries"] = self._default_value("retries", 3)
         params["retry_wait"] = self._default_value("retry_wait", 60)
         params["rate_limit_wait"] = self._default_value("rate_limit_wait", 180)
-        params["preferred_mp3_quality"] = str(
-            self.settings.value("defaults/audio_quality", "320")
-        )
-        params["audio_sample_rate"] = str(
-            self.settings.value("defaults/sample_rate", "44100")
-        )
-        params["wikipedia_track_order"] = self._setting_bool(
-            "defaults/wikipedia_track_order", True
-        )
+        params["preferred_mp3_quality"] = str(self.settings.value("defaults/audio_quality", "320"))
+        params["audio_sample_rate"] = str(self.settings.value("defaults/sample_rate", "44100"))
+        params["wikipedia_track_order"] = self._setting_bool("defaults/wikipedia_track_order", True)
         ai_enabled = self._ai_enabled_for(operation)
         params["ai_enabled"] = ai_enabled
         params["agentic_model"] = self._agentic_model() if ai_enabled else ""
@@ -2937,21 +3398,17 @@ class MainWindow(QMainWindow):
             )
         )
         worker.finished.connect(
-            lambda summary, current=thread: self._parallel_operation_finished(
-                current, summary
-            )
+            lambda summary, current=thread: self._parallel_operation_finished(current, summary)
         )
         worker.failed.connect(
             lambda message, traceback_text, current=thread: self._parallel_operation_failed(
                 current, message, traceback_text
             )
         )
-        worker.cancelled.connect(
-            lambda current=thread: self._parallel_operation_cancelled(current)
-        )
+        worker.cancelled.connect(lambda current=thread: self._parallel_operation_cancelled(current))
         worker.item_finished.connect(
-            lambda item, successful, name=operation: (
-                self._mark_parallel_batch_item_finished(name, item, successful)
+            lambda item, successful, name=operation: self._mark_parallel_batch_item_finished(
+                name, item, successful
             )
         )
         for signal in (worker.finished, worker.failed, worker.cancelled):
@@ -2961,7 +3418,7 @@ class MainWindow(QMainWindow):
         thread.finished.connect(lambda current=thread: self._clear_parallel_job(current))
         self._parallel_jobs[thread] = (operation, worker)
         input_data = params.get("input_data")
-        entry_names = list(input_data) if isinstance(input_data, dict) else []
+        entry_names = self._enabled_album_names(input_data) if operation == "album" else []
         self._parallel_entry_names[thread] = entry_names
         if operation == "album":
             for name in entry_names:
@@ -2972,9 +3429,7 @@ class MainWindow(QMainWindow):
         self._sync_run_buttons()
         self._session_jobs += 1
         self.jobs_metric.set_value(self._session_jobs)
-        self._append_log(
-            f"[PARALLEL] Started {operation}; other workspace jobs continue."
-        )
+        self._append_log(f"[PARALLEL] Started {operation}; other workspace jobs continue.")
         thread.start()
 
     def _show_parallel_file_warning(
@@ -2990,27 +3445,23 @@ class MainWindow(QMainWindow):
         )
         worker.acknowledge_file_in_use()
 
-    def _parallel_operation_finished(
-        self, thread: QThread, summary: dict[str, Any]
-    ) -> None:
+    def _parallel_operation_finished(self, thread: QThread, summary: dict[str, Any]) -> None:
         operation = self._parallel_jobs.get(thread, ("Job", None))[0]
         self._session_completed += 1
         self.completed_metric.set_value(self._session_completed)
         self._handle_operation_output(summary)
-        editor = self._batch_editor_for_operation(
-            str(summary.get("operation", operation))
-        )
+        editor = self._batch_editor_for_operation(str(summary.get("operation", operation)))
         if editor is not None:
             editor.disable_completed(
                 summary.get("completed_items", ()),
                 summary.get("failed_items", ()),
+                summary.get("failure_details", {}),
             )
         details = self._summary_text(summary)
         self._append_log(f"[PARALLEL-COMPLETE] {operation}: {details}")
         self._add_history(operation, "Completed", summary.get("total", 0), details)
         if operation == "album":
-            status = "Partial" if int(summary.get("failed", 0) or 0) else "Completed"
-            self._set_parallel_album_status(thread, status)
+            self._record_album_result_statuses(summary)
         self._save_workspace_state()
         self.media_library.refresh_library()
 
@@ -3050,9 +3501,7 @@ class MainWindow(QMainWindow):
         self._learn_eta_profile()
         phase = re.sub(r"[^a-z0-9]+", "_", label.casefold()).strip("_") or "next"
         self._active_eta_phase = phase
-        self._active_progress_unit = self._progress_unit(
-            self._active_operation_name, phase
-        )
+        self._active_progress_unit = self._progress_unit(self._active_operation_name, phase)
         self._active_eta_key = self._eta_profile_key(
             self._active_operation_name,
             self._active_operation_params,
@@ -3077,9 +3526,7 @@ class MainWindow(QMainWindow):
     def _sync_stop_button(self) -> None:
         """Enable Stop exactly while at least one cancellable worker exists."""
 
-        self.cancel_button.setEnabled(
-            self._active_worker is not None or bool(self._parallel_jobs)
-        )
+        self.cancel_button.setEnabled(self._active_worker is not None or bool(self._parallel_jobs))
 
     def _update_operation_progress(self, current: int, total: int, detail: str) -> None:
         self._active_progress_current = max(0, int(current))
@@ -3136,13 +3583,9 @@ class MainWindow(QMainWindow):
             worker.acknowledge_file_in_use()
 
     def _mark_batch_item_finished(self, item: str, successful: bool) -> None:
-        self._mark_parallel_batch_item_finished(
-            self._active_operation_name, item, successful
-        )
+        self._mark_parallel_batch_item_finished(self._active_operation_name, item, successful)
 
-    def _batch_editor_for_operation(
-        self, operation: str
-    ) -> JsonBatchEditor | None:
+    def _batch_editor_for_operation(self, operation: str) -> JsonBatchEditor | None:
         editor = {
             "audio": getattr(self, "audio_input", None),
             "video": getattr(self, "video_input", None),
@@ -3154,6 +3597,7 @@ class MainWindow(QMainWindow):
     def _mark_parallel_batch_item_finished(
         self, operation: str, item: str, successful: bool
     ) -> None:
+        self.media_library.refresh_library(force=False)
         editor = self._batch_editor_for_operation(operation)
         if editor is None:
             return
@@ -3172,24 +3616,39 @@ class MainWindow(QMainWindow):
         if getattr(self, "_ai_enabled_current", False) and not getattr(
             self, "_ai_invoked_current", False
         ):
-            self._set_ai_status(
-                "AI ENABLED · no model call was needed", active=True
-            )
+            self._set_ai_status("AI ENABLED · no model call was needed", active=True)
         self._handle_operation_output(summary)
+        if str(summary.get("operation", "")) == "album_metadata_enricher":
+            self._follow_enriched_album_source(summary)
         editor = self._batch_editor_for_operation(str(summary.get("operation", "")))
         if editor is not None:
             editor.disable_completed(
                 summary.get("completed_items", ()),
                 summary.get("failed_items", ()),
+                summary.get("failure_details", {}),
             )
         details = self._summary_text(summary)
         self._append_log(f"[COMPLETE] {details}")
-        self._add_history(summary.get("operation", "Job"), "Completed", summary.get("total", 0), details)
+        self._add_history(
+            summary.get("operation", "Job"), "Completed", summary.get("total", 0), details
+        )
         if self._active_operation_name == "album":
-            status = "Partial" if int(summary.get("failed", 0) or 0) else "Completed"
-            self._set_active_album_status(status)
+            self._record_album_result_statuses(summary)
         self._save_workspace_state()
         self.media_library.refresh_library()
+
+    def _follow_enriched_album_source(self, summary: dict[str, Any]) -> None:
+        """Keep a single-file workflow pointed at the path produced by enrichment."""
+
+        enriched_source = Path(str(summary.get("output_path", "") or ""))
+        if not enriched_source.is_file():
+            return
+        self.album_consolidator_source.set_text(str(enriched_source))
+        self.settings.setValue("workspace/album_consolidator_source", str(enriched_source))
+        self.settings.sync()
+        self._append_log(
+            f"[UPDATED] Album source now follows the enriched file: {enriched_source}"
+        )
 
     def _operation_failed(self, message: str, traceback_text: str) -> None:
         self._session_failed += 1
@@ -3213,10 +3672,27 @@ class MainWindow(QMainWindow):
             self._set_active_album_status("Cancelled")
         self._save_workspace_state()
 
+    @staticmethod
+    def _enabled_album_names(input_data: object) -> list[str]:
+        # The album editor serializes the Download checkbox as "true" or "false".
+        if not isinstance(input_data, dict):
+            return []
+        return [name for name, values in input_data.items() if values.get("download") != "false"]
+
     def _set_active_album_status(self, status: str) -> None:
         for name in self._active_entry_names:
             self._album_statuses[name] = status
         self.album_input.set_statuses(self._album_statuses)
+
+    def _record_album_result_statuses(self, summary: dict[str, Any]) -> None:
+        """Keep each album's actual result instead of labelling the whole batch Partial."""
+        self.album_input.disable_completed(
+            summary.get("completed_items", ()), summary.get("failed_items", ()),
+            summary.get("failure_details", {}),
+        )
+        for entry in self.album_input.entries:
+            name = self.album_input._field_value(entry["fields"]["__name__"])
+            self._album_statuses[name] = entry["section"].status_label.text().title()
 
     def _set_parallel_album_status(self, thread: QThread, status: str) -> None:
         for name in self._parallel_entry_names.get(thread, []):
@@ -3225,9 +3701,7 @@ class MainWindow(QMainWindow):
 
     def _set_idle_state(self, label: str) -> None:
         if self._parallel_jobs:
-            self.activity_label.setText(
-                f"{len(self._parallel_jobs)} parallel job(s) still running"
-            )
+            self.activity_label.setText(f"{len(self._parallel_jobs)} parallel job(s) still running")
             self.pulse_dot.setVisible(True)
             self.activity_progress.setRange(0, 0)
             self.activity_progress.setFormat("Working…")
@@ -3301,9 +3775,7 @@ class MainWindow(QMainWindow):
         text = str(line or "")
         if "[AI-PROVIDER-FALLBACK]" in text:
             self._ai_invoked_current = True
-            self._set_ai_status(
-                "AI PROVIDER FALLBACK · trying Ollama", active=True, review=True
-            )
+            self._set_ai_status("AI PROVIDER FALLBACK · trying Ollama", active=True, review=True)
         elif "[AI-PROVIDER]" in text:
             self._ai_invoked_current = True
             detail = text.split("[AI-PROVIDER]", 1)[1].strip()
@@ -3322,9 +3794,7 @@ class MainWindow(QMainWindow):
             )
         elif "[AI-PREFLIGHT-REVIEW]" in text:
             self._ai_invoked_current = True
-            self._set_ai_status(
-                "AI PREFLIGHT REVIEW · request preserved", active=True, review=True
-            )
+            self._set_ai_status("AI PREFLIGHT REVIEW · request preserved", active=True, review=True)
         elif "[AI-PREFLIGHT-VERIFIED]" in text:
             self._ai_invoked_current = True
             self._set_ai_status("AI PREFLIGHT VERIFIED", active=True)
@@ -3345,9 +3815,7 @@ class MainWindow(QMainWindow):
             )
         elif "[AI-REVIEW]" in text or "[AGENT-REVIEW]" in text:
             self._ai_invoked_current = True
-            self._set_ai_status(
-                "AI REVIEW · no changes applied", active=True, review=True
-            )
+            self._set_ai_status("AI REVIEW · no changes applied", active=True, review=True)
         elif "[AI-VERIFIED]" in text or "[AGENT-VERIFIED]" in text:
             self._ai_invoked_current = True
             confidence = re.search(r"(?:confidence[= ]|\()(\d{1,3}%)", text, re.I)
@@ -3366,8 +3834,15 @@ class MainWindow(QMainWindow):
     def _summary_text(self, summary: dict[str, Any]) -> str:
         parts = [f"items={summary.get('total', 0)}"]
         for key in (
-            "downloaded", "moved", "deleted", "reordered", "tagged", "tracked",
-            "skipped", "listed", "failed"
+            "downloaded",
+            "moved",
+            "deleted",
+            "reordered",
+            "tagged",
+            "tracked",
+            "skipped",
+            "listed",
+            "failed",
         ):
             value = int(summary.get(key, 0) or 0)
             if value:
@@ -3389,14 +3864,14 @@ class MainWindow(QMainWindow):
         if output_path:
             path = Path(output_path).expanduser().resolve()
             self._last_output_folder = str(path if path.is_dir() else path.parent)
-            self.open_output_button.setEnabled(
-                Path(self._last_output_folder).is_dir()
-            )
+            self.open_output_button.setEnabled(Path(self._last_output_folder).is_dir())
+            self.menu_open_output_action.setEnabled(Path(self._last_output_folder).is_dir())
 
     def _open_last_output(self) -> None:
         folder = Path(self._last_output_folder).expanduser()
         if not self._last_output_folder or not folder.is_dir():
             self.open_output_button.setEnabled(False)
+            self.menu_open_output_action.setEnabled(False)
             QMessageBox.warning(
                 self,
                 "Output folder unavailable",
@@ -3405,14 +3880,414 @@ class MainWindow(QMainWindow):
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder.resolve())))
 
+    def _google_client(self) -> GoogleCloudProfileClient:
+        config_path = Path(self.google_oauth_config.text()).expanduser()
+        if not config_path.is_file():
+            raise ValueError(
+                "Select the Google OAuth desktop-client JSON supplied for this application"
+            )
+        self.settings.setValue("cloud/google_oauth_config", str(config_path.resolve()))
+        return GoogleCloudProfileClient(GoogleOAuthConfig.from_file(config_path))
+
+    def _start_google_cloud_action(self, action: str, payload: object = None) -> None:
+        if self._google_thread is not None:
+            QMessageBox.information(self, "Google cloud", "A Google cloud task is already running.")
+            return
+        try:
+            client = self._google_client()
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            QMessageBox.warning(self, "Google cloud setup required", str(exc))
+            return
+        self.google_account_status.setText(f"{action.title()} in progress…")
+        thread = QThread(self)
+        worker = GoogleCloudWorker(action, client, payload)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._google_cloud_finished)
+        worker.finished.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._google_thread_finished)
+        self._google_thread = thread
+        self._google_worker = worker
+        thread.start()
+
+    def _google_thread_finished(self) -> None:
+        self._google_thread = None
+        self._google_worker = None
+        if self._google_restore_after_connect:
+            self._google_restore_after_connect = False
+            QTimer.singleShot(0, self._restore_google_profile)
+        elif self._google_backup_after_action:
+            self._google_backup_after_action = False
+            QTimer.singleShot(0, self._backup_google_profile)
+
+    def _connect_google_account(self) -> None:
+        self.settings.setValue("cloud/auto_sync", self.google_auto_sync.isChecked())
+        self._start_google_cloud_action("connect")
+
+    def _backup_google_profile(self) -> None:
+        values = {key: self.settings.value(key) for key in PORTABLE_SETTING_KEYS}
+        device_id = str(self.settings.value("cloud/device_id", "") or "")
+        if not device_id:
+            device_id = str(uuid.uuid4())
+            self.settings.setValue("cloud/device_id", device_id)
+        profile = build_cloud_profile(
+            values,
+            self.media_library.cloud_playlist_snapshot(),
+            device_id=device_id,
+            updated_at=datetime.now().astimezone().isoformat(),
+        )
+        self._start_google_cloud_action("backup", profile)
+
+    def _schedule_cloud_backup(self) -> None:
+        if not self._applying_cloud_profile:
+            self._cloud_autosave.start()
+
+    def _auto_backup_google_profile(self) -> None:
+        if (
+            self._setting_bool("cloud/auto_sync", False)
+            and self.settings.value("cloud/google_email", "")
+            and self._google_thread is None
+        ):
+            self._backup_google_profile()
+
+    def _restore_google_profile(self) -> None:
+        self._start_google_cloud_action("restore")
+
+    def _import_google_playlist(self) -> None:
+        self._start_google_cloud_action("playlists")
+
+    def _disconnect_google_account(self) -> None:
+        self._start_google_cloud_action("disconnect")
+
+    def _google_cloud_finished(self, action: str, result: object, error: str) -> None:
+        if error:
+            self.google_account_status.setText("Google cloud unavailable")
+            QMessageBox.warning(self, "Google cloud", error)
+            return
+        if action == "connect":
+            email = str(getattr(result, "email", "Google account"))
+            self.settings.setValue("cloud/google_email", email)
+            self.google_account_status.setText(email)
+            QMessageBox.information(self, "Google account connected", f"Connected as {email}.")
+            self._google_restore_after_connect = True
+        elif action == "backup":
+            self.settings.setValue("cloud/last_sync", datetime.now().astimezone().isoformat())
+            email = str(self.settings.value("cloud/google_email", "Connected") or "Connected")
+            self.google_account_status.setText(f"{email} · backup complete")
+        elif action == "restore":
+            if not isinstance(result, dict):
+                QMessageBox.information(self, "Cloud restore", "No cloud backup exists yet.")
+                if self.google_auto_sync.isChecked():
+                    self._google_backup_after_action = True
+                return
+            profile = validate_cloud_profile(result)
+            self._applying_cloud_profile = True
+            try:
+                for key, value in profile["settings"].items():
+                    self.settings.setValue(key, value)
+                matched = 0
+                missing: list[str] = []
+                for name, entries in profile["playlists"].items():
+                    added, not_found = self.media_library.import_cloud_playlist_entries(
+                        name, entries
+                    )
+                    matched += added
+                    missing.extend(not_found)
+            finally:
+                self._applying_cloud_profile = False
+            self.settings.sync()
+            self._refresh_album_detection_settings_widgets()
+            QMessageBox.information(
+                self,
+                "Cloud profile restored",
+                f"Portable settings restored and {matched} local playlist track(s) matched."
+                + (
+                    f"\n\n{len(missing)} track(s) are not in this machine's library."
+                    if missing
+                    else ""
+                )
+                + "\n\nRestart the application to apply every restored setting.",
+            )
+        elif action == "playlists":
+            self._google_pending_playlists = list(result or [])
+            if not self._google_pending_playlists:
+                QMessageBox.information(self, "YouTube playlists", "No playlists were found.")
+                return
+            labels = [
+                f"{playlist.title} ({playlist.item_count})"
+                for playlist in self._google_pending_playlists
+            ]
+            selected, accepted = QInputDialog.getItem(
+                self, "Import YouTube playlist", "Playlist", labels, 0, False
+            )
+            if accepted:
+                index = labels.index(selected)
+                playlist = self._google_pending_playlists[index]
+                self._google_import_name = playlist.title
+                QTimer.singleShot(
+                    0,
+                    lambda playlist_id=playlist.playlist_id: self._start_google_cloud_action(
+                        "entries", playlist_id
+                    ),
+                )
+        elif action == "entries":
+            entries = [
+                {"title": entry.title, "channel": entry.channel, "video_id": entry.video_id}
+                for entry in list(result or [])
+            ]
+            added, missing = self.media_library.import_cloud_playlist_entries(
+                self._google_import_name or "YouTube playlist", entries
+            )
+            QMessageBox.information(
+                self,
+                "YouTube playlist imported",
+                f"Added {added} locally matched track(s)."
+                + (
+                    f" {len(missing)} track(s) are not in this machine's library."
+                    if missing
+                    else ""
+                ),
+            )
+        elif action == "disconnect":
+            self.settings.remove("cloud/google_email")
+            self.google_account_status.setText("Not connected")
+
+    def _check_for_updates(self, *, interactive: bool) -> None:
+        """Check the stable GitHub release channel in background."""
+
+        if self._update_thread is not None:
+            if interactive:
+                self.update_status.setText("Update check already running…")
+            return
+        self.update_status.setText("Checking GitHub Releases…")
+        thread = QThread(self)
+        worker = UpdateWorker()
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.checked.connect(
+            lambda update, error: self._update_check_finished(
+                update, error, interactive=interactive
+            )
+        )
+        worker.checked.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._update_thread_finished)
+        self._update_thread = thread
+        self._update_worker = worker
+        thread.start()
+
+    def _diagnose_download_setup(self) -> None:
+        """Show actionable downloader health and offer the safe applicable repair."""
+
+        diagnostic = ytdlp_runtime_diagnostic()
+        tools = configure_runtime_tools(allow_download=False)
+        problems: list[str] = []
+        needs_ytdlp_update = diagnostic.version == "not installed" or diagnostic.stale
+        if diagnostic.version == "not installed":
+            problems.append("yt-dlp is not installed")
+        elif diagnostic.stale:
+            problems.append(f"yt-dlp {diagnostic.version} is over 60 days old and may still work")
+        if not tools.ffmpeg:
+            problems.append("FFmpeg is unavailable")
+        if not tools.ffprobe:
+            problems.append("FFprobe is unavailable")
+        if not tools.deno:
+            problems.append("Deno is unavailable for YouTube JavaScript challenges")
+        browser = diagnostic.browser or "none detected (anonymous fallback remains available)"
+        age = "unknown" if diagnostic.age_days is None else f"{diagnostic.age_days} days"
+        summary = (
+            f"yt-dlp: {diagnostic.version} (age: {age})\n"
+            f"FFmpeg: {tools.ffmpeg or 'missing'}\n"
+            f"FFprobe: {tools.ffprobe or 'missing'}\n"
+            f"Deno: {tools.deno or 'missing'}\n"
+            f"Browser cookies: {browser}\n\n"
+        )
+        if not problems:
+            QMessageBox.information(
+                self,
+                "Downloader diagnostics",
+                summary + "No local setup problem was detected. The automatic client/cookie "
+                "fallback will handle transient YouTube 403 responses.",
+            )
+            return
+        repair_text = "\n".join(f"• {problem}" for problem in problems)
+        details = summary + "Detected:\n" + repair_text
+        if getattr(sys, "frozen", False):
+            answer = QMessageBox.question(
+                self,
+                "Check for an app update?",
+                details + "\n\nThis installation updates its bundled downloader tools "
+                "through app releases. Check for an app update now?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes,
+            )
+            if answer == QMessageBox.StandardButton.Yes:
+                self._check_for_updates(interactive=True)
+            return
+        if not needs_ytdlp_update:
+            QMessageBox.information(self, "Downloader diagnostics", details)
+            return
+        answer = QMessageBox.question(
+            self,
+            "Update yt-dlp?",
+            details + "\n\nUpdate yt-dlp in this Python environment?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        updater = Path(__file__).resolve().parents[4] / "tools" / "update_ytdlp.py"
+        started = (
+            QProcess.startDetached(sys.executable, [str(updater)]) if updater.is_file() else False
+        )
+        started_ok = bool(started[0]) if isinstance(started, tuple) else bool(started)
+        if started_ok:
+            QMessageBox.information(
+                self,
+                "Downloader repair started",
+                "yt-dlp is updating in the background. Restart the application when it finishes.",
+            )
+        else:
+            QMessageBox.warning(
+                self,
+                "Auto-fix could not start",
+                f"Run this file manually:\n{updater}",
+            )
+
+    def _report_downloader_health_on_startup(self) -> None:
+        diagnostic = ytdlp_runtime_diagnostic()
+        browser = diagnostic.browser or "none"
+        age = "unknown" if diagnostic.age_days is None else f"{diagnostic.age_days} days"
+        self._append_log(f"[YT-DLP] version={diagnostic.version} | age={age} | browser-cookies={browser}")
+        if diagnostic.stale:
+            self._append_log(
+                f"[YT-DLP] yt-dlp {diagnostic.version} is over 60 days old. "
+                "See Help → Downloader Diagnostics… for update options."
+            )
+
+    def _update_thread_finished(self) -> None:
+        self._update_thread = None
+        self._update_worker = None
+
+    def _update_check_finished(
+        self,
+        update: object,
+        error: str,
+        *,
+        interactive: bool,
+    ) -> None:
+        if error:
+            self.update_status.setText("Update check unavailable")
+            self._append_log(f"[UPDATE-WARNING] {error}")
+            if interactive:
+                QMessageBox.warning(self, "Update check failed", error)
+            return
+        if not isinstance(update, AvailableUpdate):
+            channel = "stable"
+            self.update_status.setText(f"Up to date on the {channel} channel")
+            if interactive:
+                QMessageBox.information(
+                    self,
+                    "No update available",
+                    f"{APP_DISPLAY_NAME} {application_version()} is current on the {channel} channel.",
+                )
+            return
+        label = "beta" if update.prerelease else "stable"
+        self.update_status.setText(f"{update.version} {label} available")
+        if self._update_dialog is not None:
+            self._update_dialog.close()
+        dialog = ApplicationUpdateDialog(update, self)
+        dialog.download_requested.connect(self._download_application_update)
+        dialog.install_requested.connect(self._launch_application_update)
+        dialog.open_folder_requested.connect(self._open_update_download_folder)
+        dialog.finished.connect(lambda: self._clear_update_dialog(dialog))
+        self._update_dialog = dialog
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
+
+    def _download_application_update(self, update: AvailableUpdate) -> None:
+        if self._update_thread is not None:
+            QTimer.singleShot(150, lambda: self._download_application_update(update))
+            return
+        self.update_status.setText(f"Downloading {update.version}…")
+        if self._update_dialog is not None:
+            self._update_dialog.start_download()
+        thread = QThread(self)
+        worker = UpdateWorker(update=update)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.progress.connect(lambda percent: self._application_update_progress(update, percent))
+        worker.downloaded.connect(self._application_update_downloaded)
+        worker.downloaded.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._update_thread_finished)
+        self._update_thread = thread
+        self._update_worker = worker
+        thread.start()
+
+    def _application_update_downloaded(self, update: object, path_or_error: str) -> None:
+        installer = Path(path_or_error).expanduser()
+        if not installer.is_file():
+            self.update_status.setText("Update download failed")
+            if self._update_dialog is not None:
+                self._update_dialog.set_failed(path_or_error)
+            else:
+                QMessageBox.warning(self, "Update download failed", path_or_error)
+            return
+        self.update_status.setText("Installer ready")
+        if self._update_dialog is not None:
+            self._update_dialog.set_ready(installer)
+        else:
+            self._launch_application_update(str(installer))
+
+    def _application_update_progress(self, update: AvailableUpdate, percent: int) -> None:
+        value = max(0, min(100, int(percent)))
+        self.update_status.setText(f"Downloading {update.version}… {value}%")
+        if self._update_dialog is not None:
+            self._update_dialog.set_download_progress(value)
+
+    def _launch_application_update(self, installer_path: str) -> None:
+        installer = Path(installer_path).expanduser().resolve()
+        if not installer.is_file():
+            if self._update_dialog is not None:
+                self._update_dialog.set_failed(f"Installer is missing: {installer}")
+            return
+        started = QProcess.startDetached(str(installer), [])
+        started_ok = bool(started[0]) if isinstance(started, tuple) else bool(started)
+        if started_ok:
+            QApplication.quit()
+        else:
+            message = f"Could not start the installer. Open it manually:\n{installer}"
+            if self._update_dialog is not None:
+                self._update_dialog.set_failed(message)
+            else:
+                QMessageBox.warning(self, "Could not start installer", message)
+
+    def _open_update_download_folder(self, installer_path: str) -> None:
+        installer = Path(installer_path).expanduser()
+        folder = installer.parent if installer.name else installer
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder.resolve())))
+
+    def _clear_update_dialog(self, dialog: ApplicationUpdateDialog) -> None:
+        if self._update_dialog is dialog:
+            self._update_dialog = None
+
     def _add_history(self, operation: str, status: str, total: int, details: str) -> None:
-        self._history.insert(0, {
-            "time": datetime.now().strftime("%H:%M:%S"),
-            "operation": str(operation).replace("_", " ").title(),
-            "status": status,
-            "total": total,
-            "details": details,
-        })
+        self._history.insert(
+            0,
+            {
+                "time": datetime.now().strftime("%H:%M:%S"),
+                "operation": str(operation).replace("_", " ").title(),
+                "status": status,
+                "total": total,
+                "details": details,
+            },
+        )
         self._history = self._history[:30]
         self._refresh_history_table()
 
@@ -3472,9 +4347,7 @@ class MainWindow(QMainWindow):
         return profiles
 
     @staticmethod
-    def _eta_profile_key(
-        operation: str, params: dict[str, Any], phase: str = "main"
-    ) -> str:
+    def _eta_profile_key(operation: str, params: dict[str, Any], phase: str = "main") -> str:
         """Group runs only with workloads having similar concurrency and scope."""
 
         parts = [str(operation)]
@@ -3497,9 +4370,7 @@ class MainWindow(QMainWindow):
             )
         elif operation == "album_consolidator":
             parts.append(
-                "all-destination"
-                if params.get("enrich_all_destination")
-                else "moved-only"
+                "all-destination" if params.get("enrich_all_destination") else "moved-only"
             )
         elif params.get("mode"):
             parts.append(f"mode={params['mode']}")
@@ -3556,6 +4427,28 @@ class MainWindow(QMainWindow):
         except (TypeError, ValueError):
             return fallback
 
+    def _default_float_value(self, key: str, fallback: float) -> float:
+        try:
+            return float(self.settings.value(f"defaults/{key}", fallback))
+        except (TypeError, ValueError):
+            return fallback
+
+    def _refresh_album_detection_settings_widgets(self) -> None:
+        """Reflect restored portable album defaults in the open Settings window."""
+
+        self.settings_album_silence_threshold.setValue(
+            self._default_float_value("album_silence_threshold_db", -35.0)
+        )
+        self.settings_album_min_silence.setValue(
+            self._default_float_value("album_min_silence_duration", 1.5)
+        )
+        self.settings_album_min_track.setValue(
+            self._default_float_value("album_min_track_duration", 45.0)
+        )
+        self.settings_album_trim_padding.setValue(
+            self._default_float_value("album_trim_silence_padding", 0.25)
+        )
+
     def _setting_bool(self, key: str, fallback: bool) -> bool:
         value = self.settings.value(key, fallback)
         if isinstance(value, bool):
@@ -3575,7 +4468,7 @@ class MainWindow(QMainWindow):
 
         saved_model = self.settings.value("defaults/agentic_model", None)
         return configured_primary_model(
-            "" if saved_model is None else str(saved_model or "").strip()
+            DEFAULT_OLLAMA_MODEL if saved_model is None else str(saved_model or "").strip()
         )
 
     def _active_ai_identity(self) -> tuple[str, str]:
@@ -3584,28 +4477,17 @@ class MainWindow(QMainWindow):
         self._configure_ai_from_settings()
         saved_model = self.settings.value("defaults/agentic_model", None)
         return configured_primary_identity(
-            "" if saved_model is None else str(saved_model or "").strip()
+            DEFAULT_OLLAMA_MODEL if saved_model is None else str(saved_model or "").strip()
         )
 
     def _configure_ai_from_settings(self) -> None:
         """Apply global provider settings before any workspace starts an AI task."""
 
         saved_ollama_model = self.settings.value("defaults/agentic_model", None)
-        legacy_nvidia_key = self._saved_secret(
-            "defaults/nvidia_api_key", NVIDIA_API_KEY_ENV
-        )
+        legacy_nvidia_key = self._saved_secret("defaults/nvidia_api_key", NVIDIA_API_KEY_ENV)
         provider_id = str(self.settings.value("defaults/ai_provider", "") or "").strip()
         if not provider_id:
-            provider_id = (
-                "nvidia"
-                if legacy_nvidia_key
-                else (
-                    "ollama"
-                    if saved_ollama_model is not None
-                    and str(saved_ollama_model or "").strip()
-                    else "builtin"
-                )
-            )
+            provider_id = "nvidia" if legacy_nvidia_key else "ollama"
         definition = provider_definition(provider_id)
         api_key = str(
             self.settings.value(
@@ -3637,7 +4519,9 @@ class MainWindow(QMainWindow):
             or ""
         ).strip()
         ollama_model = (
-            "" if saved_ollama_model is None else str(saved_ollama_model or "").strip()
+            DEFAULT_OLLAMA_MODEL
+            if saved_ollama_model is None
+            else str(saved_ollama_model or "").strip()
         )
         configure_ai_environment(
             nvidia_api_key=api_key if definition.id == "nvidia" else "",
@@ -3694,20 +4578,34 @@ class MainWindow(QMainWindow):
             self.settings.remove("workspace/redownload_content")
             self.settings.remove("workspace/redownload_overwrite")
             for key in (
-                "edit_file_input", "edit_file_output", "edit_file_artwork", "edit_file_action",
-                "edit_file_url", "edit_file_start", "edit_file_end", "edit_file_content",
-                "edit_file_download_start", "edit_file_download_end",
-                "edit_file_overwrite", "edit_file_metadata", "edit_file_remove_artwork",
-                "edit_file_crop_ratio", "edit_file_aspect_ratio",
-                "edit_album_folder", "edit_album_artwork", "edit_album_metadata",
+                "edit_file_input",
+                "edit_file_output",
+                "edit_file_artwork",
+                "edit_file_action",
+                "edit_file_url",
+                "edit_file_start",
+                "edit_file_end",
+                "edit_file_content",
+                "edit_file_download_start",
+                "edit_file_download_end",
+                "edit_file_overwrite",
+                "edit_file_metadata",
+                "edit_file_remove_artwork",
+                "edit_file_crop_ratio",
+                "edit_file_aspect_ratio",
+                "edit_album_folder",
+                "edit_album_artwork",
+                "edit_album_metadata",
                 "edit_album_remove_artwork",
-                "album_consolidator_source", "album_consolidator_destination",
+                "album_consolidator_source",
+                "album_consolidator_destination",
                 "album_enrich_destination_enabled",
                 "album_move_perform_enrichment",
                 "album_move_enrich_all_destination",
             ):
                 self.settings.remove(f"workspace/{key}")
             self.settings.remove("workspace/album_statuses")
+            self.settings.remove("workspace/album_expansion")
             self.settings.remove("workspace/history")
             self.settings.sync()
 
@@ -3723,9 +4621,13 @@ class MainWindow(QMainWindow):
             "rate_limit_wait": 180,
             "audio_quality": "320",
             "sample_rate": "44100",
+            "album_silence_threshold_db": -35.0,
+            "album_min_silence_duration": 1.5,
+            "album_min_track_duration": 45.0,
+            "album_trim_silence_padding": 0.25,
             "wikipedia_track_order": True,
             "ai_enabled": True,
-            "ai_provider": "builtin",
+            "ai_provider": "ollama",
             "crash_reports_enabled": False,
             "agentic_model": "",
             "nvidia_api_key": "",
@@ -3738,16 +4640,21 @@ class MainWindow(QMainWindow):
         }
 
     @staticmethod
-    def _write_reset_settings(settings: QSettings, values: dict[str, Any]) -> None:
+    def _write_reset_settings(
+        settings: QSettings,
+        values: dict[str, Any],
+        preserved: dict[str, Any] | None = None,
+    ) -> None:
         settings.clear()
         for key, value in values.items():
             if key == "crash_reports_enabled":
                 continue
             settings.setValue(f"defaults/{key}", value)
-        settings.setValue(
-            "privacy/crash_reports_enabled", values["crash_reports_enabled"]
-        )
+        settings.setValue("privacy/crash_reports_enabled", values["crash_reports_enabled"])
         settings.setValue("workspace/persist_enabled", True)
+        for key, value in (preserved or {}).items():
+            if value not in (None, ""):
+                settings.setValue(key, value)
         settings.sync()
 
     def _reset_app(self) -> None:
@@ -3758,7 +4665,6 @@ class MainWindow(QMainWindow):
             for name in (
                 "_scanner_thread",
                 "_search_thread",
-                "_recommendation_thread",
                 "_video_thumbnail_thread",
             )
         )
@@ -3775,7 +4681,7 @@ class MainWindow(QMainWindow):
             "This will remove saved AI-provider and SerpApi credentials and all model selections, "
             "restore global defaults, clear every tool form, library folder, status, "
             "and history, and return application storage to its default folder.\n\n"
-            "Downloaded and edited media files will not be deleted.",
+            "Downloaded and edited media files and saved playlists will not be deleted.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -3784,6 +4690,10 @@ class MainWindow(QMainWindow):
 
         self._workspace_autosave.stop()
         values = self._reset_default_values()
+        preserved_library = {
+            "library/playlists": self.settings.value("library/playlists", ""),
+            "library/active_playlist": self.settings.value("library/active_playlist", ""),
+        }
         default_directory = default_data_directory().resolve()
         try:
             default_directory.mkdir(parents=True, exist_ok=True)
@@ -3797,7 +4707,7 @@ class MainWindow(QMainWindow):
         self.settings_persist_state.blockSignals(persist_signals)
         self._reset_all_tool_forms()
 
-        self._write_reset_settings(original_settings, values)
+        self._write_reset_settings(original_settings, values, preserved_library)
         default_settings_path = application_settings_file(default_directory).resolve()
         if Path(original_settings.fileName()).resolve() == default_settings_path:
             reset_settings = original_settings
@@ -3806,13 +4716,10 @@ class MainWindow(QMainWindow):
                 str(default_settings_path),
                 QSettings.Format.IniFormat,
             )
-            self._write_reset_settings(reset_settings, values)
+            self._write_reset_settings(reset_settings, values, preserved_library)
         save_data_directory_choice(default_directory)
         self.settings = reset_settings
         self.media_library.settings = reset_settings
-        self.media_library.recommendation_ai_enabled.setChecked(
-            bool(values["ai_enabled"])
-        )
         self._data_directory = default_directory
         self._metadata_tracker_file = str(default_directory / "album_enrichment_tracker.json")
 
@@ -3825,6 +4732,10 @@ class MainWindow(QMainWindow):
         self.settings_rate_limit_wait.setValue(int(values["rate_limit_wait"]))
         self.settings_audio_quality.setCurrentText(str(values["audio_quality"]))
         self.settings_sample_rate.setCurrentText(str(values["sample_rate"]))
+        self.settings_album_silence_threshold.setValue(float(values["album_silence_threshold_db"]))
+        self.settings_album_min_silence.setValue(float(values["album_min_silence_duration"]))
+        self.settings_album_min_track.setValue(float(values["album_min_track_duration"]))
+        self.settings_album_trim_padding.setValue(float(values["album_trim_silence_padding"]))
         self.settings_wikipedia_order.setChecked(bool(values["wikipedia_track_order"]))
         self.settings_ai_enabled.setChecked(bool(values["ai_enabled"]))
         self.settings_crash_reports.setChecked(bool(values["crash_reports_enabled"]))
@@ -3839,12 +4750,10 @@ class MainWindow(QMainWindow):
             for provider in PROVIDERS
         }
         provider_signals = self.settings_ai_provider.blockSignals(True)
-        self.settings_ai_provider.setCurrentIndex(
-            self.settings_ai_provider.findData("builtin")
-        )
+        self.settings_ai_provider.setCurrentIndex(self.settings_ai_provider.findData("ollama"))
         self.settings_ai_provider.blockSignals(provider_signals)
-        self._active_ai_provider = "builtin"
-        self._show_ai_provider_draft("builtin")
+        self._active_ai_provider = "ollama"
+        self._show_ai_provider_draft("ollama")
         self.settings_serpapi_api_key.clear()
         self.settings_agentic_model.setCurrentText("")
         self.settings_search_suggestions.setValue(int(values["search_suggestions"]))
@@ -3859,11 +4768,9 @@ class MainWindow(QMainWindow):
         self.settings_persist_state.blockSignals(persist_signals)
 
         configure_ai_environment(nvidia_api_key="", nvidia_model="", ollama_model="")
-        configure_agno_environment(provider="builtin", api_key="", model="", base_url="")
+        configure_agno_environment(provider="ollama", api_key="", model="", base_url="")
         configure_serpapi_environment("")
-        self.ai_status_badge.setText(
-            f"AI READY · {BUILTIN_PROVIDER_LABEL.upper()} · {BUILTIN_MODEL_ID}"
-        )
+        self.ai_status_badge.setText("AI READY · STATIC FALLBACK · no model configured")
         self.workers_metric.set_value(values["workers"])
         self._apply_crystalness(int(values["crystalness"]), persist=True)
         self.media_library.set_suggestion_limit(int(values["search_suggestions"]))
@@ -3914,10 +4821,6 @@ class MainWindow(QMainWindow):
         self.video_report.setChecked(False)
         self.video_overwrite.setChecked(False)
         self.album_output.set_text("")
-        self.album_threshold.setValue(-35.0)
-        self.album_silence.setValue(1.5)
-        self.album_track_duration.setValue(45.0)
-        self.album_padding.setValue(0.25)
         self.album_keep_temp.setChecked(False)
         self.album_report.setChecked(False)
         self.album_overwrite.setChecked(False)
@@ -3951,7 +4854,9 @@ class MainWindow(QMainWindow):
         min_delay = self.settings_min_delay.value()
         max_delay = self.settings_max_delay.value()
         if min_delay > max_delay:
-            QMessageBox.warning(self, "Invalid settings", "Minimum delay cannot exceed maximum delay.")
+            QMessageBox.warning(
+                self, "Invalid settings", "Minimum delay cannot exceed maximum delay."
+            )
             return
         self._capture_ai_provider_draft()
         provider_id = self._active_ai_provider
@@ -3966,6 +4871,10 @@ class MainWindow(QMainWindow):
             "rate_limit_wait": self.settings_rate_limit_wait.value(),
             "audio_quality": self.settings_audio_quality.currentText(),
             "sample_rate": self.settings_sample_rate.currentText(),
+            "album_silence_threshold_db": self.settings_album_silence_threshold.value(),
+            "album_min_silence_duration": self.settings_album_min_silence.value(),
+            "album_min_track_duration": self.settings_album_min_track.value(),
+            "album_trim_silence_padding": self.settings_album_trim_padding.value(),
             "wikipedia_track_order": self.settings_wikipedia_order.isChecked(),
             "ai_enabled": self.settings_ai_enabled.isChecked(),
             "agentic_model": self.settings_agentic_model.currentText().strip(),
@@ -3982,9 +4891,7 @@ class MainWindow(QMainWindow):
             self.settings.setValue(f"defaults/{key}", value)
         for saved_provider, draft in self._ai_provider_drafts.items():
             for field, value in draft.items():
-                self.settings.setValue(
-                    f"defaults/ai_providers/{saved_provider}/{field}", value
-                )
+                self.settings.setValue(f"defaults/ai_providers/{saved_provider}/{field}", value)
         nvidia_draft = self._ai_provider_drafts["nvidia"]
         self.settings.setValue("defaults/nvidia_api_key", nvidia_draft["api_key"])
         self.settings.setValue("defaults/nvidia_model", nvidia_draft["model"])
@@ -3992,11 +4899,11 @@ class MainWindow(QMainWindow):
             "privacy/crash_reports_enabled",
             self.settings_crash_reports.isChecked(),
         )
+        self.settings.setValue("cloud/auto_sync", self.google_auto_sync.isChecked())
+        self.settings.setValue("cloud/google_oauth_config", self.google_oauth_config.text().strip())
         self.settings.sync()
         configure_ai_environment(
-            nvidia_api_key=(
-                provider_draft["api_key"] if provider_id == "nvidia" else ""
-            ),
+            nvidia_api_key=(provider_draft["api_key"] if provider_id == "nvidia" else ""),
             nvidia_model=(provider_draft["model"] if provider_id == "nvidia" else ""),
             ollama_model=str(values["agentic_model"]),
         )
@@ -4010,9 +4917,6 @@ class MainWindow(QMainWindow):
         if not bool(values["ai_enabled"]):
             provider = "DISABLED"
             ready_model = "internet/deterministic mode"
-        elif provider_id == "builtin":
-            provider = BUILTIN_PROVIDER_LABEL.upper()
-            ready_model = BUILTIN_MODEL_ID
         elif provider_id == "ollama" and str(values["agentic_model"]):
             provider = "OLLAMA"
             ready_model = str(values["agentic_model"])
@@ -4040,7 +4944,7 @@ class MainWindow(QMainWindow):
         storage_changed = self._save_data_directory()
         QMessageBox.information(
             self,
-            "Global settings saved",
+            "Settings saved",
             "The new values will be used by every relevant workflow. "
             "Crash-report storage changes take effect the next time the app starts."
             + (
@@ -4050,6 +4954,8 @@ class MainWindow(QMainWindow):
                 else ""
             ),
         )
+        if self.google_auto_sync.isChecked() and self.settings.value("cloud/google_email", ""):
+            QTimer.singleShot(0, self._backup_google_profile)
 
     def _open_data_directory(self) -> None:
         selected = self.settings_data_directory.text()
@@ -4122,9 +5028,7 @@ class MainWindow(QMainWindow):
             for name, picker in path_fields.items():
                 value = str(self.settings.value(f"workspace/{name}", "") or "")
                 if name == "track_reorder_folder" and value:
-                    restored_folder = resolve_album_folder_successor(
-                        Path(value).expanduser()
-                    )
+                    restored_folder = resolve_album_folder_successor(Path(value).expanduser())
                     if not restored_folder.is_dir():
                         # Output folders can disappear between builds or after
                         # album consolidation. A stale saved draft is not a
@@ -4133,9 +5037,7 @@ class MainWindow(QMainWindow):
                         self.settings.remove("workspace/track_reorder_folder")
                         continue
                     value = str(restored_folder)
-                    self.settings.setValue(
-                        "workspace/track_reorder_folder", value
-                    )
+                    self.settings.setValue("workspace/track_reorder_folder", value)
                 if value:
                     picker.set_text(value)
 
@@ -4147,18 +5049,10 @@ class MainWindow(QMainWindow):
                 str(self.settings.value("workspace/edit_file_url", "") or "")
             )
             self.edit_file_download_start.setText(
-                str(
-                    self.settings.value(
-                        "workspace/edit_file_download_start", "00:00"
-                    )
-                    or "00:00"
-                )
+                str(self.settings.value("workspace/edit_file_download_start", "00:00") or "00:00")
             )
             self.edit_file_download_end.setText(
-                str(
-                    self.settings.value("workspace/edit_file_download_end", "")
-                    or ""
-                )
+                str(self.settings.value("workspace/edit_file_download_end", "") or "")
             )
             self.edit_file_start.setText(
                 str(self.settings.value("workspace/edit_file_start", "00:00") or "00:00")
@@ -4174,27 +5068,19 @@ class MainWindow(QMainWindow):
                 1 if self._setting_bool("workspace/edit_file_overwrite", False) else 0
             )
             self.edit_file_crop_ratio.setCurrentText(
-                str(
-                    self.settings.value(
-                        "workspace/edit_file_crop_ratio", "Default"
-                    )
-                    or "Default"
-                )
+                str(self.settings.value("workspace/edit_file_crop_ratio", "Default") or "Default")
             )
             self.edit_file_aspect_ratio.setCurrentText(
-                str(
-                    self.settings.value(
-                        "workspace/edit_file_aspect_ratio", "Default"
-                    )
-                    or "Default"
-                )
+                str(self.settings.value("workspace/edit_file_aspect_ratio", "Default") or "Default")
             )
             metadata_raw = str(self.settings.value("workspace/edit_file_metadata", "") or "")
             if metadata_raw:
                 saved_metadata = json.loads(metadata_raw)
                 metadata_widgets = {
-                    "title": self.edit_meta_title, "album": self.edit_meta_album,
-                    "artists": self.edit_meta_artists, "year": self.edit_meta_year,
+                    "title": self.edit_meta_title,
+                    "album": self.edit_meta_album,
+                    "artists": self.edit_meta_artists,
+                    "year": self.edit_meta_year,
                     "track_number": self.edit_meta_track,
                     "track_total": self.edit_meta_track_total,
                 }
@@ -4206,34 +5092,22 @@ class MainWindow(QMainWindow):
             self.edit_album_remove_artwork.setChecked(
                 self._setting_bool("workspace/edit_album_remove_artwork", False)
             )
-            album_metadata_raw = str(
-                self.settings.value("workspace/edit_album_metadata", "") or ""
-            )
+            album_metadata_raw = str(self.settings.value("workspace/edit_album_metadata", "") or "")
             if album_metadata_raw:
                 album_metadata = json.loads(album_metadata_raw)
                 self.edit_album_name.setText(str(album_metadata.get("album", "") or ""))
                 self.edit_album_year.setText(str(album_metadata.get("year", "") or ""))
                 self.edit_album_artist.setText(
-                    str(
-                        album_metadata.get("artists")
-                        or album_metadata.get("album_artist")
-                        or ""
-                    )
+                    str(album_metadata.get("artists") or album_metadata.get("album_artist") or "")
                 )
             self.album_enrich_destination_enabled.setChecked(
-                self._setting_bool(
-                    "workspace/album_enrich_destination_enabled", False
-                )
+                self._setting_bool("workspace/album_enrich_destination_enabled", False)
             )
             self.album_move_enrich_all_destination.setChecked(
-                self._setting_bool(
-                    "workspace/album_move_enrich_all_destination", False
-                )
+                self._setting_bool("workspace/album_move_enrich_all_destination", False)
             )
             self.album_move_perform_enrichment.setChecked(
-                self._setting_bool(
-                    "workspace/album_move_perform_enrichment", True
-                )
+                self._setting_bool("workspace/album_move_perform_enrichment", True)
             )
             self._edit_file_action_changed()
             statuses_raw = str(self.settings.value("workspace/album_statuses", "") or "")
@@ -4242,6 +5116,10 @@ class MainWindow(QMainWindow):
                 if isinstance(statuses, dict):
                     self._album_statuses = {str(k): str(v) for k, v in statuses.items()}
                     self.album_input.set_statuses(self._album_statuses)
+            expansion = json.loads(str(self.settings.value("workspace/album_expansion", "{}") or "{}"))
+            if isinstance(expansion, dict):
+                # Saved visibility takes precedence over completion's default collapse.
+                self.album_input.restore_expansion_state(expansion)
 
             history_raw = str(self.settings.value("workspace/history", "") or "")
             if history_raw:
@@ -4345,12 +5223,17 @@ class MainWindow(QMainWindow):
         self.settings.setValue(
             "workspace/album_statuses", json.dumps(self._album_statuses, ensure_ascii=False)
         )
+        self.settings.setValue(
+            "workspace/album_expansion", json.dumps(self.album_input.expansion_state(), ensure_ascii=False)
+        )
         self.settings.setValue("workspace/history", json.dumps(self._history, ensure_ascii=False))
         self.settings.sync()
 
     def _save_log(self) -> None:
         default = str(Path.cwd() / f"youtube_media_studio_{datetime.now():%Y%m%d_%H%M%S}.log")
-        selected, _ = QFileDialog.getSaveFileName(self, "Save log", default, "Log files (*.log *.txt)")
+        selected, _ = QFileDialog.getSaveFileName(
+            self, "Save log", default, "Log files (*.log *.txt)"
+        )
         if not selected:
             return
         Path(selected).write_text(self.log_view.toPlainText() + "\n", encoding="utf-8")
@@ -4359,15 +5242,7 @@ class MainWindow(QMainWindow):
     def request_graceful_shutdown(self) -> None:
         """Close immediately on a console interrupt or shutdown request."""
 
-        builtin_install_running = bool(
-            self._builtin_install_thread is not None
-            and self._builtin_install_thread.isRunning()
-        )
-        if (
-            self._active_worker is not None
-            or self._parallel_jobs
-            or builtin_install_running
-        ):
+        if self._active_worker is not None or self._parallel_jobs:
             self.close()
             return
         self._append_log("[SHUTDOWN] Console interrupt received; closing application.")
@@ -4383,15 +5258,7 @@ class MainWindow(QMainWindow):
             f"parallel_jobs={len(self._parallel_jobs)}",
         )
         self.media_library.shutdown()
-        builtin_install_running = bool(
-            self._builtin_install_thread is not None
-            and self._builtin_install_thread.isRunning()
-        )
-        if (
-            self._active_worker is not None
-            or self._parallel_jobs
-            or builtin_install_running
-        ):
+        if self._active_worker is not None or self._parallel_jobs:
             self.settings.setValue("window/geometry", self.saveGeometry())
             self._save_workspace_state()
             if self._active_worker is not None:
@@ -4404,8 +5271,7 @@ class MainWindow(QMainWindow):
             self.hide()
             log_diagnostic(
                 "SHUTDOWN",
-                "Intentional forced exit while an operation or AI installation "
-                "worker was active",
+                "Intentional forced exit while an operation worker was active",
             )
             os._exit(0)
         background_threads = []
