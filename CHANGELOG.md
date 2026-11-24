@@ -4,27 +4,707 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
-## [3.0.0] - 2026-08-17
+## [Unreleased]
+
+### Removed
+
+- Remove Smart Library Curator from the Media Player and phone client, including AI recommendations, mix generation, and playlist taste processing.
+- Retire experimental 3.x built-in AI and the beta update option. Restore main to the latest stable 2.x code and publish stable releases from main.
+
+## [2.20.0] - 2026-11-24
 
 ### Added
 
-- Add zero-configuration built-in CPU AI using a pinned, checksum-verified
-  Qwen3-0.6B-Q8 model and loopback-only llama.cpp runtime.
-- Add install, repair, status, and removal controls for managed AI assets.
-- Add a versioned, path-free local preference profile derived from each user's own
-  playlist names and member metadata.
-- Add dedicated built-in AI documentation covering minimum/recommended requirements,
-  privacy, provider precedence, first-use download, and troubleshooting.
+- Add Queue album to album cards and open album headings to append all album tracks to Now Playing without interrupting playback, alongside Play album next.
+
+## [2.19.6] - 2026-11-24
+
+### Fixed
+
+- Restore album auto-fill for Kabhi Alvida Naa Kehna and other Wikipedia soundtracks with languages formatted as lists.
+- Preserve separate singer names and track languages when Wikipedia formats them as list items.
+- Show album auto-fill warnings when hovering over the status badge, including Partially filled and No new data, and clear outdated warnings on retry.
+- Fall back to an exact album and year match in the Apple Music catalog when Wikipedia has no usable track list, including non-film EPs such as Dilfek.
+- Enable individual full-song search by default on album cards; turn it off to search for a full-album jukebox.
+- Retry Wikipedia searches without the word soundtrack when it hides a film's track list, including Toolsidas Junior.
+- Verify original watch-page titles when YouTube translates an official audio search result, such as Zakhmi appearing as Wounded.
+
+## [2.19.5] - 2026-11-18
+
+### Fixed
+
+- Bundle trusted HTTPS certificates for macOS album lookup, cover previews, artwork embedding, and software updates.
+- Reuse album artwork across concurrent track tagging and briefly cache failed requests to avoid repeated network delays.
+- Preserve embedded player artwork when a replacement cover cannot be downloaded.
+- Clarify the Terminal commands used to launch unsigned macOS releases.
+
+## [2.19.4] - 2026-11-10
+
+### Fixed
+
+- Enable or disable an entire album directly from its collapsed header.
+
+## [2.19.3] - 2026-11-10
+
+### Fixed
+
+- Bundle yt-dlp 2026.10.26 and show its age in diagnostics and logs without interrupting startup.
+- Explain that packaged downloader tools are updated through the in-app software updater.
+- Show release notes for every eligible version between the installed version and the available update.
+- Restore collapsed and expanded album rows when reopening the workspace, including albums that need attention.
+- Show a moving album-row preview, a closed-hand cursor, and an insertion line while reordering collapsed albums.
+
+## [2.19.2] - 2026-11-10
+
+### Fixed
+
+- Limit individual-song imports from Wikipedia to Hindi, Bengali, and English when the source labels track languages.
+
+## [2.19.1] - 2026-11-10
+
+### Added
+
+- Drag collapsed albums by the left-hand grip to rearrange the workspace and save the new order.
+- Enable or disable a track directly from its collapsed header.
+- Show a “Wiki length differs” badge beside tracks with a duration mismatch. Hover to see both lengths.
+
+### Fixed
+
+- Use verified recording credits and catalog durations to find standalone songs when Wikipedia lists a different length.
+- Keep disabled albums and tracks out of subsequent downloads, including after a batch reports skipped items.
+- Exclude Wikipedia's soundtrack duration totals from imported track lists.
+
+## [2.19.0] - 2026-09-28
+
+### Added
+
+- feat: add per-album individual track search (`5ff2608`)
+- feat: repair library sync and add parallel HTTP downloads (`490d591`)
+- feat: centralize album split detection defaults (`1225a37`)
+- feat: make local splitter sources explicit (`be02baf`)
+- feat: add cloud profiles and menu navigation (`e57bd5f`)
+- feat: brand the Windows installer (`b6bb355`)
+- feat: add desktop menus settings and queue actions (`0096377`)
+- feat: ship resilient downloads and stable update channel (`b473a74`)
+
+### Fixed
+
+- fix: refresh compact layout after drawer changes (`15178b1`)
+- fix: make media player responsive on portrait displays (`939e540`)
+- fix: retain enrichment failure reasons and retry selection (`c7c7457`)
+- fix: synchronize restored album defaults (`62d0029`)
+- fix: right-align the Media Player menu control (`c4a3bc4`)
+- fix: sync splitter source mode after auto-fill (`3b34f1b`)
+- fix: preserve installer rollback artifacts (`3dbd2ff`)
+- fix: make OTA upgrades replace the frozen runtime (`785aec4`)
+- fix: carry enriched single tracks into album move (`174fe94`)
+- fix: replace legacy Windows launcher during upgrade (`41a855b`)
+- fix: bundle Windows desktop runtime with installer (`6287b69`)
+- fix: accept tracked album enrichment files (`543196d`)
+- fix: enrich a selected album track only (`b5d490a`)
+- fix: pin Windows FFmpeg release runtime (`f6c648d`)
+- fix: clean every failed runtime download (`ea40e3c`)
+- fix: clean failed runtime staging and reject ARM (`355da98`)
+- fix: pin static Linux FFmpeg runtime (`f051899`)
+- fix: use system FFmpeg for Linux releases (`bbc3908`)
+- fix: enforce stable channel and queue position (`97b8fea`)
+- fix: retry tagging and sync update channel status (`8aee164`)
+- fix: open complete albums from player links (`eabc74a`)
+- fix: retain prepared download paths (`07d1228`)
+- fix: address release review edge cases (`6463ddb`)
 
 ### Changed
 
-- Make built-in CPU AI the new-install default while preserving explicit Ollama,
-  hosted-provider, custom-endpoint, and AI-off behavior.
-- Fall back from explicit providers to local built-in AI before deterministic handling,
-  with bounded CPU/context use and a retry cooldown after installation failures.
-- Harden compact-model curation by rejecting invented artist/time constraints and
-  normalizing fractional or percentage confidence values.
+- Merge pull request #57 from DhimanGhosh/codex/album-individual-track-search (`96d90e6`)
+- chore(release): v2.18.1 [skip ci] (`91e329e`)
+- Merge pull request #56 from DhimanGhosh/codex/fix-media-player-portrait-layout (`9c424ff`)
+- chore(release): v2.18.0 [skip ci] (`5425cdc`)
+- Merge pull request #55 from DhimanGhosh/codex/library-download-ux-fixes (`689453c`)
+- docs: explain stable library and download release changes (`ca92d16`)
+- chore(release): v2.17.0 [skip ci] (`d5ae256`)
+- Merge pull request #54 from DhimanGhosh/codex/album-settings-review-fixes (`4d9e84f`)
+- Merge pull request #53 from DhimanGhosh/codex/album-splitter-defaults-in-settings (`37c5f75`)
+- chore(release): v2.16.1 [skip ci] (`b2f8213`)
+- Merge pull request #52 from DhimanGhosh/codex/right-aligned-media-player-button (`2d32695`)
+- chore(release): v2.16.0 [skip ci] (`53e907e`)
+- Merge pull request #51 from DhimanGhosh/codex/stable-media-gui-test-batches (`8f2d56b`)
+- test: isolate every Qt multimedia lifecycle (`fb04cef`)
+- test: isolate Qt multimedia release batches (`f775e4f`)
+- Merge pull request #50 from DhimanGhosh/codex/local-file-splitter-source (`3f003f8`)
+- chore(release): v2.15.4 [skip ci] (`50d22f6`)
+- Merge pull request #49 from DhimanGhosh/codex/persistent-update-dialog (`53dcd3a`)
+- test: cover live queue duration summary (`b199785`)
+- test: align media player terminology (`67133cf`)
+- Merge remote-tracking branch 'origin/release/2.x' into codex/persistent-update-dialog (`77062c9`)
+- chore(release): v2.15.3 [skip ci] (`247213f`)
+- Merge pull request #48 from DhimanGhosh/codex/single-track-consolidator-move (`c63de16`)
+- chore(release): v2.15.2 [skip ci] (`2e94ffc`)
+- Merge pull request #47 from DhimanGhosh/codex/windows-upgrade-executable-hotfix (`0f9acc9`)
+- chore(release): v2.15.1 [skip ci] (`36b790c`)
+- Merge pull request #46 from DhimanGhosh/codex/windows-python-runtime-hotfix (`45d1ef0`)
+- chore(release): v2.15.0 [skip ci] (`b769855`)
+- Merge pull request #45 from DhimanGhosh/codex/google-cloud-profile (`03d8751`)
+- chore(release): v2.14.0 [skip ci] (`f13f362`)
+- Merge pull request #44 from DhimanGhosh/codex/single-file-album-enrichment (`5a2dbaf`)
+- chore(release): v2.13.0 [skip ci] (`6f99d22`)
+- Merge pull request #43 from DhimanGhosh/codex/windows-release-runtime-fix (`c7284f2`)
+- Merge pull request #42 from DhimanGhosh/codex/linux-release-runtime-fix (`38405fb`)
+- test: exercise staged FFmpeg media pipeline (`c178517`)
+- Merge pull request #41 from DhimanGhosh/codex/download-recovery-v2.13.0 (`994fc40`)
+- style: normalize new file endings (`17b748e`)
+## [2.18.1] - 2026-09-17
 
+### Added
+
+- feat: repair library sync and add parallel HTTP downloads (`490d591`)
+- feat: centralize album split detection defaults (`1225a37`)
+- feat: make local splitter sources explicit (`be02baf`)
+- feat: add cloud profiles and menu navigation (`e57bd5f`)
+- feat: brand the Windows installer (`b6bb355`)
+- feat: add desktop menus settings and queue actions (`0096377`)
+- feat: ship resilient downloads and stable update channel (`b473a74`)
+
+### Fixed
+
+- fix: refresh compact layout after drawer changes (`15178b1`)
+- fix: make media player responsive on portrait displays (`939e540`)
+- fix: retain enrichment failure reasons and retry selection (`c7c7457`)
+- fix: synchronize restored album defaults (`62d0029`)
+- fix: right-align the Media Player menu control (`c4a3bc4`)
+- fix: sync splitter source mode after auto-fill (`3b34f1b`)
+- fix: preserve installer rollback artifacts (`3dbd2ff`)
+- fix: make OTA upgrades replace the frozen runtime (`785aec4`)
+- fix: carry enriched single tracks into album move (`174fe94`)
+- fix: replace legacy Windows launcher during upgrade (`41a855b`)
+- fix: bundle Windows desktop runtime with installer (`6287b69`)
+- fix: accept tracked album enrichment files (`543196d`)
+- fix: enrich a selected album track only (`b5d490a`)
+- fix: pin Windows FFmpeg release runtime (`f6c648d`)
+- fix: clean every failed runtime download (`ea40e3c`)
+- fix: clean failed runtime staging and reject ARM (`355da98`)
+- fix: pin static Linux FFmpeg runtime (`f051899`)
+- fix: use system FFmpeg for Linux releases (`bbc3908`)
+- fix: enforce stable channel and queue position (`97b8fea`)
+- fix: retry tagging and sync update channel status (`8aee164`)
+- fix: open complete albums from player links (`eabc74a`)
+- fix: retain prepared download paths (`07d1228`)
+- fix: address release review edge cases (`6463ddb`)
+
+### Changed
+
+- Merge pull request #56 from DhimanGhosh/codex/fix-media-player-portrait-layout (`9c424ff`)
+- chore(release): v2.18.0 [skip ci] (`5425cdc`)
+- Merge pull request #55 from DhimanGhosh/codex/library-download-ux-fixes (`689453c`)
+- docs: explain stable library and download release changes (`ca92d16`)
+- chore(release): v2.17.0 [skip ci] (`d5ae256`)
+- Merge pull request #54 from DhimanGhosh/codex/album-settings-review-fixes (`4d9e84f`)
+- Merge pull request #53 from DhimanGhosh/codex/album-splitter-defaults-in-settings (`37c5f75`)
+- chore(release): v2.16.1 [skip ci] (`b2f8213`)
+- Merge pull request #52 from DhimanGhosh/codex/right-aligned-media-player-button (`2d32695`)
+- chore(release): v2.16.0 [skip ci] (`53e907e`)
+- Merge pull request #51 from DhimanGhosh/codex/stable-media-gui-test-batches (`8f2d56b`)
+- test: isolate every Qt multimedia lifecycle (`fb04cef`)
+- test: isolate Qt multimedia release batches (`f775e4f`)
+- Merge pull request #50 from DhimanGhosh/codex/local-file-splitter-source (`3f003f8`)
+- chore(release): v2.15.4 [skip ci] (`50d22f6`)
+- Merge pull request #49 from DhimanGhosh/codex/persistent-update-dialog (`53dcd3a`)
+- test: cover live queue duration summary (`b199785`)
+- test: align media player terminology (`67133cf`)
+- Merge remote-tracking branch 'origin/release/2.x' into codex/persistent-update-dialog (`77062c9`)
+- chore(release): v2.15.3 [skip ci] (`247213f`)
+- Merge pull request #48 from DhimanGhosh/codex/single-track-consolidator-move (`c63de16`)
+- chore(release): v2.15.2 [skip ci] (`2e94ffc`)
+- Merge pull request #47 from DhimanGhosh/codex/windows-upgrade-executable-hotfix (`0f9acc9`)
+- chore(release): v2.15.1 [skip ci] (`36b790c`)
+- Merge pull request #46 from DhimanGhosh/codex/windows-python-runtime-hotfix (`45d1ef0`)
+- chore(release): v2.15.0 [skip ci] (`b769855`)
+- Merge pull request #45 from DhimanGhosh/codex/google-cloud-profile (`03d8751`)
+- chore(release): v2.14.0 [skip ci] (`f13f362`)
+- Merge pull request #44 from DhimanGhosh/codex/single-file-album-enrichment (`5a2dbaf`)
+- chore(release): v2.13.0 [skip ci] (`6f99d22`)
+- Merge pull request #43 from DhimanGhosh/codex/windows-release-runtime-fix (`c7284f2`)
+- Merge pull request #42 from DhimanGhosh/codex/linux-release-runtime-fix (`38405fb`)
+- test: exercise staged FFmpeg media pipeline (`c178517`)
+- Merge pull request #41 from DhimanGhosh/codex/download-recovery-v2.13.0 (`994fc40`)
+- style: normalize new file endings (`17b748e`)
+## [2.18.0] - 2026-09-15
+
+### Added
+
+- Parallel byte-range downloads for ordinary HTTP media, with validated ranges,
+  bounded connections, transient retries, cancellation cleanup, and safe fallback.
+- Automatic library scans after filesystem changes and completed batch items.
+- Specific album/track failure reasons with instructions for retrying unfinished work.
+
+### Fixed
+
+- Refresh stays clickable during scans and recovers from scanner errors without an app restart.
+- Album artwork updates invalidate cached covers after metadata edits or a forced refresh.
+- Deleting an earlier queue item keeps the highlight on the playing song; failed file
+  deletions retain their queue and playlist entries.
+- Queue time rounds up to whole minutes, including totals greater than an hour.
+- Download completion preserves the actual connection mode. Extra bars represent
+  measured byte-range progress, and batch results retain each album's individual status.
+
+### Changed
+
+- Updated the README and illustrated beginner guide for the current menus, separate
+  Settings window, local splitter sources, download recovery, and Media Player.
+- Regenerated the documentation screenshots and repaired broken image links.
+- Stable non-built-in-AI improvements continue on 2.x; built-in AI remains on 3.x.
+
+## [2.17.0] - 2026-08-24
+
+### Added
+
+- feat: centralize album split detection defaults (`1225a37`)
+- feat: make local splitter sources explicit (`be02baf`)
+- feat: add cloud profiles and menu navigation (`e57bd5f`)
+- feat: brand the Windows installer (`b6bb355`)
+- feat: add desktop menus settings and queue actions (`0096377`)
+- feat: ship resilient downloads and stable update channel (`b473a74`)
+
+### Fixed
+
+- fix: synchronize restored album defaults (`62d0029`)
+- fix: right-align the Media Player menu control (`c4a3bc4`)
+- fix: sync splitter source mode after auto-fill (`3b34f1b`)
+- fix: preserve installer rollback artifacts (`3dbd2ff`)
+- fix: make OTA upgrades replace the frozen runtime (`785aec4`)
+- fix: carry enriched single tracks into album move (`174fe94`)
+- fix: replace legacy Windows launcher during upgrade (`41a855b`)
+- fix: bundle Windows desktop runtime with installer (`6287b69`)
+- fix: accept tracked album enrichment files (`543196d`)
+- fix: enrich a selected album track only (`b5d490a`)
+- fix: pin Windows FFmpeg release runtime (`f6c648d`)
+- fix: clean every failed runtime download (`ea40e3c`)
+- fix: clean failed runtime staging and reject ARM (`355da98`)
+- fix: pin static Linux FFmpeg runtime (`f051899`)
+- fix: use system FFmpeg for Linux releases (`bbc3908`)
+- fix: enforce stable channel and queue position (`97b8fea`)
+- fix: retry tagging and sync update channel status (`8aee164`)
+- fix: open complete albums from player links (`eabc74a`)
+- fix: retain prepared download paths (`07d1228`)
+- fix: address release review edge cases (`6463ddb`)
+
+### Changed
+
+- Merge pull request #54 from DhimanGhosh/codex/album-settings-review-fixes (`4d9e84f`)
+- Merge pull request #53 from DhimanGhosh/codex/album-splitter-defaults-in-settings (`37c5f75`)
+- chore(release): v2.16.1 [skip ci] (`b2f8213`)
+- Merge pull request #52 from DhimanGhosh/codex/right-aligned-media-player-button (`2d32695`)
+- chore(release): v2.16.0 [skip ci] (`53e907e`)
+- Merge pull request #51 from DhimanGhosh/codex/stable-media-gui-test-batches (`8f2d56b`)
+- test: isolate every Qt multimedia lifecycle (`fb04cef`)
+- test: isolate Qt multimedia release batches (`f775e4f`)
+- Merge pull request #50 from DhimanGhosh/codex/local-file-splitter-source (`3f003f8`)
+- chore(release): v2.15.4 [skip ci] (`50d22f6`)
+- Merge pull request #49 from DhimanGhosh/codex/persistent-update-dialog (`53dcd3a`)
+- test: cover live queue duration summary (`b199785`)
+- test: align media player terminology (`67133cf`)
+- Merge remote-tracking branch 'origin/release/2.x' into codex/persistent-update-dialog (`77062c9`)
+- chore(release): v2.15.3 [skip ci] (`247213f`)
+- Merge pull request #48 from DhimanGhosh/codex/single-track-consolidator-move (`c63de16`)
+- chore(release): v2.15.2 [skip ci] (`2e94ffc`)
+- Merge pull request #47 from DhimanGhosh/codex/windows-upgrade-executable-hotfix (`0f9acc9`)
+- chore(release): v2.15.1 [skip ci] (`36b790c`)
+- Merge pull request #46 from DhimanGhosh/codex/windows-python-runtime-hotfix (`45d1ef0`)
+- chore(release): v2.15.0 [skip ci] (`b769855`)
+- Merge pull request #45 from DhimanGhosh/codex/google-cloud-profile (`03d8751`)
+- chore(release): v2.14.0 [skip ci] (`f13f362`)
+- Merge pull request #44 from DhimanGhosh/codex/single-file-album-enrichment (`5a2dbaf`)
+- chore(release): v2.13.0 [skip ci] (`6f99d22`)
+- Merge pull request #43 from DhimanGhosh/codex/windows-release-runtime-fix (`c7284f2`)
+- Merge pull request #42 from DhimanGhosh/codex/linux-release-runtime-fix (`38405fb`)
+- test: exercise staged FFmpeg media pipeline (`c178517`)
+- Merge pull request #41 from DhimanGhosh/codex/download-recovery-v2.13.0 (`994fc40`)
+- style: normalize new file endings (`17b748e`)
+## [2.16.1] - 2026-08-23
+
+### Added
+
+- feat: make local splitter sources explicit (`be02baf`)
+- feat: add cloud profiles and menu navigation (`e57bd5f`)
+- feat: brand the Windows installer (`b6bb355`)
+- feat: add desktop menus settings and queue actions (`0096377`)
+- feat: ship resilient downloads and stable update channel (`b473a74`)
+
+### Fixed
+
+- fix: right-align the Media Player menu control (`c4a3bc4`)
+- fix: sync splitter source mode after auto-fill (`3b34f1b`)
+- fix: preserve installer rollback artifacts (`3dbd2ff`)
+- fix: make OTA upgrades replace the frozen runtime (`785aec4`)
+- fix: carry enriched single tracks into album move (`174fe94`)
+- fix: replace legacy Windows launcher during upgrade (`41a855b`)
+- fix: bundle Windows desktop runtime with installer (`6287b69`)
+- fix: accept tracked album enrichment files (`543196d`)
+- fix: enrich a selected album track only (`b5d490a`)
+- fix: pin Windows FFmpeg release runtime (`f6c648d`)
+- fix: clean every failed runtime download (`ea40e3c`)
+- fix: clean failed runtime staging and reject ARM (`355da98`)
+- fix: pin static Linux FFmpeg runtime (`f051899`)
+- fix: use system FFmpeg for Linux releases (`bbc3908`)
+- fix: enforce stable channel and queue position (`97b8fea`)
+- fix: retry tagging and sync update channel status (`8aee164`)
+- fix: open complete albums from player links (`eabc74a`)
+- fix: retain prepared download paths (`07d1228`)
+- fix: address release review edge cases (`6463ddb`)
+
+### Changed
+
+- Merge pull request #52 from DhimanGhosh/codex/right-aligned-media-player-button (`2d32695`)
+- chore(release): v2.16.0 [skip ci] (`53e907e`)
+- Merge pull request #51 from DhimanGhosh/codex/stable-media-gui-test-batches (`8f2d56b`)
+- test: isolate every Qt multimedia lifecycle (`fb04cef`)
+- test: isolate Qt multimedia release batches (`f775e4f`)
+- Merge pull request #50 from DhimanGhosh/codex/local-file-splitter-source (`3f003f8`)
+- chore(release): v2.15.4 [skip ci] (`50d22f6`)
+- Merge pull request #49 from DhimanGhosh/codex/persistent-update-dialog (`53dcd3a`)
+- test: cover live queue duration summary (`b199785`)
+- test: align media player terminology (`67133cf`)
+- Merge remote-tracking branch 'origin/release/2.x' into codex/persistent-update-dialog (`77062c9`)
+- chore(release): v2.15.3 [skip ci] (`247213f`)
+- Merge pull request #48 from DhimanGhosh/codex/single-track-consolidator-move (`c63de16`)
+- chore(release): v2.15.2 [skip ci] (`2e94ffc`)
+- Merge pull request #47 from DhimanGhosh/codex/windows-upgrade-executable-hotfix (`0f9acc9`)
+- chore(release): v2.15.1 [skip ci] (`36b790c`)
+- Merge pull request #46 from DhimanGhosh/codex/windows-python-runtime-hotfix (`45d1ef0`)
+- chore(release): v2.15.0 [skip ci] (`b769855`)
+- Merge pull request #45 from DhimanGhosh/codex/google-cloud-profile (`03d8751`)
+- chore(release): v2.14.0 [skip ci] (`f13f362`)
+- Merge pull request #44 from DhimanGhosh/codex/single-file-album-enrichment (`5a2dbaf`)
+- chore(release): v2.13.0 [skip ci] (`6f99d22`)
+- Merge pull request #43 from DhimanGhosh/codex/windows-release-runtime-fix (`c7284f2`)
+- Merge pull request #42 from DhimanGhosh/codex/linux-release-runtime-fix (`38405fb`)
+- test: exercise staged FFmpeg media pipeline (`c178517`)
+- Merge pull request #41 from DhimanGhosh/codex/download-recovery-v2.13.0 (`994fc40`)
+- style: normalize new file endings (`17b748e`)
+## [2.16.0] - 2026-08-23
+
+### Added
+
+- feat: make local splitter sources explicit (`be02baf`)
+- feat: add cloud profiles and menu navigation (`e57bd5f`)
+- feat: brand the Windows installer (`b6bb355`)
+- feat: add desktop menus settings and queue actions (`0096377`)
+- feat: ship resilient downloads and stable update channel (`b473a74`)
+
+### Fixed
+
+- fix: sync splitter source mode after auto-fill (`3b34f1b`)
+- fix: preserve installer rollback artifacts (`3dbd2ff`)
+- fix: make OTA upgrades replace the frozen runtime (`785aec4`)
+- fix: carry enriched single tracks into album move (`174fe94`)
+- fix: replace legacy Windows launcher during upgrade (`41a855b`)
+- fix: bundle Windows desktop runtime with installer (`6287b69`)
+- fix: accept tracked album enrichment files (`543196d`)
+- fix: enrich a selected album track only (`b5d490a`)
+- fix: pin Windows FFmpeg release runtime (`f6c648d`)
+- fix: clean every failed runtime download (`ea40e3c`)
+- fix: clean failed runtime staging and reject ARM (`355da98`)
+- fix: pin static Linux FFmpeg runtime (`f051899`)
+- fix: use system FFmpeg for Linux releases (`bbc3908`)
+- fix: enforce stable channel and queue position (`97b8fea`)
+- fix: retry tagging and sync update channel status (`8aee164`)
+- fix: open complete albums from player links (`eabc74a`)
+- fix: retain prepared download paths (`07d1228`)
+- fix: address release review edge cases (`6463ddb`)
+
+### Changed
+
+- Merge pull request #51 from DhimanGhosh/codex/stable-media-gui-test-batches (`8f2d56b`)
+- test: isolate every Qt multimedia lifecycle (`fb04cef`)
+- test: isolate Qt multimedia release batches (`f775e4f`)
+- Merge pull request #50 from DhimanGhosh/codex/local-file-splitter-source (`3f003f8`)
+- chore(release): v2.15.4 [skip ci] (`50d22f6`)
+- Merge pull request #49 from DhimanGhosh/codex/persistent-update-dialog (`53dcd3a`)
+- test: cover live queue duration summary (`b199785`)
+- test: align media player terminology (`67133cf`)
+- Merge remote-tracking branch 'origin/release/2.x' into codex/persistent-update-dialog (`77062c9`)
+- chore(release): v2.15.3 [skip ci] (`247213f`)
+- Merge pull request #48 from DhimanGhosh/codex/single-track-consolidator-move (`c63de16`)
+- chore(release): v2.15.2 [skip ci] (`2e94ffc`)
+- Merge pull request #47 from DhimanGhosh/codex/windows-upgrade-executable-hotfix (`0f9acc9`)
+- chore(release): v2.15.1 [skip ci] (`36b790c`)
+- Merge pull request #46 from DhimanGhosh/codex/windows-python-runtime-hotfix (`45d1ef0`)
+- chore(release): v2.15.0 [skip ci] (`b769855`)
+- Merge pull request #45 from DhimanGhosh/codex/google-cloud-profile (`03d8751`)
+- chore(release): v2.14.0 [skip ci] (`f13f362`)
+- Merge pull request #44 from DhimanGhosh/codex/single-file-album-enrichment (`5a2dbaf`)
+- chore(release): v2.13.0 [skip ci] (`6f99d22`)
+- Merge pull request #43 from DhimanGhosh/codex/windows-release-runtime-fix (`c7284f2`)
+- Merge pull request #42 from DhimanGhosh/codex/linux-release-runtime-fix (`38405fb`)
+- test: exercise staged FFmpeg media pipeline (`c178517`)
+- Merge pull request #41 from DhimanGhosh/codex/download-recovery-v2.13.0 (`994fc40`)
+- style: normalize new file endings (`17b748e`)
+## [2.15.4] - 2026-08-23
+
+### Added
+
+- feat: add cloud profiles and menu navigation (`e57bd5f`)
+- feat: brand the Windows installer (`b6bb355`)
+- feat: add desktop menus settings and queue actions (`0096377`)
+- feat: ship resilient downloads and stable update channel (`b473a74`)
+
+### Fixed
+
+- fix: preserve installer rollback artifacts (`3dbd2ff`)
+- fix: make OTA upgrades replace the frozen runtime (`785aec4`)
+- fix: carry enriched single tracks into album move (`174fe94`)
+- fix: replace legacy Windows launcher during upgrade (`41a855b`)
+- fix: bundle Windows desktop runtime with installer (`6287b69`)
+- fix: accept tracked album enrichment files (`543196d`)
+- fix: enrich a selected album track only (`b5d490a`)
+- fix: pin Windows FFmpeg release runtime (`f6c648d`)
+- fix: clean every failed runtime download (`ea40e3c`)
+- fix: clean failed runtime staging and reject ARM (`355da98`)
+- fix: pin static Linux FFmpeg runtime (`f051899`)
+- fix: use system FFmpeg for Linux releases (`bbc3908`)
+- fix: enforce stable channel and queue position (`97b8fea`)
+- fix: retry tagging and sync update channel status (`8aee164`)
+- fix: open complete albums from player links (`eabc74a`)
+- fix: retain prepared download paths (`07d1228`)
+- fix: address release review edge cases (`6463ddb`)
+
+### Changed
+
+- Merge pull request #49 from DhimanGhosh/codex/persistent-update-dialog (`53dcd3a`)
+- test: cover live queue duration summary (`b199785`)
+- test: align media player terminology (`67133cf`)
+- Merge remote-tracking branch 'origin/release/2.x' into codex/persistent-update-dialog (`77062c9`)
+- chore(release): v2.15.3 [skip ci] (`247213f`)
+- Merge pull request #48 from DhimanGhosh/codex/single-track-consolidator-move (`c63de16`)
+- chore(release): v2.15.2 [skip ci] (`2e94ffc`)
+- Merge pull request #47 from DhimanGhosh/codex/windows-upgrade-executable-hotfix (`0f9acc9`)
+- chore(release): v2.15.1 [skip ci] (`36b790c`)
+- Merge pull request #46 from DhimanGhosh/codex/windows-python-runtime-hotfix (`45d1ef0`)
+- chore(release): v2.15.0 [skip ci] (`b769855`)
+- Merge pull request #45 from DhimanGhosh/codex/google-cloud-profile (`03d8751`)
+- chore(release): v2.14.0 [skip ci] (`f13f362`)
+- Merge pull request #44 from DhimanGhosh/codex/single-file-album-enrichment (`5a2dbaf`)
+- chore(release): v2.13.0 [skip ci] (`6f99d22`)
+- Merge pull request #43 from DhimanGhosh/codex/windows-release-runtime-fix (`c7284f2`)
+- Merge pull request #42 from DhimanGhosh/codex/linux-release-runtime-fix (`38405fb`)
+- test: exercise staged FFmpeg media pipeline (`c178517`)
+- Merge pull request #41 from DhimanGhosh/codex/download-recovery-v2.13.0 (`994fc40`)
+- style: normalize new file endings (`17b748e`)
+## [2.15.3] - 2026-08-23
+
+### Added
+
+- feat: add cloud profiles and menu navigation (`e57bd5f`)
+- feat: brand the Windows installer (`b6bb355`)
+- feat: add desktop menus settings and queue actions (`0096377`)
+- feat: ship resilient downloads and stable update channel (`b473a74`)
+
+### Fixed
+
+- fix: carry enriched single tracks into album move (`174fe94`)
+- fix: replace legacy Windows launcher during upgrade (`41a855b`)
+- fix: bundle Windows desktop runtime with installer (`6287b69`)
+- fix: accept tracked album enrichment files (`543196d`)
+- fix: enrich a selected album track only (`b5d490a`)
+- fix: pin Windows FFmpeg release runtime (`f6c648d`)
+- fix: clean every failed runtime download (`ea40e3c`)
+- fix: clean failed runtime staging and reject ARM (`355da98`)
+- fix: pin static Linux FFmpeg runtime (`f051899`)
+- fix: use system FFmpeg for Linux releases (`bbc3908`)
+- fix: enforce stable channel and queue position (`97b8fea`)
+- fix: retry tagging and sync update channel status (`8aee164`)
+- fix: open complete albums from player links (`eabc74a`)
+- fix: retain prepared download paths (`07d1228`)
+- fix: address release review edge cases (`6463ddb`)
+
+### Changed
+
+- Merge pull request #48 from DhimanGhosh/codex/single-track-consolidator-move (`c63de16`)
+- chore(release): v2.15.2 [skip ci] (`2e94ffc`)
+- Merge pull request #47 from DhimanGhosh/codex/windows-upgrade-executable-hotfix (`0f9acc9`)
+- chore(release): v2.15.1 [skip ci] (`36b790c`)
+- Merge pull request #46 from DhimanGhosh/codex/windows-python-runtime-hotfix (`45d1ef0`)
+- chore(release): v2.15.0 [skip ci] (`b769855`)
+- Merge pull request #45 from DhimanGhosh/codex/google-cloud-profile (`03d8751`)
+- chore(release): v2.14.0 [skip ci] (`f13f362`)
+- Merge pull request #44 from DhimanGhosh/codex/single-file-album-enrichment (`5a2dbaf`)
+- chore(release): v2.13.0 [skip ci] (`6f99d22`)
+- Merge pull request #43 from DhimanGhosh/codex/windows-release-runtime-fix (`c7284f2`)
+- Merge pull request #42 from DhimanGhosh/codex/linux-release-runtime-fix (`38405fb`)
+- test: exercise staged FFmpeg media pipeline (`c178517`)
+- Merge pull request #41 from DhimanGhosh/codex/download-recovery-v2.13.0 (`994fc40`)
+- style: normalize new file endings (`17b748e`)
+## [2.15.2] - 2026-08-23
+
+### Added
+
+- feat: add cloud profiles and menu navigation (`e57bd5f`)
+- feat: brand the Windows installer (`b6bb355`)
+- feat: add desktop menus settings and queue actions (`0096377`)
+- feat: ship resilient downloads and stable update channel (`b473a74`)
+
+### Fixed
+
+- fix: replace legacy Windows launcher during upgrade (`41a855b`)
+- fix: bundle Windows desktop runtime with installer (`6287b69`)
+- fix: accept tracked album enrichment files (`543196d`)
+- fix: enrich a selected album track only (`b5d490a`)
+- fix: pin Windows FFmpeg release runtime (`f6c648d`)
+- fix: clean every failed runtime download (`ea40e3c`)
+- fix: clean failed runtime staging and reject ARM (`355da98`)
+- fix: pin static Linux FFmpeg runtime (`f051899`)
+- fix: use system FFmpeg for Linux releases (`bbc3908`)
+- fix: enforce stable channel and queue position (`97b8fea`)
+- fix: retry tagging and sync update channel status (`8aee164`)
+- fix: open complete albums from player links (`eabc74a`)
+- fix: retain prepared download paths (`07d1228`)
+- fix: address release review edge cases (`6463ddb`)
+
+### Changed
+
+- Merge pull request #47 from DhimanGhosh/codex/windows-upgrade-executable-hotfix (`0f9acc9`)
+- chore(release): v2.15.1 [skip ci] (`36b790c`)
+- Merge pull request #46 from DhimanGhosh/codex/windows-python-runtime-hotfix (`45d1ef0`)
+- chore(release): v2.15.0 [skip ci] (`b769855`)
+- Merge pull request #45 from DhimanGhosh/codex/google-cloud-profile (`03d8751`)
+- chore(release): v2.14.0 [skip ci] (`f13f362`)
+- Merge pull request #44 from DhimanGhosh/codex/single-file-album-enrichment (`5a2dbaf`)
+- chore(release): v2.13.0 [skip ci] (`6f99d22`)
+- Merge pull request #43 from DhimanGhosh/codex/windows-release-runtime-fix (`c7284f2`)
+- Merge pull request #42 from DhimanGhosh/codex/linux-release-runtime-fix (`38405fb`)
+- test: exercise staged FFmpeg media pipeline (`c178517`)
+- Merge pull request #41 from DhimanGhosh/codex/download-recovery-v2.13.0 (`994fc40`)
+- style: normalize new file endings (`17b748e`)
+## [2.15.1] - 2026-08-23
+
+### Added
+
+- feat: add cloud profiles and menu navigation (`e57bd5f`)
+- feat: brand the Windows installer (`b6bb355`)
+- feat: add desktop menus settings and queue actions (`0096377`)
+- feat: ship resilient downloads and stable update channel (`b473a74`)
+
+### Fixed
+
+- fix: bundle Windows desktop runtime with installer (`6287b69`)
+- fix: accept tracked album enrichment files (`543196d`)
+- fix: enrich a selected album track only (`b5d490a`)
+- fix: pin Windows FFmpeg release runtime (`f6c648d`)
+- fix: clean every failed runtime download (`ea40e3c`)
+- fix: clean failed runtime staging and reject ARM (`355da98`)
+- fix: pin static Linux FFmpeg runtime (`f051899`)
+- fix: use system FFmpeg for Linux releases (`bbc3908`)
+- fix: enforce stable channel and queue position (`97b8fea`)
+- fix: retry tagging and sync update channel status (`8aee164`)
+- fix: open complete albums from player links (`eabc74a`)
+- fix: retain prepared download paths (`07d1228`)
+- fix: address release review edge cases (`6463ddb`)
+
+### Changed
+
+- Merge pull request #46 from DhimanGhosh/codex/windows-python-runtime-hotfix (`45d1ef0`)
+- chore(release): v2.15.0 [skip ci] (`b769855`)
+- Merge pull request #45 from DhimanGhosh/codex/google-cloud-profile (`03d8751`)
+- chore(release): v2.14.0 [skip ci] (`f13f362`)
+- Merge pull request #44 from DhimanGhosh/codex/single-file-album-enrichment (`5a2dbaf`)
+- chore(release): v2.13.0 [skip ci] (`6f99d22`)
+- Merge pull request #43 from DhimanGhosh/codex/windows-release-runtime-fix (`c7284f2`)
+- Merge pull request #42 from DhimanGhosh/codex/linux-release-runtime-fix (`38405fb`)
+- test: exercise staged FFmpeg media pipeline (`c178517`)
+- Merge pull request #41 from DhimanGhosh/codex/download-recovery-v2.13.0 (`994fc40`)
+- style: normalize new file endings (`17b748e`)
+## [2.15.0] - 2026-08-23
+
+### Added
+
+- feat: add cloud profiles and menu navigation (`e57bd5f`)
+- feat: brand the Windows installer (`b6bb355`)
+- feat: add desktop menus settings and queue actions (`0096377`)
+- feat: ship resilient downloads and stable update channel (`b473a74`)
+
+### Fixed
+
+- fix: accept tracked album enrichment files (`543196d`)
+- fix: enrich a selected album track only (`b5d490a`)
+- fix: pin Windows FFmpeg release runtime (`f6c648d`)
+- fix: clean every failed runtime download (`ea40e3c`)
+- fix: clean failed runtime staging and reject ARM (`355da98`)
+- fix: pin static Linux FFmpeg runtime (`f051899`)
+- fix: use system FFmpeg for Linux releases (`bbc3908`)
+- fix: enforce stable channel and queue position (`97b8fea`)
+- fix: retry tagging and sync update channel status (`8aee164`)
+- fix: open complete albums from player links (`eabc74a`)
+- fix: retain prepared download paths (`07d1228`)
+- fix: address release review edge cases (`6463ddb`)
+
+### Changed
+
+- Merge pull request #45 from DhimanGhosh/codex/google-cloud-profile (`03d8751`)
+- chore(release): v2.14.0 [skip ci] (`f13f362`)
+- Merge pull request #44 from DhimanGhosh/codex/single-file-album-enrichment (`5a2dbaf`)
+- chore(release): v2.13.0 [skip ci] (`6f99d22`)
+- Merge pull request #43 from DhimanGhosh/codex/windows-release-runtime-fix (`c7284f2`)
+- Merge pull request #42 from DhimanGhosh/codex/linux-release-runtime-fix (`38405fb`)
+- test: exercise staged FFmpeg media pipeline (`c178517`)
+- Merge pull request #41 from DhimanGhosh/codex/download-recovery-v2.13.0 (`994fc40`)
+- style: normalize new file endings (`17b748e`)
+## [2.14.0] - 2026-08-23
+
+### Added
+
+- feat: brand the Windows installer (`b6bb355`)
+- feat: add desktop menus settings and queue actions (`0096377`)
+- feat: ship resilient downloads and stable update channel (`b473a74`)
+
+### Fixed
+
+- fix: accept tracked album enrichment files (`543196d`)
+- fix: enrich a selected album track only (`b5d490a`)
+- fix: pin Windows FFmpeg release runtime (`f6c648d`)
+- fix: clean every failed runtime download (`ea40e3c`)
+- fix: clean failed runtime staging and reject ARM (`355da98`)
+- fix: pin static Linux FFmpeg runtime (`f051899`)
+- fix: use system FFmpeg for Linux releases (`bbc3908`)
+- fix: enforce stable channel and queue position (`97b8fea`)
+- fix: retry tagging and sync update channel status (`8aee164`)
+- fix: open complete albums from player links (`eabc74a`)
+- fix: retain prepared download paths (`07d1228`)
+- fix: address release review edge cases (`6463ddb`)
+
+### Changed
+
+- Merge pull request #44 from DhimanGhosh/codex/single-file-album-enrichment (`5a2dbaf`)
+- chore(release): v2.13.0 [skip ci] (`6f99d22`)
+- Merge pull request #43 from DhimanGhosh/codex/windows-release-runtime-fix (`c7284f2`)
+- Merge pull request #42 from DhimanGhosh/codex/linux-release-runtime-fix (`38405fb`)
+- test: exercise staged FFmpeg media pipeline (`c178517`)
+- Merge pull request #41 from DhimanGhosh/codex/download-recovery-v2.13.0 (`994fc40`)
+- style: normalize new file endings (`17b748e`)
+## [2.13.0] - 2026-08-23
+
+### Added
+
+- feat: ship resilient downloads and stable update channel (`b473a74`)
+
+### Fixed
+
+- fix: pin Windows FFmpeg release runtime (`f6c648d`)
+- fix: clean every failed runtime download (`ea40e3c`)
+- fix: clean failed runtime staging and reject ARM (`355da98`)
+- fix: pin static Linux FFmpeg runtime (`f051899`)
+- fix: use system FFmpeg for Linux releases (`bbc3908`)
+- fix: enforce stable channel and queue position (`97b8fea`)
+- fix: retry tagging and sync update channel status (`8aee164`)
+- fix: open complete albums from player links (`eabc74a`)
+- fix: retain prepared download paths (`07d1228`)
+- fix: address release review edge cases (`6463ddb`)
+
+### Changed
+
+- Merge pull request #43 from DhimanGhosh/codex/windows-release-runtime-fix (`c7284f2`)
+- Merge pull request #42 from DhimanGhosh/codex/linux-release-runtime-fix (`38405fb`)
+- test: exercise staged FFmpeg media pipeline (`c178517`)
+- Merge pull request #41 from DhimanGhosh/codex/download-recovery-v2.13.0 (`994fc40`)
+- style: normalize new file endings (`17b748e`)
 ## [2.12.0] - 2026-08-17
 
 ### Added

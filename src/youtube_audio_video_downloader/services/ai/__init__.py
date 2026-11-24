@@ -1,1 +1,1 @@
-"""AI provider, recommendation, and agent services."""
+"""AI provider and agent services."""

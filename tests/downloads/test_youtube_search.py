@@ -152,6 +152,46 @@ class YouTubeSearchTest(unittest.TestCase):
 
         self.assertEqual(result["url"], "https://www.youtube.com/watch?v=rXIhvX4TFEA")
 
+    @patch("youtube_audio_video_downloader.services.downloads.youtube_search.find_wikipedia_tracks")
+    @patch("yt_dlp.YoutubeDL")
+    def test_search_excludes_every_previously_returned_jukebox(
+        self, ydl_class, wikipedia_mock
+    ) -> None:
+        flat_downloader = MagicMock()
+        detail_downloader = MagicMock()
+        ydl_class.side_effect = [flat_downloader, detail_downloader]
+        flat_downloader.__enter__.return_value.extract_info.side_effect = [
+            {
+                "entries": [
+                    {
+                        "id": "aaaaaaaaaaa",
+                        "title": "Example Album Audio Jukebox",
+                        "duration": 1800,
+                        "view_count": 2_000,
+                    },
+                    {
+                        "id": "bbbbbbbbbbb",
+                        "title": "Example Album Full Album Songs",
+                        "duration": 1700,
+                        "view_count": 1_000,
+                    },
+                ]
+            },
+            *({"entries": []} for _ in range(4)),
+        ]
+        detail_downloader.__enter__.return_value.extract_info.return_value = {
+            "title": "Example Album",
+            "description": "00:00 First Song\n03:30 Second Song",
+        }
+        wikipedia_mock.return_value = []
+
+        result = find_album_jukebox_video(
+            "Example Album",
+            exclude_urls={"https://youtu.be/aaaaaaaaaaa"},
+        )
+
+        self.assertEqual(result["url"], "https://www.youtube.com/watch?v=bbbbbbbbbbb")
+
     def test_rejects_popular_unrelated_jukebox(self) -> None:
         entries = [
             {

@@ -2,19 +2,36 @@
 
 from __future__ import annotations
 
+import json
 import os
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PyQt6.QtCore import QPointF, Qt  # noqa: E402
 from PyQt6.QtWidgets import QApplication  # noqa: E402
+from PyQt6.QtWidgets import QCheckBox  # noqa: E402
 from PyQt6.QtWidgets import QPushButton  # noqa: E402
 
-from youtube_audio_video_downloader.gui.components.widgets import JsonBatchEditor  # noqa: E402
+from youtube_audio_video_downloader.gui.components.widgets import (  # noqa: E402
+    AlbumMetadataAutoFiller,
+    JsonBatchEditor,
+)
 
 
 class BatchEditorCompletionTest(unittest.TestCase):
+    def test_failed_album_shows_specific_reason_and_retry_instruction(self):
+        editor = JsonBatchEditor("album")
+        entry = editor.entries[0]
+        entry["fields"]["__name__"].setText("Example")
+        editor.disable_completed((), ("Example",), {"Example": "Source video is unavailable"})
+        self.assertIn("Source video is unavailable", entry["section"].failure_detail.text())
+        self.assertIn("retry", entry["section"].failure_detail.text())
+        self.assertFalse(entry["section"].failure_detail.isHidden())
+        editor.disable_completed(("Example",))
+        self.assertTrue(entry["section"].failure_detail.isHidden())
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.app = QApplication.instance() or QApplication([])
@@ -120,6 +137,149 @@ class BatchEditorCompletionTest(unittest.TestCase):
         self.assertTrue(entry["section"].toggle.isChecked())
         self.assertEqual(entry["section"].status_label.text(), "NEEDS ATTENTION")
 
+    def test_album_failure_preserves_download_selection(self) -> None:
+        editor = JsonBatchEditor("album")
+        editor.load_data({"The Body": {
+            "download": " off ",
+            "tracks": [{"Song": {"download": False}}],
+        }})
+
+        editor.disable_completed((), ("The Body / 01. Song",))
+
+        values = editor.data()["The Body"]
+        self.assertEqual(values["download"], "false")
+        self.assertEqual(values["tracks"][0]["Song"]["download"], "false")
+        self.assertEqual(editor.entries[0]["section"].status_label.text(), "NEEDS ATTENTION")
+
+    def test_collapsed_album_drag_reorders_layout_and_saved_data(self) -> None:
+        editor = JsonBatchEditor("album")
+        editor.load_data({"First": {}, "Second": {}, "Third": {"download": False}})
+        for record in editor.entries:
+            record["section"].set_expanded(False)
+        section = editor.entries[2]["section"]
+        self.assertFalse(section.drag_handle.isHidden())
+        self.assertEqual(section.drag_handle.cursor().shape(), Qt.CursorShape.OpenHandCursor)
+        section.set_expanded(True)
+        self.assertTrue(section.drag_handle.isHidden())
+        section.set_expanded(False)
+        section.set_status("Needs attention")
+        editor.show()
+        self.app.processEvents()
+        order_changes = []
+        editor.order_changed.connect(lambda: order_changes.append(list(editor.data())))
+
+        event = Mock()
+        event.source.return_value = section.drag_handle
+        event.position.return_value = QPointF(0, editor.entries[0]["section"].geometry().top())
+        editor.dragEnterEvent(event)
+        editor.dragMoveEvent(event)
+        self.assertFalse(editor._album_drop_marker.isHidden())
+        self.assertEqual(list(editor.data()), ["First", "Second", "Third"])
+        editor.dropEvent(event)
+
+        self.assertEqual(order_changes, [["Third", "First", "Second"]])
+        self.assertEqual(event.acceptProposedAction.call_count, 3)
+        self.assertTrue(editor._album_drop_marker.isHidden())
+        self.assertIs(editor.entries_layout.itemAt(0).widget(), section)
+        self.assertFalse(section.toggle.isChecked())
+        self.assertEqual(section.status_label.text(), "NEEDS ATTENTION")
+        payload = json.loads(json.dumps(editor.data()))
+        editor.load_data(payload)
+        self.assertEqual(list(editor.data()), ["Third", "First", "Second"])
+        self.assertEqual(editor.data()["Third"]["download"], "false")
+
+    def test_album_drag_sets_a_row_preview_and_closed_hand_cursor(self) -> None:
+        editor = JsonBatchEditor("album")
+        section = editor.entries[0]["section"]
+        section.set_expanded(False)
+        editor.show()
+        self.app.processEvents()
+        handle = section.drag_handle
+        press = Mock()
+        press.button.return_value = Qt.MouseButton.LeftButton
+        press.position.return_value = QPointF(8, 8)
+        move = Mock()
+        move.buttons.return_value = Qt.MouseButton.LeftButton
+        move.position.return_value = QPointF(8, 8 + QApplication.startDragDistance())
+
+        with patch("youtube_audio_video_downloader.gui.components.widgets.QDrag") as drag:
+            handle.mousePressEvent(press)
+            handle.mouseMoveEvent(move)
+
+        preview = drag.return_value.setPixmap.call_args.args[0]
+        self.assertEqual(preview.deviceIndependentSize().toSize(), section.size())
+        self.assertEqual(drag.return_value.setHotSpot.call_args.args[0], handle.mapTo(section, press.position().toPoint()))
+        cursor, action = drag.return_value.setDragCursor.call_args.args
+        self.assertFalse(cursor.isNull())
+        self.assertEqual(action, Qt.DropAction.MoveAction)
+        drag.return_value.exec.assert_called_once_with(Qt.DropAction.MoveAction, Qt.DropAction.MoveAction)
+
+    def test_length_notice_survives_completion_and_clears_when_link_changes(self) -> None:
+        editor = JsonBatchEditor("album")
+        notice = "Wikipedia lists 03:29. Matched YouTube audio runs 04:15."
+        editor.load_data({"Hate Story 2": {"tracks": [{"Pink Lips": {
+            "ytb_link": "https://youtu.be/pink",
+            "length_notice": notice,
+        }}]}})
+        track = editor.entries[0]["fields"]["__tracks__"][0]
+
+        editor.disable_completed(("Hate Story 2",))
+        badge = track["section"].length_badge
+        self.assertEqual(badge.text(), "Wiki length differs")
+        self.assertEqual(badge.toolTip(), notice)
+        self.assertFalse(badge.isHidden())
+        self.assertEqual(editor.data()["Hate Story 2"]["tracks"][0]["Pink Lips"]["length_notice"], notice)
+
+        track["fields"]["ytb_link"].setText("https://youtu.be/replacement")
+
+        self.assertTrue(badge.isHidden())
+        self.assertNotIn("length_notice", editor.data()["Hate Story 2"]["tracks"][0]["Pink Lips"])
+
+    def test_collapsed_track_checkbox_syncs_with_expanded_download_field(self) -> None:
+        editor = JsonBatchEditor("album")
+        editor.load_data({"Album": {"tracks": [{"Track": {"download": False}}]}})
+        track = editor.entries[0]["fields"]["__tracks__"][0]
+        section = track["section"]
+        header_download = next(box for box in section.findChildren(QCheckBox) if box.text() == "Download")
+        self.assertTrue(header_download.isHidden())
+
+        section.set_expanded(False)
+        self.assertFalse(header_download.isHidden())
+        header_download.click()
+
+        self.assertFalse(section.toggle.isChecked())
+        self.assertTrue(track["fields"]["download"].isChecked())
+        self.assertEqual(editor.data()["Album"]["tracks"][0]["Track"]["download"], "true")
+
+        section.set_expanded(True)
+        track["fields"]["download"].setChecked(False)
+        self.assertTrue(header_download.isHidden())
+        self.assertFalse(header_download.isChecked())
+
+    def test_collapsed_album_checkbox_controls_album_without_changing_tracks(self) -> None:
+        editor = JsonBatchEditor("album")
+        editor.load_data({"The Body": {"tracks": [{"Song": {"download": True}}]}})
+        entry = editor.entries[0]
+        section = entry["section"]
+        header_download = next(
+            box for box in section.findChildren(QCheckBox, options=Qt.FindChildOption.FindDirectChildrenOnly)
+            if box.text() == "Download"
+        )
+        self.assertTrue(header_download.isHidden())
+        section.set_status("Needs attention")
+        section.set_expanded(False)
+        self.assertFalse(header_download.isHidden())
+
+        header_download.click()
+
+        self.assertFalse(section.toggle.isChecked())
+        self.assertEqual(editor.data()["The Body"]["download"], "false")
+        self.assertEqual(editor.data()["The Body"]["tracks"][0]["Song"]["download"], "true")
+        section.set_expanded(True)
+        entry["fields"]["download"].setChecked(True)
+        self.assertTrue(header_download.isHidden())
+        self.assertTrue(header_download.isChecked())
+
     def test_audio_file_name_is_generated_instead_of_entered(self) -> None:
         editor = JsonBatchEditor("audio")
         entry = editor.entries[0]
@@ -187,6 +347,136 @@ class BatchEditorCompletionTest(unittest.TestCase):
 
         self.assertEqual(editor.entries, [added])
         self.assertNotIn(placeholder, editor.entries)
+
+    def test_album_accepts_legacy_local_source_alias_as_first_class_source(self) -> None:
+        editor = JsonBatchEditor("album")
+
+        entry = editor.add_entry("Local album", {"source_file": "C:/Media/album.mp4"})
+        fields = entry["fields"]
+
+        self.assertEqual(fields["ytb_link"].text(), "C:/Media/album.mp4")
+        self.assertEqual(fields["__source_mode__"].currentData(), "local")
+        self.assertFalse(fields["__extract_button__"].isEnabled())
+        self.assertIn("original source file is preserved", fields["__extract_button__"].toolTip())
+        self.assertEqual(editor.data()["Local album"]["ytb_link"], "C:/Media/album.mp4")
+
+    def test_jukebox_source_mode_switches_between_browse_and_youtube_search(self) -> None:
+        editor = JsonBatchEditor("jukebox")
+        entry = editor.add_entry("Compilation", {"ytb_link": "https://youtu.be/abcdefghijk"})
+        fields = entry["fields"]
+        source_mode = fields["__source_mode__"]
+
+        self.assertEqual(source_mode.currentData(), "youtube")
+        self.assertFalse(fields["__source_search__"].isHidden())
+        source_mode.setCurrentIndex(source_mode.findData("local"))
+
+        self.assertTrue(fields["__source_search__"].isHidden())
+        self.assertFalse(fields["__extract_button__"].isEnabled())
+
+    def test_album_auto_fill_switches_a_local_source_back_to_youtube_mode(self) -> None:
+        editor = JsonBatchEditor("album")
+        entry = editor.add_entry("Album", {"local_file": "C:/Media/album.mp4"})
+        fields = entry["fields"]
+
+        with patch.object(editor, "_extract_youtube_tracks"):
+            editor._apply_album_auto_fill_result(
+                "Album",
+                {"youtube": {"url": "https://youtu.be/abcdefghijk"}},
+                fields,
+                entry["section"],
+                QPushButton(),
+            )
+            self.app.processEvents()
+
+        self.assertEqual(fields["__source_mode__"].currentData(), "youtube")
+        self.assertTrue(fields["__extract_button__"].isEnabled())
+        self.assertEqual(fields["ytb_link"].text(), "https://youtu.be/abcdefghijk")
+
+    def test_each_album_has_default_on_individual_track_search_switch(self) -> None:
+        editor = JsonBatchEditor("album")
+        first = editor.add_entry("First album")
+        second = editor.add_entry("Second album")
+
+        self.assertTrue(first["fields"]["__individual_track_search__"].isChecked())
+        self.assertTrue(second["fields"]["__individual_track_search__"].isChecked())
+        first["fields"]["__individual_track_search__"].setChecked(False)
+        self.assertTrue(second["fields"]["__individual_track_search__"].isChecked())
+        self.assertIn(
+            "timestamped full-album",
+            first["fields"]["__source_search__"].toolTip(),
+        )
+
+    def test_individual_track_results_replace_jukebox_source_and_track_rows(self) -> None:
+        editor = JsonBatchEditor("album")
+        entry = editor.add_entry(
+            "Album",
+            {
+                "ytb_link": "https://youtu.be/oldjukebox",
+                "tracks": [{"Old row": {"start": "00:00"}}],
+            },
+        )
+        fields = entry["fields"]
+        fields["__individual_track_search__"].setChecked(True)
+
+        editor._apply_album_auto_fill_result(
+            "Album",
+            {
+                "individual_tracks": [
+                    {"First song": {"ytb_link": "https://youtu.be/firsttrack"}},
+                    {"Second song": {"ytb_link": "https://youtu.be/secondtrk"}},
+                ]
+            },
+            fields,
+            entry["section"],
+            QPushButton(),
+        )
+
+        self.assertFalse(fields["ytb_link"].text())
+        self.assertEqual(
+            [track["fields"]["__name__"].text() for track in fields["__tracks__"]],
+            ["First song", "Second song"],
+        )
+
+    def test_default_auto_fill_does_not_fall_back_to_individual_tracks(self) -> None:
+        filler = AlbumMetadataAutoFiller("Album", "2001")
+
+        with (
+            patch(
+                "youtube_audio_video_downloader.gui.components.widgets.find_album_art",
+                return_value="cover",
+            ),
+            patch(
+                "youtube_audio_video_downloader.gui.components.widgets.find_album_jukebox_video",
+                side_effect=LookupError("not found"),
+            ),
+            patch(
+                "youtube_audio_video_downloader.gui.components.widgets.find_individual_album_tracks"
+            ) as individual_search,
+        ):
+            filler.run()
+
+        individual_search.assert_not_called()
+
+    def test_enabled_auto_fill_searches_individual_tracks_without_jukebox_lookup(self) -> None:
+        filler = AlbumMetadataAutoFiller("Album", "2001", individual_tracks=True)
+
+        with (
+            patch(
+                "youtube_audio_video_downloader.gui.components.widgets.find_album_art",
+                return_value="cover",
+            ),
+            patch(
+                "youtube_audio_video_downloader.gui.components.widgets.find_album_jukebox_video"
+            ) as jukebox_search,
+            patch(
+                "youtube_audio_video_downloader.gui.components.widgets.find_individual_album_tracks",
+                return_value=[{"Song": {"ytb_link": "https://youtu.be/abcdefghijk"}}],
+            ) as individual_search,
+        ):
+            filler.run()
+
+        individual_search.assert_called_once()
+        jukebox_search.assert_not_called()
 
     def test_populated_entry_keeps_existing_nonblank_entries(self) -> None:
         editor = JsonBatchEditor("jukebox")
@@ -330,6 +620,32 @@ class BatchEditorCompletionTest(unittest.TestCase):
             "https://example.test/cover.jpg",
         )
         self.assertTrue(any("release year, album art" in line for line in logs), logs)
+
+    def test_album_lookup_warning_is_on_status_and_cleared_by_success(self) -> None:
+        editor = JsonBatchEditor("album")
+        entry = editor.add_entry("Dilfek")
+        section = entry["section"]
+        button = QPushButton()
+        warning = 'YouTube jukebox: No YouTube result was found for "Dilfek 2026".'
+        editor._apply_album_auto_fill_result(
+            "Dilfek", {"year": "2026", "errors": [warning]},
+            entry["fields"], section, button,
+        )
+        self.assertEqual(section.status_label.text(), "PARTIALLY FILLED")
+        self.assertEqual(section.status_label.toolTip(), warning)
+        editor._apply_album_auto_fill_result(
+            "Dilfek", {"year": "2026", "errors": [warning]},
+            entry["fields"], section, button,
+        )
+        self.assertEqual(section.status_label.text(), "NO NEW DATA")
+        self.assertEqual(section.status_label.toolTip(), warning)
+        editor._apply_album_auto_fill_result(
+            "Dilfek", {"album_art": "https://example.test/cover.jpg"},
+            entry["fields"], section, button,
+        )
+        self.assertEqual(section.status_label.text(), "METADATA FOUND")
+        self.assertEqual(section.status_label.toolTip(), "")
+        self.assertEqual(button.toolTip(), "")
 
 
 if __name__ == "__main__":

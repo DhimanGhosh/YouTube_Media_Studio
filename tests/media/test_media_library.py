@@ -23,6 +23,17 @@ def item(title: str, artist: str, album: str, year: int | None, media_type: str 
 
 
 class MediaLibraryTest(unittest.TestCase):
+    def test_disappearing_files_do_not_abort_scan_and_empty_directories_are_watched(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "empty-album").mkdir()
+            (root / "gone.mp3").write_bytes(b"temporary")
+            directories = []
+            with patch("youtube_audio_video_downloader.services.media.media_library._read_item",
+                       side_effect=FileNotFoundError("removed while scanning")):
+                self.assertEqual(scan_library([root], directories=directories), [])
+            self.assertIn(str((root / "empty-album").resolve()), directories)
+
     def test_query_searches_all_metadata_fields(self) -> None:
         items = [item("Blue Sky", "One Artist", "Colors", 1998), item("Other", "Second", "Later", 2021)]
         self.assertEqual([value.title for value in filter_library(items, query="colors 1998")], ["Blue Sky"])

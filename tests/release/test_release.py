@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
+import io
 import json
 import os
 import sys
 import tarfile
+import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -47,10 +50,152 @@ def test_host_target_is_known() -> None:
     assert release_tool.host_target() in {"windows", "linux", "macos", "unsupported"}
 
 
+def test_media_player_release_tests_run_every_collected_case_in_small_batches(
+    monkeypatch,
+) -> None:
+    collected = "\n".join(
+        f"tests/gui/test_media_player.py::MediaPlayerPageTest::test_{index}"
+        for index in range(23)
+    )
+    monkeypatch.setattr(
+        release_tool.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(stdout=collected),
+    )
+    commands: list[list[str]] = []
+    monkeypatch.setattr(release_tool, "run", lambda command: commands.append(command))
+
+    release_tool.run_media_player_tests_batched(batch_size=10)
+
+    assert [len(command) - 6 for command in commands] == [10, 10, 3]
+    executed = [node_id for command in commands for node_id in command[6:]]
+    assert executed == collected.splitlines()
+
+    commands.clear()
+    release_tool.run_media_player_tests_batched()
+    assert len(commands) == 23
+    assert all(len(command[6:]) == 1 for command in commands)
+
+
 def test_every_desktop_target_has_a_native_icon() -> None:
     assert release_tool.desktop_icon_for_target("windows").suffix == ".ico"
     assert release_tool.desktop_icon_for_target("macos").suffix == ".icns"
     assert release_tool.desktop_icon_for_target("linux").suffix == ".png"
+
+
+def test_pinned_linux_ffmpeg_archive_is_verified_and_safely_extracted(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr(release_tool.platform, "machine", lambda: "x86_64")
+    archive = io.BytesIO()
+    with tarfile.open(fileobj=archive, mode="w:xz") as bundle:
+        for name, payload in (("ffmpeg", b"static ffmpeg"), ("ffprobe", b"static ffprobe")):
+            member = tarfile.TarInfo(f"ffmpeg-static/{name}")
+            member.size = len(payload)
+            bundle.addfile(member, io.BytesIO(payload))
+    payload = archive.getvalue()
+    monkeypatch.setattr(
+        release_tool,
+        "LINUX_FFMPEG_ARCHIVE_SHA256",
+        hashlib.sha256(payload).hexdigest(),
+    )
+    monkeypatch.setattr(
+        release_tool,
+        "urlopen",
+        lambda _request, timeout: io.BytesIO(payload),
+    )
+
+    ffmpeg, ffprobe = release_tool._download_pinned_linux_ffmpeg(tmp_path)
+
+    assert ffmpeg.read_bytes() == b"static ffmpeg"
+    assert ffprobe.read_bytes() == b"static ffprobe"
+    if os.name != "nt":
+        assert ffmpeg.stat().st_mode & 0o111
+        assert ffprobe.stat().st_mode & 0o111
+    assert not (tmp_path / "ffmpeg-6.0.1-amd64-static.tar.xz").exists()
+
+
+def test_pinned_linux_ffmpeg_rejects_non_x64_hosts(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(release_tool.platform, "machine", lambda: "aarch64")
+
+    with pytest.raises(RuntimeError, match="supports x86_64 only"):
+        release_tool._download_pinned_linux_ffmpeg(tmp_path)
+
+
+def test_failed_linux_ffmpeg_extraction_removes_archive_and_partial_files(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr(release_tool.platform, "machine", lambda: "x86_64")
+    archive = io.BytesIO()
+    with tarfile.open(fileobj=archive, mode="w:xz") as bundle:
+        member = tarfile.TarInfo("ffmpeg-static/ffmpeg")
+        member.size = 6
+        bundle.addfile(member, io.BytesIO(b"binary"))
+    payload = archive.getvalue()
+    monkeypatch.setattr(
+        release_tool,
+        "LINUX_FFMPEG_ARCHIVE_SHA256",
+        hashlib.sha256(payload).hexdigest(),
+    )
+    monkeypatch.setattr(
+        release_tool,
+        "urlopen",
+        lambda _request, timeout: io.BytesIO(payload),
+    )
+
+    with pytest.raises(RuntimeError, match="missing ffprobe"):
+        release_tool._download_pinned_linux_ffmpeg(tmp_path)
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_failed_linux_ffmpeg_download_removes_partial_archive(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr(release_tool.platform, "machine", lambda: "x86_64")
+    class BrokenResponse(io.BytesIO):
+        def read(self, size=-1):
+            if self.tell():
+                raise OSError("connection interrupted")
+            return super().read(4 if size != 0 else size)
+
+    monkeypatch.setattr(
+        release_tool,
+        "urlopen",
+        lambda _request, timeout: BrokenResponse(b"partial archive"),
+    )
+
+    with pytest.raises(OSError, match="connection interrupted"):
+        release_tool._download_pinned_linux_ffmpeg(tmp_path)
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_pinned_windows_ffmpeg_archive_is_verified_and_safely_extracted(
+    monkeypatch, tmp_path
+) -> None:
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, mode="w") as bundle:
+        bundle.writestr("ffmpeg-8.1.1/bin/ffmpeg.exe", b"windows ffmpeg")
+        bundle.writestr("ffmpeg-8.1.1/bin/ffprobe.exe", b"windows ffprobe")
+    payload = archive.getvalue()
+    monkeypatch.setattr(release_tool.platform, "machine", lambda: "AMD64")
+    monkeypatch.setattr(
+        release_tool,
+        "WINDOWS_FFMPEG_ARCHIVE_SHA256",
+        hashlib.sha256(payload).hexdigest(),
+    )
+    monkeypatch.setattr(
+        release_tool,
+        "urlopen",
+        lambda _request, timeout: io.BytesIO(payload),
+    )
+
+    ffmpeg, ffprobe = release_tool._download_pinned_windows_ffmpeg(tmp_path)
+
+    assert ffmpeg.read_bytes() == b"windows ffmpeg"
+    assert ffprobe.read_bytes() == b"windows ffprobe"
+    assert not (tmp_path / "ffmpeg-8.1.1-essentials_build.zip").exists()
 
 
 def test_macos_desktop_build_rejects_intel_hosts(monkeypatch) -> None:
@@ -59,6 +204,43 @@ def test_macos_desktop_build_rejects_intel_hosts(monkeypatch) -> None:
 
     with pytest.raises(SystemExit, match="Intel macOS builds are not supported"):
         release_tool.build_desktop("macos")
+
+
+def test_windows_gui_bundle_requires_embedded_python_and_vc_runtimes(tmp_path) -> None:
+    bundle = tmp_path / release_tool.EXECUTABLE_BASENAME
+    internal = bundle / "_internal"
+    internal.mkdir(parents=True)
+    (bundle / f"{release_tool.EXECUTABLE_BASENAME}.exe").write_bytes(b"MZ")
+    (internal / "python311.dll").write_bytes(b"python")
+    (internal / "VCRUNTIME140.dll").write_bytes(b"runtime")
+
+    release_tool.verify_windows_gui_bundle(bundle)
+
+    (internal / "python311.dll").unlink()
+    with pytest.raises(RuntimeError, match="Python runtime DLL"):
+        release_tool.verify_windows_gui_bundle(bundle)
+
+
+def test_nsis_installer_renames_internal_gui_executable() -> None:
+    script = (release_tool.ROOT / "installers" / "windows" / "installer.nsi").read_text(
+        encoding="utf-8"
+    )
+
+    unpack = 'File /r "${GUI_PAYLOAD_DIR}\\*"'
+    stage = 'Rename "$INSTDIR\\${APP_EXE}" "$INSTDIR\\${APP_EXE}.previous"'
+    runtime_stage = 'Rename "$INSTDIR\\_internal" "$INSTDIR\\_internal.previous"'
+    runtime_swap = 'Rename "$INSTDIR\\.update\\_internal" "$INSTDIR\\_internal"'
+    rename = 'Rename "$INSTDIR\\.update\\${GUI_BUNDLE_EXE}" "$INSTDIR\\${APP_EXE}"'
+    restore = 'Rename "$INSTDIR\\${APP_EXE}.previous" "$INSTDIR\\${APP_EXE}"'
+
+    assert -1 < script.index(unpack) < script.index(stage) < script.index(runtime_stage)
+    assert script.index(runtime_stage) < script.index(runtime_swap) < script.index(rename)
+    assert script.index(rename) < script.index(restore, script.index(rename))
+    assert 'RMDir /r "$INSTDIR\\_internal.previous"' in script
+    assert 'Rename "$INSTDIR\\_internal" "$INSTDIR\\_internal.failed"' in script
+    assert "IfErrors rollback_failed" in script
+    assert "automatic rollback" in script
+    assert 'Abort "Could not replace ${APP_EXE}' in script
 
 
 def test_clean_removes_only_generated_paths(monkeypatch, tmp_path) -> None:

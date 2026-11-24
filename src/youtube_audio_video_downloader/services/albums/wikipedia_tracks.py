@@ -6,10 +6,13 @@ import json
 import re
 import threading
 import time
+from collections.abc import Iterator
 from html.parser import HTMLParser
 from urllib.error import HTTPError
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+from urllib.request import Request
+
+from youtube_audio_video_downloader.core.network import urlopen
 
 from youtube_audio_video_downloader.config.app_identity import http_user_agent
 from youtube_audio_video_downloader.utils.artist_name_formatter import format_artist_names
@@ -19,6 +22,41 @@ from youtube_audio_video_downloader.services.albums.album_names import normalize
 _API_LOCK = threading.Lock()
 _NEXT_API_REQUEST = 0.0
 _MIN_API_INTERVAL = 0.35
+_IMPORT_LANGUAGES = {"hindi", "bengali", "english"}
+_LANGUAGE_ALIASES = {
+    "bangla": "bengali", "bn": "bengali", "বাংলা": "bengali",
+    "hi": "hindi", "हिंदी": "hindi", "हिन्दी": "hindi", "en": "english",
+}
+_LANGUAGE_HEADERS = {"language", "languages", "language s"}
+# IANA two-letter language names and regional labels used in soundtrack tables.
+# https://www.iana.org/assignments/language-subtag-registry/language-subtag-registry
+_HEADING_LANGUAGE_NAMES = frozenset(label.strip() for label in """
+abkhazian|afar|afrikaans|akan|albanian|amharic|arabic|aragonese|armenian|assamese|
+avaric|avestan|aymara|azerbaijani|bambara|bangla|bashkir|basque|belarusian|bengali|
+bhojpuri|bislama|bosnian|breton|bulgarian|burmese|castilian|catalan|central khmer|
+chamorro|chechen|chewa|chhattisgarhi|chichewa|chinese|chuang|church slavic|
+church slavonic|chuvash|cornish|corsican|cree|croatian|czech|danish|dhivehi|
+divehi|dogri|dutch|dzongkha|english|esperanto|estonian|ewe|faroese|fijian|finnish|
+flemish|french|fulah|gaelic|galician|ganda|georgian|german|gikuyu|greek|greenlandic|
+guarani|gujarati|haitian|haitian creole|hausa|hebrew|herero|hindi|hiri motu|hungarian|
+icelandic|ido|igbo|indonesian|interlingua|interlingue|inuktitut|inupiaq|irish|iron|
+iron ossetian|iron ossetic|italian|japanese|javanese|kalaallisut|kannada|kanuri|
+kashmiri|kazakh|khmer|kikuyu|kinyarwanda|kirghiz|komi|kongo|konkani|korean|kuanyama|
+kurdish|kwanyama|kyrgyz|lao|latin|latvian|letzeburgesch|limburgan|limburger|
+limburgish|lingala|lithuanian|luba-katanga|luganda|luxembourgish|macedonian|magahi|
+maithili|malagasy|malay|malayalam|maldivian|maltese|mandarin|manipuri|manx|maori|
+marathi|marshallese|modern greek|moldavian|moldovan|mongolian|nauru|navaho|navajo|
+ndonga|nepali|north ndebele|northern sami|norwegian|norwegian bokmål|norwegian nynorsk|
+nuosu|nyanja|occidental|occitan|odia|ojibwa|old bulgarian|old church slavonic|
+old slavonic|oriya|oromo|ossetian|ossetic|pali|panjabi|pashto|persian|polish|
+portuguese|punjabi|pushto|quechua|romanian|romansh|rundi|russian|samoan|sango|
+sanskrit|santali|sardinian|scottish gaelic|serbian|serbo-croatian|shona|sichuan yi|
+sindhi|sinhala|sinhalese|slovak|slovenian|somali|south ndebele|southern sotho|
+spanish|sundanese|swahili|swati|swedish|tagalog|tahitian|tajik|tamil|tatar|telugu|
+thai|tibetan|tigrinya|tonga|tsonga|tswana|tulu|turkish|turkmen|twi|uighur|ukrainian|
+urdu|uyghur|uzbek|valencian|venda|vietnamese|volapük|walloon|welsh|western frisian|
+wolof|xhosa|yiddish|yoruba|zhuang|zulu
+""".split("|"))
 
 
 def _api(params: dict[str, str], timeout: float = 12.0) -> dict:
@@ -57,8 +95,15 @@ def _api(params: dict[str, str], timeout: float = 12.0) -> dict:
 class _TableParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
-        self.tables: list[list[list[str]]] = []
+        self.tables: list[tuple[tuple[str, ...], list[list[str]]]] = []
+        self.page_languages: tuple[str, ...] = ()
+        self._headings: dict[int, tuple[str, ...]] = {}
+        self._heading_level = 0
+        self._heading_text: list[str] = []
         self._table: list[list[str]] | None = None
+        self._table_languages: tuple[str, ...] = ()
+        self._caption_text: list[str] | None = None
+        self._infobox = False
         self._row: list[tuple[str, int, int]] | None = None
         self._cell: list[str] | None = None
         self._cell_rowspan = 1
@@ -66,9 +111,16 @@ class _TableParser(HTMLParser):
         self._rowspans: dict[int, tuple[int, str]] = {}
 
     def handle_starttag(self, tag: str, attrs) -> None:
-        if tag == "table" and self._table is None:
+        if tag in {"h2", "h3", "h4", "h5", "h6"} and self._table is None:
+            self._heading_level = int(tag[1])
+            self._heading_text = []
+        elif tag == "table" and self._table is None:
             self._table = []
             self._rowspans = {}
+            self._infobox = "infobox" in (dict(attrs).get("class") or "").split()
+            self._table_languages = next(reversed(self._headings.values()), ())
+        elif tag == "caption" and self._table is not None:
+            self._caption_text = []
         elif tag == "tr" and self._table is not None:
             self._row = []
         elif tag in {"th", "td"} and self._row is not None:
@@ -82,15 +134,34 @@ class _TableParser(HTMLParser):
                 self._cell_colspan = max(1, int(attributes.get("colspan", "1")))
             except (TypeError, ValueError):
                 self._cell_colspan = 1
+        elif tag == "li" and self._cell is not None and "".join(self._cell).strip():
+            self._cell.append(", ")
         elif tag == "br" and self._cell is not None:
             self._cell.append(", ")
 
     def handle_data(self, data: str) -> None:
         if self._cell is not None:
             self._cell.append(data)
+        elif self._heading_level:
+            self._heading_text.append(data)
+        elif self._caption_text is not None:
+            self._caption_text.append(data)
 
     def handle_endtag(self, tag: str) -> None:
-        if tag in {"th", "td"} and self._cell is not None and self._row is not None:
+        if self._heading_level and tag == f"h{self._heading_level}":
+            level = self._heading_level
+            self._heading_level = 0
+            self._headings = {
+                depth: language for depth, language in self._headings.items() if depth < level
+            }
+            languages = _heading_languages("".join(self._heading_text))
+            if languages:
+                self._headings[level] = languages
+        elif tag == "caption" and self._caption_text is not None:
+            languages = _heading_languages("".join(self._caption_text))
+            self._table_languages = languages or self._table_languages
+            self._caption_text = None
+        elif tag in {"th", "td"} and self._cell is not None and self._row is not None:
             self._row.append(
                 (
                     " ".join("".join(self._cell).split()),
@@ -130,8 +201,41 @@ class _TableParser(HTMLParser):
             self._row = None
         elif tag == "table" and self._table is not None:
             if self._table:
-                self.tables.append(self._table)
+                self.tables.append((self._table_languages, self._table))
+                if self._infobox and not self.page_languages:
+                    labels = next(
+                        (_language_labels(row[1]) for row in self._table
+                         if len(row) >= 2 and _key(row[0]) in _LANGUAGE_HEADERS),
+                        (),
+                    )
+                    if labels:
+                        self.page_languages = labels
             self._table = None
+
+
+def _single_language(value: str) -> str:
+    label = " ".join(re.sub(r"\[(?:\d+|[a-z])\]", "", value.casefold()).split())
+    if label in {"-", "–", "—", "n/a", "unknown"}:
+        return ""
+    label = re.sub(r"\s+\((?:original|dubbed|dub|original version)\)$", "", label)
+    label = label.removesuffix(" language")
+    return _LANGUAGE_ALIASES.get(label, label)
+
+
+def _language_labels(value: str) -> tuple[str, ...]:
+    if not _single_language(value):
+        return ()
+    return tuple(
+        label for part in re.split(r"[,;/&]|\band\b", value, flags=re.I)
+        if (label := _single_language(part))
+    )
+
+
+def _heading_languages(value: str) -> tuple[str, ...]:
+    text = re.sub(r"\s*\[edit\]\s*$", "", value, flags=re.I).strip().casefold()
+    label = re.sub(r"\s+(?:versions?|editions?|soundtrack|track listing)$", "", text)
+    languages = _language_labels(label)
+    return languages if _HEADING_LANGUAGE_NAMES.issuperset(languages) else ()
 
 
 def _key(value: str) -> str:
@@ -197,12 +301,14 @@ def extract_track_artists_from_html(html: str) -> dict[str, str]:
     return {_key(track["title"]): track["artists"] for track in extract_tracks_from_html(html)}
 
 
-def extract_tracks_from_html(html: str) -> list[dict[str, object]]:
-    """Return ordered title, artists, and duration metadata from soundtrack tables."""
+def extract_tracks_from_html(
+    html: str, *, preferred_languages_only: bool = False,
+) -> list[dict[str, object]]:
+    """Return soundtrack rows, optionally filtering explicitly labelled languages."""
     parser = _TableParser()
     parser.feed(html)
     found: list[dict[str, object]] = []
-    for table in parser.tables:
+    for section_languages, table in parser.tables:
         if not table:
             continue
         headers = [_key(cell) for cell in table[0]]
@@ -212,12 +318,24 @@ def extract_tracks_from_html(html: str) -> list[dict[str, object]]:
             -1,
         )
         length_index = next((i for i, h in enumerate(headers) if h in {"length", "duration"}), -1)
+        language_index = next((i for i, h in enumerate(headers) if h in _LANGUAGE_HEADERS), -1)
         if title_index < 0 or artist_index < 0:
             continue
+        table_languages = section_languages or parser.page_languages
         for row in table[1:]:
             if max(title_index, artist_index) >= len(row):
                 continue
+            if preferred_languages_only:
+                row_languages = _language_labels(row[language_index]) if 0 <= language_index < len(row) else ()
+                if not _IMPORT_LANGUAGES.issuperset(row_languages or table_languages):
+                    continue
             title = re.sub(r'"\s*(?=\()', " ", row[title_index]).strip().strip('"')
+            title_key = _key(title)
+            # Wikipedia spans the album total across the title and singer columns.
+            if title_key in {"total length", "total duration", "total running time"} and (
+                _key(row[artist_index]) in {"", title_key}
+            ):
+                continue
             artists = format_artist_names(row[artist_index].strip())
             if title and artists:
                 title = clean_wikipedia_track_title(title, artists)
@@ -254,23 +372,40 @@ def find_wikipedia_track_artists(album_name: str, release_year: str = "") -> dic
     return {}
 
 
-def find_wikipedia_tracks(album_name: str, release_year: str = "") -> list[dict[str, object]]:
+def find_wikipedia_tracks(
+    album_name: str, release_year: str = "", *, preferred_languages_only: bool = False,
+) -> list[dict[str, object]]:
     """Find an ordered Wikipedia soundtrack table including track lengths."""
     album_name = normalize_album_name(album_name)
     query = f"{album_name} {release_year.strip()} soundtrack".strip()
     if not album_name.strip():
         return []
-    search = _api({"action": "query", "list": "search", "srsearch": query, "srlimit": "5", "format": "json"})
-    for item in search.get("query", {}).get("search", []):
+    for item in _album_search_results(query, f"{album_name} {release_year}".strip()):
         title = str(item.get("title") or "")
         context = f"{title} {re.sub(r'<[^>]+>', ' ', str(item.get('snippet') or ''))}"
         if not _title_matches(album_name, title) or (release_year and release_year not in context):
             continue
         parsed = _api({"action": "parse", "page": title, "prop": "text", "format": "json", "formatversion": "2"})
-        tracks = extract_tracks_from_html(str(parsed.get("parse", {}).get("text") or ""))
+        tracks = extract_tracks_from_html(
+            str(parsed.get("parse", {}).get("text") or ""),
+            preferred_languages_only=preferred_languages_only,
+        )
         if tracks:
             return tracks
     return []
+
+
+def _album_search_results(*queries: str) -> Iterator[dict]:
+    """Retry without 'soundtrack' when that word hides the film's own page."""
+    seen = set()
+    for query in dict.fromkeys(queries):
+        search = _api({"action": "query", "list": "search", "srsearch": query,
+                       "srlimit": "5", "format": "json"})
+        for item in search.get("query", {}).get("search", []):
+            title = item.get("title")
+            if title not in seen:
+                seen.add(title)
+                yield item
 
 
 def find_wikipedia_song_metadata(
@@ -388,7 +523,7 @@ def _extract_discography_song_metadata(
 
     parser = _TableParser()
     parser.feed(html)
-    for table in parser.tables:
+    for _, table in parser.tables:
         if not table:
             continue
         headers = [_key(cell) for cell in table[0]]

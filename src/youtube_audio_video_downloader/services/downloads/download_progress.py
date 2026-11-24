@@ -23,6 +23,7 @@ class DownloadProgressReporter:
         self._last_emit = 0.0
         self._last_percent = -1
         self._last_fragment = -1
+        self.last_payload: dict[str, Any] = {}
 
     def __call__(self, status: dict[str, Any]) -> None:
         if self.cancellation_token is not None:
@@ -46,6 +47,9 @@ class DownloadProgressReporter:
         protocol = str(info.get("protocol") or "")
         fragmented = fragment_count > 1 or "m3u8" in protocol or "dash" in protocol
         used_connections = min(self.connections, fragment_count) if fragment_count > 1 else 1
+        ranges = int(status.get("parallel_ranges") or 0)
+        if ranges:
+            used_connections = ranges
         payload = {
             "label": self.label,
             "file": Path(str(status.get("filename") or "")).name,
@@ -60,7 +64,11 @@ class DownloadProgressReporter:
             "fragmented": fragmented,
             "fragment": fragment,
             "fragment_count": fragment_count,
+            "parallel_ranges": ranges,
+            "range_progress": status.get("range_progress", []),
+            "fallback_reason": info.get("parallel_fallback", ""),
         }
+        self.last_payload = payload
         print(DOWNLOAD_EVENT_PREFIX + json.dumps(payload, ensure_ascii=False), flush=True)
 
 

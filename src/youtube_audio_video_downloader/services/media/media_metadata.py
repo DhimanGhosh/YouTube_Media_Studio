@@ -11,7 +11,9 @@ from pathlib import Path
 from typing import Any
 from urllib.error import URLError
 from urllib.parse import urlparse
-from urllib.request import Request, urlopen
+from urllib.request import Request
+
+from youtube_audio_video_downloader.core.network import urlopen
 
 from mutagen import File as MutagenFile
 from mutagen.flac import Picture
@@ -112,6 +114,8 @@ def replace_media_metadata(
             remove_artwork=remove_artwork,
         )
         shutil.copystat(source, temporary)
+        # A metadata edit is a real content change; library caches use mtime.
+        os.utime(temporary, None)
         if not temporary.is_file() or temporary.stat().st_size == 0:
             raise RuntimeError("Metadata editing did not produce a valid media file")
         retry_file_operation(

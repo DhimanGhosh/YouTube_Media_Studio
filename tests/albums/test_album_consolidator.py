@@ -105,6 +105,28 @@ class AlbumConsolidatorTest(unittest.TestCase):
             self.assertTrue(review.is_file())
             self.assertTrue(any("left in source for review" in item for item in report.skipped))
 
+    @patch("youtube_audio_video_downloader.services.albums.album_consolidator.read_media_metadata")
+    def test_moves_one_selected_track_without_scanning_its_siblings(self, read_mock) -> None:
+        read_mock.return_value = EditableMediaMetadata(
+            title="Selected", album="Album (2024)", artists="Artist"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "incoming"
+            source.mkdir()
+            selected = source / "Selected - Album (2024) - Artist.mp3"
+            sibling = source / "Do not move.mp3"
+            selected.write_bytes(b"selected")
+            sibling.write_bytes(b"other")
+
+            report = consolidate_albums(selected, root / "library")
+
+            target = root / "library" / "Album (2024)" / selected.name
+            self.assertEqual(report.scanned, 1)
+            self.assertEqual(report.moved, (target,))
+            self.assertTrue(target.is_file())
+            self.assertTrue(sibling.is_file())
+
     @patch("youtube_audio_video_downloader.services.albums.album_consolidator.replace_media_metadata")
     @patch("youtube_audio_video_downloader.services.albums.album_consolidator.read_media_metadata")
     def test_move_normalizes_soundtrack_release_suffix_before_grouping(
@@ -404,6 +426,46 @@ class AlbumConsolidatorTest(unittest.TestCase):
         self.assertEqual(summary.skipped, 1)
         enrich_files_mock.assert_not_called()
         enrich_folder_mock.assert_not_called()
+
+    @patch("youtube_audio_video_downloader.gui.runtime.operations.enrich_folder_metadata")
+    @patch("youtube_audio_video_downloader.gui.runtime.operations.enrich_media_files")
+    @patch("youtube_audio_video_downloader.gui.runtime.operations.consolidate_albums")
+    def test_gui_operation_follows_single_file_renamed_before_move(
+        self, consolidate_mock, enrich_files_mock, enrich_folder_mock
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            original = root / "old.mp3"
+            renamed = root / "Song - Album (2024) - Artist.mp3"
+            original.write_bytes(b"old")
+            renamed.write_bytes(b"renamed")
+            enrich_files_mock.return_value = MetadataEnrichmentReport(
+                scanned=1,
+                updated=(renamed,),
+                skipped=(),
+                failed=(),
+                completed=(renamed,),
+            )
+            consolidate_mock.return_value = ConsolidationReport(
+                scanned=1,
+                moved=(root / "library" / "Album (2024)" / renamed.name,),
+                skipped=(),
+            )
+
+            execute_operation(
+                "album_consolidator",
+                {
+                    "source_folder": str(original),
+                    "destination_folder": str(root / "library"),
+                    "perform_enrichment": True,
+                    "agentic_model": "qwen3.5:9b",
+                },
+                CancellationToken(),
+            )
+
+            enrich_files_mock.assert_called_once()
+            enrich_folder_mock.assert_not_called()
+            self.assertEqual(consolidate_mock.call_args.args[0], renamed)
 
     @patch("youtube_audio_video_downloader.gui.runtime.operations.enrich_folder_metadata")
     @patch("youtube_audio_video_downloader.gui.runtime.operations.enrich_media_files")

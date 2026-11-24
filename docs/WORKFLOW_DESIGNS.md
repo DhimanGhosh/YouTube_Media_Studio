@@ -181,7 +181,7 @@ override is blank, every file keeps its own track artist, making soundtrack and 
 folders safe to update. Titles and track numbers are preserved while filenames are rebuilt
 from the title, new shared album identity, and each resulting track artist.
 
-## 7. Media Library scan, filter, and browse
+## 7. Media Player scan, filter, and browse
 
 ```mermaid
 sequenceDiagram
@@ -225,8 +225,8 @@ sequenceDiagram
     Phone->>Server: POST PIN
     Server-->>Phone: Session token
     Phone->>Server: Poll authenticated state revision
-    Server-->>Phone: Tracks, albums, playlists, queue, curator
-    Phone->>Server: Reorder/add/remove/play/queue/curate action
+    Server-->>Phone: Tracks, albums, playlists, queue
+    Phone->>Server: Reorder/add/remove/play/queue action
     Server->>Page: Emit remote_action_requested
     Page->>Store: Use existing desktop mutation path
     Page->>Server: Publish revised path-hiding snapshot
@@ -235,35 +235,9 @@ sequenceDiagram
 ```
 
 Media streaming accepts byte ranges for browser seeking but only resolves opaque IDs in
-the current server allowlist. Search filters execute in each phone client; curator actions
-execute through the desktop's configured AI and evidence stack.
+the current server allowlist. Search filters execute in each phone client.
 
-## 8. Smart Library Curator multi-agent flow
-
-```mermaid
-flowchart TD
-    Query["Natural-language request"] --> Literal["Recover literal artists and count"]
-    Literal --> Planner["Agno query planner"]
-    Planner --> Recover["Deterministically recover omitted constraints"]
-    Recover --> Local["Filter bounded indexed local candidates"]
-    Local --> Evidence["Parallel bounded catalog and DuckDuckGo evidence"]
-    Evidence --> Promote["Promote evidence-backed language constraints"]
-    Promote --> Verify["Agno semantic verifier"]
-    Verify --> Corroborate{"Every requested filter independently corroborated?"}
-    Corroborate -->|No| Reject["Reject candidate"]
-    Corroborate -->|Yes| Rank["Agno curator ranking"]
-    Rank --> Existing["Return existing local file paths only"]
-    Existing --> Mix{"Start mix?"}
-    Mix -->|No| Results["Display results"]
-    Mix -->|Yes| Continue["Second pass for verified same-language continuation"]
-    Continue --> Queue["Append deduplicated local tracks to queue"]
-```
-
-Language cannot be inferred from artist nationality. Mood, activity, style, energy, and
-tempo require an exact supporting evidence phrase (or an independently adjudicated close
-musical synonym) for the same recording.
-
-## 9. AI provider fallback
+## 8. AI provider fallback
 
 ```mermaid
 sequenceDiagram
@@ -271,7 +245,6 @@ sequenceDiagram
     participant Factory as agno_provider
     participant Primary as Selected provider
     participant Ollama as Local Ollama
-    participant BuiltIn as Built-in CPU AI
     participant Static as Deterministic path
 
     Caller->>Factory: Structured request + schema
@@ -284,23 +257,18 @@ sequenceDiagram
         alt Ollama succeeds
             Ollama-->>Caller: Validated structured content
         else Ollama fails
-            Factory->>BuiltIn: Lazy install/start and Agent.run
-            alt Built-in succeeds
-                BuiltIn-->>Caller: Validated structured content
-            else Built-in fails
-                Factory-->>Caller: Provider exception
-                Caller->>Static: Evidence and deterministic fallback
-            end
+            Factory-->>Caller: Provider exception
+            Caller->>Static: Evidence and deterministic fallback
         end
     end
 ```
 
-## 10. Playback queue state
+## 9. Playback queue state
 
 ```mermaid
 stateDiagram-v2
     [*] --> Empty
-    Empty --> Loaded: play selection / start mix
+    Empty --> Loaded: play selection
     Loaded --> Playing: play
     Playing --> Paused: pause
     Paused --> Playing: resume
@@ -317,7 +285,7 @@ Shuffle stores an authoritative source order so it can be disabled without losin
 identity. Repeat supports off, one, and all. Queue reordering preserves the current track
 by path rather than by row number.
 
-## 11. Cancellation and failure handling
+## 10. Cancellation and failure handling
 
 ```mermaid
 flowchart TD
@@ -336,7 +304,7 @@ flowchart TD
     Event -->|No| Complete["Emit OperationSummary"]
 ```
 
-## 12. Build and release flow
+## 11. Build and release flow
 
 ```mermaid
 flowchart TD
@@ -360,3 +328,24 @@ flowchart TD
 Pull requests run only the quality gate. A successful main run selects the next version,
 builds all targets, promotes curated `Unreleased` changelog notes, creates a release
 commit/tag, and publishes one release with checksums.
+
+## Stable 2.x change-to-playback flow
+
+```mermaid
+flowchart TD
+    Changes[File added, edited, or deleted] --> Debounce[Debounce filesystem notifications]
+    Finished[Batch item completed] --> Scan[Background library scan]
+    Debounce --> Scan
+    Manual[Click Refresh at any time] --> Restart[Interrupt current scan and request a fresh one]
+    Restart --> Scan
+    Scan --> Result{Scan outcome}
+    Result -->|Success| Index[Update index and invalidate changed artwork]
+    Result -->|Error or interrupted| Preserve[Keep previous index; allow retry]
+    Index --> Queue[Refresh queue metadata and preserve playing-file identity]
+```
+
+A 15-second backup scan covers missed filesystem notifications without queuing work
+behind an active scan. HTTP downloads probe range support, stage disjoint ranges in
+parallel, validate each response, then join and publish the completed file. Invalid
+ranges fall back to native HTTP. Cancellation cleans staging before returning.
+For the current screens and retry steps, see [the user guide](USER_GUIDE.md).

@@ -70,6 +70,17 @@ def test_remote_server_requires_pin_and_dispatches_authenticated_actions() -> No
         assert status == 200
         assert state["tracks"] == [{"title": "Song"}]
         assert int(state["revision"]) == 1
+        assert "curator" not in state
+        assert "recommendations" not in state
+
+        status, response = request_json(
+            f"{base}/api/action",
+            payload={"type": "curate", "query": "calm songs"},
+            token=token,
+        )
+        assert status == 400
+        assert response == {"error": "Unknown action"}
+        assert received == []
 
         status, response = request_json(
             f"{base}/api/action",

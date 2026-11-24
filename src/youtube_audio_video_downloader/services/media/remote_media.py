@@ -73,8 +73,6 @@ class RemoteMediaServer:
             "tracks": [],
             "albums": [],
             "playlists": [],
-            "recommendations": [],
-            "curator": {"status": "AI idle", "request": ""},
             "playback": {},
         }
         self._media_paths: dict[str, str] = {}
@@ -275,7 +273,6 @@ class RemoteMediaServer:
                     if action not in {
                         "add_to_playlist",
                         "create_playlist",
-                        "curate",
                         "play",
                         "queue",
                         "remove_playlist_positions",

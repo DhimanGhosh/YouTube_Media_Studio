@@ -1,0 +1,119 @@
+"""Tests for stable-by-default GitHub release update selection."""
+
+from __future__ import annotations
+
+import json
+from unittest.mock import MagicMock
+
+from youtube_audio_video_downloader.services.updates import check_for_update, select_update
+
+
+def release(tag: str, *, prerelease: bool = False) -> dict:
+    return {
+        "tag_name": tag,
+        "name": tag,
+        "body": "notes",
+        "prerelease": prerelease,
+        "draft": False,
+        "html_url": f"https://example.test/{tag}",
+        "assets": [
+            {
+                "name": f"YouTube-Media-Studio-{tag}-Setup.exe",
+                "browser_download_url": f"https://example.test/{tag}.exe",
+            },
+            {
+                "name": f"youtube-media-studio-{tag}-installer.run",
+                "browser_download_url": f"https://example.test/{tag}.run",
+            },
+            {
+                "name": f"youtube-media-studio-{tag}-installer.dmg",
+                "browser_download_url": f"https://example.test/{tag}.dmg",
+            },
+            {
+                "name": "SHA256SUMS.txt",
+                "browser_download_url": f"https://example.test/{tag}-SHA256SUMS.txt",
+            },
+        ],
+    }
+
+
+def test_stable_channel_excludes_newer_beta(monkeypatch) -> None:
+    monkeypatch.setattr("platform.system", lambda: "Windows")
+    update = select_update(
+        [release("v3.0.1b1", prerelease=True), release("v2.13.0")],
+        "2.12.0",
+    )
+    assert update is not None
+    assert update.version == "2.13.0"
+    assert update.prerelease is False
+
+
+def test_stable_channel_excludes_misclassified_non_prerelease_3x(monkeypatch) -> None:
+    monkeypatch.setattr("platform.system", lambda: "Windows")
+    update = select_update(
+        [release("v3.1.0", prerelease=False), release("v2.13.0")],
+        "2.12.0",
+    )
+    assert update is not None
+    assert update.version == "2.13.0"
+
+
+def test_obsolete_3x_installation_returns_latest_stable(monkeypatch) -> None:
+    monkeypatch.setattr("platform.system", lambda: "Windows")
+    update = select_update(
+        [release("v3.1.0b2", prerelease=True), release("v2.14.2")],
+        "3.1.0b1",
+    )
+    assert update is not None
+    assert update.version == "2.14.2"
+    assert update.notes == "notes"
+
+
+def test_upgrade_notes_include_intermediate_releases_without_installers(monkeypatch) -> None:
+    monkeypatch.setattr("platform.system", lambda: "Windows")
+    update = select_update(
+        [
+            dict(release("v2.19.1"), body="Album fixes", assets=[]),
+            dict(release("v2.19.0"), body="Already installed"),
+            dict(release("v2.19.3"), body="Unpublished", draft=True),
+            dict(release("v2.19.2"), body="Language filter"),
+            dict(release("v2.19.4"), body="Beyond the installable update", assets=[]),
+            dict(release("v2.19.2b1"), body="Beta notes", prerelease=True),
+        ],
+        "2.19.0",
+    )
+
+    assert update is not None
+    assert update.notes == "# Version 2.19.2\n\nLanguage filter\n\n# Version 2.19.1\n\nAlbum fixes"
+    assert update.asset_url == "https://example.test/v2.19.2.exe"
+    assert update.checksum_url == "https://example.test/v2.19.2-SHA256SUMS.txt"
+
+
+def test_fetches_intermediate_release_notes_from_later_pages(monkeypatch) -> None:
+    first, second = MagicMock(), MagicMock()
+    first.__enter__.return_value.read.return_value = json.dumps([release("v2.19.2")]).encode()
+    first.__enter__.return_value.headers = {"Link": '<next-page>; rel="next"'}
+    second.__enter__.return_value.read.return_value = json.dumps([release("v2.19.1")]).encode()
+    second.__enter__.return_value.headers = {}
+    fetch = MagicMock(side_effect=[first, second])
+    monkeypatch.setattr("youtube_audio_video_downloader.services.updates.urlopen", fetch)
+
+    update = check_for_update("2.19.0")
+
+    assert update is not None
+    assert "# Version 2.19.1" in update.notes
+    assert fetch.call_args.args[0].full_url.endswith("&page=2")
+
+
+def test_later_page_failure_preserves_update_offer(monkeypatch) -> None:
+    first = MagicMock()
+    first.__enter__.return_value.read.return_value = json.dumps([release("v2.19.2")]).encode()
+    first.__enter__.return_value.headers = {"Link": '<next-page>; rel="next"'}
+    fetch = MagicMock(side_effect=[first, TimeoutError("later page timed out")])
+    monkeypatch.setattr("youtube_audio_video_downloader.services.updates.urlopen", fetch)
+
+    update = check_for_update("2.19.0")
+
+    assert update is not None
+    assert update.version == "2.19.2"
+    assert update.notes.startswith("Some release notes could not be loaded.")

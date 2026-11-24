@@ -56,7 +56,7 @@ jobs:
         env:
           REQUESTED_BUMP: ${{ inputs.version_bump || 'auto' }}
         run: |
-          version="$(python tools/prepare_release.py next-version --bump "$REQUESTED_BUMP")"
+          version="$(python tools/prepare_release.py next-version --bump "$REQUESTED_BUMP" --major-line 2)"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Selected version $version"
 
@@ -129,6 +129,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes libegl1 libpulse0
+      - name: Install NSIS
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: choco install nsis --yes --no-progress
       - name: Import macOS signing certificate
         if: runner.os == 'macOS'
         env:
@@ -200,7 +204,8 @@ jobs:
           git add pyproject.toml uv.lock CHANGELOG.md
           git commit -m "chore(release): v${VERSION} [skip ci]"
           git tag -a "v${VERSION}" -m "YouTube Media Studio v${VERSION}"
-          git push origin HEAD:main "v${VERSION}"
+          git push origin "HEAD:${GITHUB_REF_NAME}" "v${VERSION}"
+          python -c "from pathlib import Path; text=Path('CHANGELOG.md').read_text(); Path('RELEASE_NOTES.md').write_text(text.split('## [', 1)[1].split('\n## [', 1)[0].split('\n', 1)[1].strip())"
       - name: Create unified checksums
         shell: bash
         run: |
@@ -212,6 +217,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.prepare-version.outputs.version }}
         run: |
+          title="YouTube Media Studio v${VERSION}"
           gh release create "v${VERSION}" dist/releases/* \
-            --title "YouTube Media Studio v${VERSION}" \
-            --generate-notes
+            --title "$title" \
+            --notes-file RELEASE_NOTES.md --latest

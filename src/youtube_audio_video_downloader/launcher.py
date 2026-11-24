@@ -118,13 +118,18 @@ def main() -> int:
         return 0
     if args[0].casefold() == "doctor":
         import yt_dlp
+        from youtube_audio_video_downloader.core.network import https_context
 
+        # The release builder runs this inside each frozen executable. Fail
+        # packaging if the bundled CA data is absent or cannot be loaded.
+        certificate_count = https_context().cert_store_stats()["x509_ca"]
+        print(f"HTTPS trust: {certificate_count} certificate authorities")
         print(f"FFmpeg: {runtime_status.ffmpeg or 'MISSING'}")
         print(f"FFprobe: {runtime_status.ffprobe or 'MISSING'}")
         print(f"Deno: {runtime_status.deno or 'MISSING'}")
         print(f"yt-dlp: {yt_dlp.version.__version__}")
         print(f"Bundled tools: {runtime_status.bundled_directory or 'not a frozen package'}")
-        return 0 if runtime_status.ready else 1
+        return 0 if runtime_status.ready and certificate_count else 1
     command = COMMANDS.get(args[0].casefold())
     if command is None:
         print(f"Unknown command: {args[0]}\n\n{HELP}", file=sys.stderr)
