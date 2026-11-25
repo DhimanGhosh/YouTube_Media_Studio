@@ -847,6 +847,17 @@ When a path is already present, choose **Skip duplicates** to add only new selec
 - Play, queue, and remove actions operate on the selected playlist rows.
 - **Play next** on a song, selection, or album moves it directly after the current
   track. Existing queue copies are moved into the requested order instead of duplicated.
+- **Shuffle play** replaces Now Playing with the selected songs in random order and
+  starts playback. In the playlist drawer, it uses the whole visible playlist when
+  no tracks are selected.
+- **Shuffle play next** inserts the shuffled selection immediately after the current
+  song. **Shuffle queue** appends it after all queued songs. Both preserve current
+  playback and start playing the selection when Now Playing is empty. Shuffle queue
+  skips songs already queued; Shuffle play next moves existing copies into the batch.
+- Use these shuffle actions on selected songs, open album tracks, or right-click an
+  album or artist. Ctrl-click or Shift-click album cards or artists to select a group,
+  then right-click a selected item to shuffle songs from the whole group. Batch queue
+  actions turn off the global shuffle toggle to preserve the exact insertion order.
 - Drag the divider beside the drawer to resize it; the width is remembered.
 
 ### Permanently delete library media
