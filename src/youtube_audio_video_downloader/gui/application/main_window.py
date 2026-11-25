@@ -63,6 +63,7 @@ from PyQt6.QtWidgets import (
 )
 
 from youtube_audio_video_downloader.gui.components.theme import crystal_style
+from youtube_audio_video_downloader.gui.components.menu_glass import MenuGlassController, visible_menu_icon
 from youtube_audio_video_downloader.gui.components.native_glass import (
     prepare_native_glass, apply_native_glass, native_glass_supported,
 )
@@ -448,6 +449,7 @@ class MainWindow(QMainWindow):
         self._google_restore_after_connect = False
         self._google_backup_after_action = False
 
+        self._menu_glass = MenuGlassController(self, lambda: self._crystal_level)
         self._build_window()
         self._resize_idle_timer = QTimer(self)
         self._resize_idle_timer.setSingleShot(True)
@@ -642,7 +644,7 @@ class MainWindow(QMainWindow):
         about_action.triggered.connect(self._show_about)
 
         self.media_player_action = QAction(
-            self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay),
+            visible_menu_icon(self, QStyle.StandardPixmap.SP_MediaPlay),
             "Media Player",
             self,
         )
@@ -674,7 +676,7 @@ class MainWindow(QMainWindow):
         icon: QStyle.StandardPixmap,
         shortcut: str = "",
     ) -> None:
-        action = menu.addAction(self.style().standardIcon(icon), label)
+        action = menu.addAction(visible_menu_icon(self, icon), label)
         if shortcut:
             action.setShortcut(QKeySequence(shortcut))
         action.triggered.connect(lambda _checked=False, page_index=page: self._set_page(page_index))
@@ -4641,6 +4643,9 @@ class MainWindow(QMainWindow):
             native = apply_native_glass(self, level)
         self._native_glass_active = native
         self.setStyleSheet(crystal_style(level, native_glass=native))
+        menus = getattr(self, "_menu_glass", None)
+        if menus is not None:
+            menus.refresh()
         background = getattr(self, "_background", None)
         if background is not None:
             background.set_native_glass(native)
