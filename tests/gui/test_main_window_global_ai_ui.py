@@ -37,6 +37,17 @@ from youtube_audio_video_downloader.services.albums.album_editor import (  # noq
 
 
 class MainWindowGlobalAiUiTest(unittest.TestCase):
+    def test_download_icons_are_visible_in_the_normal_unhovered_state(self) -> None:
+        from PyQt6.QtGui import QIcon
+        download = next(action.menu() for action in self.window.menuBar().actions() if action.text() == "Download")
+        actions = {action.text(): action for action in download.actions()}
+        for title in ("Audio Downloader", "Video Downloader", "Jukebox Splitter"):
+            image = actions[title].icon().pixmap(32, 32, QIcon.Mode.Normal).toImage()
+            colors = [image.pixelColor(x, y) for x in range(image.width()) for y in range(image.height())
+                      if image.pixelColor(x, y).alpha() > 200]
+            self.assertTrue(colors, title)
+            self.assertTrue(all(min(color.red(), color.green(), color.blue()) >= 230 for color in colors), title)
+
     def test_crystalness_click_jumps_to_position_and_keeps_dragging(self) -> None:
         from PyQt6.QtCore import QPoint
         slider = self.window.settings_crystalness

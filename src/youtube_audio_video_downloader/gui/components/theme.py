@@ -481,12 +481,30 @@ QToolTip {
 """
 
 
+def _glass_alpha(crystalness: int, native_glass: bool) -> int:
+    level = max(0, min(100, int(crystalness)))
+    # Qt interprets alpha=1 as 100%, so use 2/255 as the clear end point.
+    return round(255 - level * (2.53 if native_glass else 1.03))
+
+
+def menu_glass_style(crystalness: int, *, native_glass: bool = False) -> str:
+    """Keep menu text opaque and use a dark fallback if native blur is unavailable."""
+    alpha = _glass_alpha(crystalness, True) if native_glass else 255
+    return f"""
+QMenu {{ background: rgba(9, 14, 29, {alpha}); color: #eef3ff;
+    border: 1px solid rgba(220, 230, 255, 65); padding: 4px; }}
+QMenu::item {{ background: transparent; padding: 6px 24px 6px 28px; border-radius: 4px; }}
+QMenu::item:selected {{ background: rgba(104, 133, 255, 125); }}
+QMenu::item:disabled {{ color: rgba(238, 243, 255, 130); }}
+QMenu::separator {{ height: 1px; background: rgba(220, 230, 255, 45); margin: 4px 6px; }}
+"""
+
+
 def crystal_style(crystalness: int = 65, *, native_glass: bool = False) -> str:
     """Return the base theme with a live, intensity-adjustable glass treatment."""
 
     level = max(0, min(100, int(crystalness)))
-    # Qt interprets alpha=1 as 100%, so use 2/255 as the clear end point.
-    shell_alpha = round(255 - level * (2.53 if native_glass else 1.03))
+    shell_alpha = _glass_alpha(level, native_glass)
     card_alpha = round(7 + level * 0.19)
     border_alpha = round(18 + level * 0.72)
     sidebar_alpha = round(8 + level * 0.12)

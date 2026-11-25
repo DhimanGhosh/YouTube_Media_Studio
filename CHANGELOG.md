@@ -4,6 +4,13 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [Unreleased]
+
+### Fixed
+
+- Apply the selected glass transparency to drop-down menus, nested submenus, and media-player context menus. Keep zero Crystalness and unsupported compositors opaque.
+- Keep audio, video, jukebox, and other monochrome navigation icons visible on dark and glass backgrounds without requiring hover.
+
 ## [2.23.0] - 2026-11-26
 
 ### Added
