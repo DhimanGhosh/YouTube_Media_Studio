@@ -8,6 +8,17 @@ from youtube_audio_video_downloader.services.albums.catalog_tracks import find_c
 
 class CatalogTracksTest(unittest.TestCase):
     @patch("youtube_audio_video_downloader.services.albums.catalog_tracks._request")
+    def test_album_fallback_prefers_full_release_over_namesake_single(self, request):
+        album = {"collectionId": 1, "collectionName": "Goodbye (Original Motion Picture Soundtrack)",
+                 "releaseDate": "2022-10-01", "trackCount": 1}
+        request.side_effect = [[album, {**album, "collectionId": 2, "collectionName": "Goodbye - Single"}],
+                               [{"wrapperType": "track", "kind": "song", "collectionId": 1,
+                                 "trackName": "Maaye", "artistName": "Singer", "trackTimeMillis": 200000}]]
+        tracks = find_catalog_album_tracks("Goodbye", "2022")
+        self.assertEqual(tracks[0]["title"], "Maaye")
+        self.assertEqual(request.call_args.kwargs["id"], 1)
+
+    @patch("youtube_audio_video_downloader.services.albums.catalog_tracks._request")
     def test_namesake_release_is_resolved_using_its_track_list_and_year(self, request):
         album = {"collectionId": 1, "collectionName": "Goodbye (Original Motion Picture Soundtrack)",
                  "releaseDate": "2022-11-23", "trackCount": 2, "artworkUrl100": "https://soundtrack/100x100bb.jpg"}

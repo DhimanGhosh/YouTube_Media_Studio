@@ -48,7 +48,6 @@ from PyQt6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QScrollArea,
-    QSlider,
     QSplitter,
     QSpinBox,
     QStackedWidget,
@@ -88,6 +87,7 @@ from youtube_audio_video_downloader.config.app_storage import (
     settings_file as application_settings_file,
 )
 from youtube_audio_video_downloader.gui.components.widgets import (
+    ClickJumpSlider,
     ArtworkSearchControls,
     ArtistNamesSearcher,
     ReleaseYearSearcher,
@@ -688,7 +688,13 @@ class MainWindow(QMainWindow):
         self._settings_dialog.setMinimumSize(960, 640)
         self._settings_dialog.resize(1380, 850)
 
-        layout = QVBoxLayout(self._settings_dialog)
+        dialog_layout = QVBoxLayout(self._settings_dialog)
+        dialog_layout.setContentsMargins(0, 0, 0, 0)
+        self._settings_surface = QWidget()
+        self._settings_surface.setObjectName("settingsSurface")
+        self._settings_surface.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
+        dialog_layout.addWidget(self._settings_surface)
+        layout = QVBoxLayout(self._settings_surface)
         splitter = QSplitter(Qt.Orientation.Horizontal)
         self.settings_categories = QListWidget()
         self.settings_categories.setMinimumWidth(240)
@@ -3063,7 +3069,7 @@ class MainWindow(QMainWindow):
         crystal_control = QWidget()
         crystal_layout = QHBoxLayout(crystal_control)
         crystal_layout.setContentsMargins(0, 0, 0, 0)
-        self.settings_crystalness = QSlider(Qt.Orientation.Horizontal)
+        self.settings_crystalness = ClickJumpSlider(Qt.Orientation.Horizontal)
         self.settings_crystalness.setRange(0, 100)
         self.settings_crystalness.setValue(self._default_value("crystalness", 65))
         self.settings_crystalness.setToolTip(
@@ -4645,7 +4651,7 @@ class MainWindow(QMainWindow):
         status = getattr(self, "settings_glass_status", None)
         if status is not None:
             status.setText(
-                "Desktop glass: Windows Acrylic blur. Higher values reveal more of the backdrop; text stays opaque."
+                "Desktop glass: native background blur. Higher values reveal more of the backdrop; text stays opaque."
                 if native else "Opaque appearance." if not level else
                 "Glassy color treatment. Native desktop blur is unavailable on this platform or compositor."
             )

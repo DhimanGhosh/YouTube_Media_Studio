@@ -19,7 +19,7 @@ from youtube_audio_video_downloader.utils.music_text import clean_song_title, mu
 
 _VARIANT_TERMS = {
     "reprise", "reprised", "encore", "film", "arabic", "version", "remix", "mix",
-    "male", "female", "duet", "dance",
+    "male", "female", "duet", "dance", "sad",
 }
 
 
@@ -41,6 +41,7 @@ def _is_remix_or_dj_version(title: str) -> bool:
     return bool(re.search(
         r"\b(?:re[ -]?mix(?:ed|es)?|mashups?)\b|\b(?:club|dance|extended|party)\s+mix\b"
         r"|\bdj\b[^()]*\b(?:mix|version|edit)\b"
+        r"|[\[(]\s*(?:dance|club|electro|extended)(?:\s+(?:mix|version|edit))?\s*[\])]"
         r"|\((?!\s*(?:feat|ft|featuring)\b)[^)]*\bdj\b[^)]*\)", clean_song_title(title), re.IGNORECASE,
     ))
 
@@ -175,6 +176,12 @@ def find_individual_album_tracks(
                 wanted_tokens = _literal_tokens(match_title)
             search_title = re.sub(r"\s*-\s*(?:male|female)\s*$", "", match_title, flags=re.IGNORECASE)
             search_title = re.sub(r"\bremixed\s+by\s+[^)]+", "remix", search_title, flags=re.IGNORECASE)
+            # Search titles often omit version labels. Keep those labels in
+            # verification, but let the fallback discover the clean song name.
+            search_title = " ".join(re.sub(
+                r"\b(?:" + "|".join(sorted(_VARIANT_TERMS)) + r")\b|[()\[\]]",
+                " ", search_title, flags=re.IGNORECASE,
+            ).split()).strip(" -") or match_title
             search_error = None
             for query in (
                 f"{album_name} {match_title} {artists} full song audio lyrical",
@@ -504,9 +511,9 @@ def _with_description_credits(metadata: dict, album_name: str = "") -> dict:
     description = str(metadata.get("description") or "")
     fields = {}
     for key, labels in (("album", "movie|album|film"), ("artists", r"singer(?:\(s\)|s)?|vocals|playback singer"),
-                        ("composer", "music director|composer"),
+                        ("composer", "music director|music composer|composer"),
                         ("track", "song(?: name)?")):
-        match = re.search(rf"^\s*(?:{labels})\s*:\s*([^\r\n]+)", description, re.IGNORECASE | re.MULTILINE)
+        match = re.search(rf"^\s*(?:{labels})\s*(?::|[-–—])\s*([^\r\n]+)", description, re.IGNORECASE | re.MULTILINE)
         if match:
             fields[key] = match.group(1).strip()
     if not fields.get("artists") or not (fields.get("album") or album_name):
@@ -551,6 +558,8 @@ def _length_notice(
 
 
 def _variant_compatible(expected: set[str], candidate: set[str], *, credited: bool = False) -> bool:
+    expected = expected - {"version"}
+    candidate = candidate - {"version"}
     genders = {"male", "female"}
     if expected & genders:
         expected = expected - {"version"}

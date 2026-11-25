@@ -48,6 +48,9 @@ from PyQt6.QtWidgets import (
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
+    QSlider,
+    QStyle,
+    QStyleOptionSlider,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -276,6 +279,27 @@ class BlankClickSelectionFilter(QObject):
                 return current
             current = current.parentWidget()
         return None
+
+
+class ClickJumpSlider(QSlider):
+    """Jump to a clicked position while retaining native handle dragging and keys."""
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton:
+            option = QStyleOptionSlider()
+            self.initStyleOption(option)
+            handle = self.style().subControlRect(
+                QStyle.ComplexControl.CC_Slider, option, QStyle.SubControl.SC_SliderHandle, self,
+            )
+            if not handle.contains(event.position().toPoint()):
+                horizontal = self.orientation() == Qt.Orientation.Horizontal
+                size = handle.width() if horizontal else handle.height()
+                span = (self.width() if horizontal else self.height()) - size
+                position = event.position().x() if horizontal else event.position().y()
+                self.setValue(QStyle.sliderValueFromPosition(
+                    self.minimum(), self.maximum(), round(position - size / 2), max(1, span), option.upsideDown,
+                ))
+        super().mousePressEvent(event)
 
 
 class RetryingThread(QThread):

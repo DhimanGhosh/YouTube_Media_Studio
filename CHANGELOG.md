@@ -13,7 +13,10 @@ abbreviated hashes to the next version section.
 - Add Find cover, Preview, Find year, and Find artists to Edit File and Edit Album. Suggestions remain editable and are saved only when the edit is applied.
 - Start the first album's tracks immediately within the configured parallel worker limit. Each later album uses one shared configurable random delay rather than delaying every track; fully resolved album requests skip redundant AI preflight.
 - Group Album Splitter and Jukebox Splitter under Download with the other download workflows.
-- Use native Windows 11 Desktop Acrylic for real background blur in the main window and Settings. Crystalness controls background transparency while text stays opaque, with an opaque zero setting and a color-treatment fallback on unsupported platforms.
+- Use untinted native Windows glass for real background blur in the main window and Settings, with Desktop Acrylic as a fallback. Crystalness controls background transparency while text stays opaque, with an opaque zero setting and a color-treatment fallback on unsupported platforms.
+- Make Crystalness progress smoothly across 0–100%, with a nearly opaque 1% setting and a clearly transparent upper end in both the main window and Settings.
+- Jump directly to the clicked Crystalness slider position while preserving handle dragging and keyboard controls.
+- Make the top menu bar follow the selected glass transparency instead of retaining an opaque black strip.
 
 ### Fixed
 
@@ -22,6 +25,7 @@ abbreviated hashes to the next version section.
 - Remove quoted storefront album annotations from song titles, keeping Notun Premer Gaan and formatting version labels as Shaajo Shaajao - Female or Shaajo Shaajao - Male.
 - Ignore Wikipedia citation markers in track titles, artist credits, and lengths.
 - Resolve cover art against the exact release year and soundtrack track list, rejecting unrelated namesake singles and preventing Find cover from cycling through unverified releases.
+- Prefer a full catalog album over a namesake Single/EP when Wikipedia is unavailable; keep ambiguity checks between full albums. Search without version qualifiers on fallback while still verifying the requested recording, including Sad and Reprise versions.
 - Verify labeled song and singer credits in official descriptions to resolve omitted Reprise labels and catalog-confirmed duration corrections, including all nine Goodbye tracks.
 - Reconcile missing track durations and singer-named versions against a verified album release, including Naqaab's Sunidhi Chauhan recording without confusing it with the Sonu Nigam version.
 - Detect capitalization-only duplicate artist names in Fix artist names and propose one consistent spelling across the library, including artists outside the known alias list.

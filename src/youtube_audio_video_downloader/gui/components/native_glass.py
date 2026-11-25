@@ -1,4 +1,4 @@
-"""Windows compositor-backed Acrylic without fading text or replacing native chrome."""
+"""Windows compositor-backed glass without fading text or replacing native chrome."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ def prepare_native_glass(window: QWidget) -> None:
 
 
 def apply_native_glass(window: QWidget, crystalness: int) -> bool:
-    """Request Desktop Acrylic on supported Windows, respecting compositor fallback."""
+    """Prefer untinted Aero blur, with Desktop Acrylic as a compositor fallback."""
     if not native_glass_supported():
         return False
     from ctypes import wintypes
@@ -47,11 +47,49 @@ def apply_native_glass(window: QWidget, crystalness: int) -> bool:
         hwnd = int(window.winId())
         enabled = int(crystalness) > 0
         margins = Margins(*([-1] * 4 if enabled else [0] * 4))
-        backdrop = ctypes.c_int(3 if enabled else 1)  # DWMSBT_TRANSIENTWINDOW / NONE
+        backdrop = ctypes.c_int(1)  # Disable the system material's fixed opaque tint.
         extended = dwm.DwmExtendFrameIntoClientArea(hwnd, ctypes.byref(margins))
         applied = dwm.DwmSetWindowAttribute(hwnd, 38, ctypes.byref(backdrop), ctypes.sizeof(backdrop))
+        clear_blur = _set_clear_native_blur(dwm, hwnd, enabled)
+        if enabled and not clear_blur:
+            backdrop = ctypes.c_int(3)  # Desktop Acrylic fallback.
+            applied = dwm.DwmSetWindowAttribute(hwnd, 38, ctypes.byref(backdrop), ctypes.sizeof(backdrop))
         dark_mode = ctypes.c_int(1)
         dwm.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(dark_mode), ctypes.sizeof(dark_mode))
-        return enabled and extended == 0 and applied == 0
+        return enabled and extended == 0 and (clear_blur or applied == 0)
+    except (AttributeError, OSError, ValueError):
+        return False
+
+
+def _set_clear_native_blur(dwm, hwnd: int, enabled: bool) -> bool:
+    """Enable alpha compositing and untinted native blur when the API is available."""
+    from ctypes import wintypes
+
+    class BlurBehind(ctypes.Structure):
+        _fields_ = [("flags", wintypes.DWORD), ("enabled", wintypes.BOOL),
+                    ("region", ctypes.c_void_p), ("transition", wintypes.BOOL)]
+
+    class AccentPolicy(ctypes.Structure):
+        _fields_ = [("state", ctypes.c_int), ("flags", ctypes.c_int),
+                    ("color", ctypes.c_uint32), ("animation", ctypes.c_int)]
+
+    class CompositionData(ctypes.Structure):
+        _fields_ = [("attribute", ctypes.c_int), ("data", ctypes.c_void_p), ("size", ctypes.c_size_t)]
+
+    try:
+        user = ctypes.WinDLL("user32")
+        compose = user.SetWindowCompositionAttribute
+        compose.argtypes = [wintypes.HWND, ctypes.POINTER(CompositionData)]
+        compose.restype = wintypes.BOOL
+        dwm.DwmEnableBlurBehindWindow.argtypes = [wintypes.HWND, ctypes.POINTER(BlurBehind)]
+        dwm.DwmEnableBlurBehindWindow.restype = ctypes.c_long
+        blur = BlurBehind(1, enabled, None, False)
+        if dwm.DwmEnableBlurBehindWindow(hwnd, ctypes.byref(blur)) != 0:
+            return False
+        # WCA_ACCENT_POLICY / ACCENT_ENABLE_BLURBEHIND. The UI supplies the
+        # adjustable tint, avoiding Acrylic's fixed grey material at 100%.
+        policy = AccentPolicy(3 if enabled else 0, 0, 0, 0)
+        data = CompositionData(19, ctypes.cast(ctypes.pointer(policy), ctypes.c_void_p), ctypes.sizeof(policy))
+        return bool(compose(hwnd, ctypes.byref(data)))
     except (AttributeError, OSError, ValueError):
         return False

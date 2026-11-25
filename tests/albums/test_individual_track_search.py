@@ -35,6 +35,18 @@ class IndividualTrackSearchTest(unittest.TestCase):
 
     @patch("youtube_audio_video_downloader.services.downloads.individual_track_search.find_wikipedia_tracks")
     @patch("yt_dlp.YoutubeDL")
+    def test_fallback_query_omits_version_but_verification_still_requires_it(self, youtube, wiki):
+        wiki.return_value = [{"title": "Maaye Reprise", "artists": "Singer", "duration_seconds": 274}]
+        entry = {"id": "reprise", "title": "Maaye - Singer | Goodbye", "duration": 287, "channel_is_verified": True}
+        extract = youtube.return_value.__enter__.return_value.extract_info
+        extract.side_effect = [{"entries": []}, {"entries": [entry]},
+                               {**entry, "description": "Song Name - Maaye Reprise\nSinger - Singer"}]
+        result = find_individual_album_tracks("Goodbye", "2022")
+        self.assertTrue(result[0]["Maaye Reprise"]["ytb_link"].endswith("=reprise"))
+        self.assertEqual(extract.call_args_list[1].args[0], "ytsearch8:Maaye Goodbye Singer")
+
+    @patch("youtube_audio_video_downloader.services.downloads.individual_track_search.find_wikipedia_tracks")
+    @patch("yt_dlp.YoutubeDL")
     def test_missing_duration_and_singer_version_require_verified_release_credits(self, youtube, wiki):
         title = "Ae Dil Pagal Mere (Reprise)"
         wiki.return_value = [{"title": title, "artists": "Sunidhi Chauhan", "duration_seconds": 0}]
@@ -240,7 +252,7 @@ class IndividualTrackSearchTest(unittest.TestCase):
     @patch("yt_dlp.YoutubeDL")
     def test_remix_and_dj_rows_are_omitted_without_searching_them(self, youtube, wiki, catalog):
         titles = ["Pee Loon", "Pee Loon (remixed by DJ A-myth)", "Pee Loon (DJ Version)",
-                  "Pee Loon (DJ Star)", "Pee Loon (Mashup)"]
+                  "Pee Loon (DJ Star)", "Pee Loon (Mashup)", "Pee Loon (Dance)", "Pee Loon [Club Edit]"]
         wiki.return_value = [{"title": title, "artists": "Mohit Chauhan", "duration_seconds": 249}
                              for title in titles]
         youtube.return_value.__enter__.return_value.extract_info.return_value = {

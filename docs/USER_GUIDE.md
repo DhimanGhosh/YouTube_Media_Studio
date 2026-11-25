@@ -272,10 +272,12 @@ effect on the next start. Crash reporting is local and opt-in. **Open data folde
 the exact active location.
 
 **Crystalness** controls the background transparency without fading text. On Windows 11
-22H2 or newer, the app and Settings use native Desktop Acrylic blur. Higher values expose
+22H2 or newer, the app and Settings use untinted native glass blur, with Desktop Acrylic
+as a fallback. Higher values expose
 more of the blurred desktop; zero restores an opaque background. Windows transparency
 settings and compositor availability can affect the effect. Other platforms retain the
-glassy color treatment and report that native desktop blur is unavailable.
+glassy color treatment and report that native desktop blur is unavailable. Click anywhere
+on the slider to jump directly to that level, or drag its handle to adjust it gradually.
 
 Application updates use public GitHub Releases and require no Google sign-in. The
 stable 2.x channel is used for all updates.

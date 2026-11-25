@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from urllib.parse import urlencode
 from urllib.request import Request
 
@@ -45,6 +46,13 @@ def find_catalog_album_release(
         and _catalog_key(normalize_album_name(row.get("collectionName"))) == _catalog_key(name)
         and (not release_year or str(row.get("releaseDate") or "")[:4] == release_year)
     }
+    if len(matches) > 1 and not expected_titles:
+        # A namesake Single/EP is not the full album requested here. Keep
+        # ambiguity protection when more than one full release remains.
+        full_releases = {key: row for key, row in matches.items()
+                         if not re.search(r"\s-\s(?:single|ep)\s*$", str(row.get("collectionName") or ""), re.I)}
+        if len(full_releases) == 1:
+            matches = full_releases
     if not matches or (not expected_titles and len(matches) != 1) or len(matches) > 5:
         return {}
     expected = {music_words(clean_song_title(title, name)) for title in expected_titles if title.strip()}

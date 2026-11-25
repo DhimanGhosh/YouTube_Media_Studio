@@ -37,6 +37,44 @@ from youtube_audio_video_downloader.services.albums.album_editor import (  # noq
 
 
 class MainWindowGlobalAiUiTest(unittest.TestCase):
+    def test_crystalness_click_jumps_to_position_and_keeps_dragging(self) -> None:
+        from PyQt6.QtCore import QPoint
+        slider = self.window.settings_crystalness
+        slider.resize(400, 26)
+        slider.setValue(1)
+        QTest.mouseClick(slider, Qt.MouseButton.LeftButton, pos=QPoint(300, 13))
+        self.assertGreater(slider.value(), 70)
+        self.assertLess(slider.value(), 80)
+        QTest.mousePress(slider, Qt.MouseButton.LeftButton, pos=QPoint(300, 13))
+        QTest.mouseMove(slider, QPoint(100, 13))
+        QTest.mouseRelease(slider, Qt.MouseButton.LeftButton, pos=QPoint(100, 13))
+        self.assertGreater(slider.value(), 20)
+        self.assertLess(slider.value(), 30)
+
+    def test_settings_transparency_has_a_small_first_step_and_visible_range(self) -> None:
+        with patch("youtube_audio_video_downloader.gui.application.main_window.native_glass_supported", return_value=True), patch(
+            "youtube_audio_video_downloader.gui.application.main_window.apply_native_glass", return_value=True,
+        ):
+            self.window.show()
+            self.window._open_settings_dialog()
+            self.window.settings_categories.setCurrentRow(7)
+            colors = []
+            menu_colors = []
+            for level in (0, 1, 50, 100):
+                self.window._apply_crystalness(level, persist=False)
+                self.app.processEvents()
+                image = self.window._settings_surface.grab().toImage()
+                colors.append(image.pixelColor(image.width() // 2, image.height() - 100))
+                menu_image = self.window.menuBar().grab().toImage()
+                menu_colors.append(menu_image.pixelColor(menu_image.width() // 2, menu_image.height() // 2))
+            self.assertEqual(colors[0].alpha(), 255)
+            self.assertLessEqual(abs(colors[0].alpha() - colors[1].alpha()), 3)
+            self.assertGreater(colors[1].alpha(), colors[2].alpha())
+            self.assertGreater(colors[2].alpha(), colors[3].alpha())
+            self.assertGreater(menu_colors[1].alpha(), menu_colors[2].alpha())
+            self.assertGreater(menu_colors[2].alpha(), menu_colors[3].alpha())
+            self.assertEqual(self.window.windowOpacity(), 1.0)
+
     def test_download_menu_contains_all_download_workflows(self) -> None:
         menus = {action.text(): action.menu() for action in self.window.menuBar().actions() if action.menu()}
         download = [action.text() for action in menus["Download"].actions() if not action.isSeparator()]
