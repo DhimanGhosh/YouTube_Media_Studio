@@ -129,10 +129,40 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes libegl1 libpulse0
-      - name: Install NSIS
+      - name: Prepare verified NSIS compiler
         if: runner.os == 'Windows'
         shell: pwsh
-        run: choco install nsis --yes --no-progress
+        run: |
+          # Hash published by the NSIS project for nsis-3.12.zip:
+          # https://sourceforge.net/projects/nsis/files/NSIS%203/3.12/nsis-3.12.zip/download
+          $expectedHash = '56581f90db321581c5381193d796fffcf2d24b2f8fed2160a6c6a3baa67f2c4f'
+          $archive = Join-Path $env:RUNNER_TEMP 'nsis-3.12.zip'
+          $verified = $false
+          foreach ($url in @(
+            'https://downloads.sourceforge.net/project/nsis/NSIS%203/3.12/nsis-3.12.zip',
+            'https://distfiles.macports.org/nsis/nsis-3.12.zip'
+          )) {
+            try {
+              Invoke-WebRequest -Uri $url -OutFile $archive -TimeoutSec 30 -MaximumRetryCount 1 -RetryIntervalSec 2
+              if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $expectedHash) {
+                throw 'NSIS archive checksum mismatch.'
+              }
+              $verified = $true
+              break
+            } catch {
+              Write-Warning "NSIS download failed verification: $_"
+            }
+          }
+          if (-not $verified) { throw 'No verified NSIS compiler archive could be downloaded.' }
+          $destination = Join-Path $env:RUNNER_TEMP 'nsis-compiler'
+          Expand-Archive -LiteralPath $archive -DestinationPath $destination -Force
+          $compiler = Join-Path $destination 'nsis-3.12/makensis.exe'
+          if (-not (Test-Path -LiteralPath $compiler -PathType Leaf)) {
+            throw 'The verified NSIS archive did not contain makensis.exe.'
+          }
+          & $compiler /VERSION
+          if ($LASTEXITCODE -ne 0) { throw 'The NSIS compiler failed its version check.' }
+          Split-Path -Parent $compiler | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - name: Import macOS signing certificate
         if: runner.os == 'macOS'
         env:
