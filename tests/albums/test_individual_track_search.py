@@ -100,6 +100,58 @@ class IndividualTrackSearchTest(unittest.TestCase):
         self.assertFalse(_variant_compatible({"female"}, {"male"}, credited=True))
         self.assertFalse(_variant_compatible({"female"}, {"duet"}))
         self.assertFalse(_variant_compatible({"reprise"}, set(), credited=True))
+        self.assertTrue(_variant_compatible({"male", "remix"}, {"remix"}, credited=True))
+        self.assertFalse(_variant_compatible({"male", "remix"}, set(), credited=True))
+
+    @patch("youtube_audio_video_downloader.services.downloads.individual_track_search.find_wikipedia_tracks")
+    @patch("yt_dlp.YoutubeDL")
+    def test_gender_omission_requires_known_duration_and_surfaces_metadata_failure(self, youtube, wiki):
+        extract = youtube.return_value.__enter__.return_value.extract_info
+        entry = {"id": "recording", "title": "I Am in Love", "duration": 300}
+        for duration in (0, 302):
+            with self.subTest(duration=duration):
+                wiki.return_value = [{"title": "I Am in Love (Male)", "artists": "Karthik",
+                                      "duration_seconds": duration}]
+                if duration:
+                    extract.side_effect = [{"entries": [entry]}, DownloadError("watch-page timeout"),
+                                           {"entries": []}]
+                    with self.assertRaisesRegex(DownloadError, "watch-page timeout"):
+                        find_individual_album_tracks("Once Upon a Time in Mumbaai", "2010")
+                else:
+                    extract.side_effect = [{"entries": [entry]}, {"entries": []}]
+                    with self.assertRaises(LookupError):
+                        find_individual_album_tracks("Once Upon a Time in Mumbaai", "2010")
+                    self.assertEqual(extract.call_count, 2)
+                extract.reset_mock()
+
+    @patch("youtube_audio_video_downloader.services.downloads.individual_track_search.find_wikipedia_tracks")
+    @patch("yt_dlp.YoutubeDL")
+    def test_gender_credit_lookups_are_bounded_per_query(self, youtube, wiki):
+        wiki.return_value = [{"title": "I Am in Love (Male)", "artists": "Karthik",
+                              "duration_seconds": 302}]
+        extract = youtube.return_value.__enter__.return_value.extract_info
+        responses = []
+        for query in range(2):
+            responses.append({"entries": [
+                {"id": f"{query}-{index}", "title": "I Am in Love", "duration": 300}
+                for index in range(8)
+            ]})
+            responses.extend([{"album": "Unrelated"}] * 3)
+        extract.side_effect = responses
+        with self.assertRaises(LookupError):
+            find_individual_album_tracks("Once Upon a Time in Mumbaai", "2010")
+        self.assertEqual(extract.call_count, 8)
+
+    @patch("youtube_audio_video_downloader.services.downloads.individual_track_search.find_catalog_song_metadata", return_value={})
+    @patch("youtube_audio_video_downloader.services.downloads.individual_track_search.find_wikipedia_tracks")
+    @patch("yt_dlp.YoutubeDL")
+    def test_song_named_dance_retains_title_tokens(self, youtube, wiki, catalog):
+        wiki.return_value = [{"title": "Dance", "artists": "Singer", "duration_seconds": 180}]
+        youtube.return_value.__enter__.return_value.extract_info.return_value = {
+            "entries": [{"id": "dance", "title": "Dance Official Audio", "duration": 180}],
+        }
+        result = find_individual_album_tracks("Album", "2010")
+        self.assertTrue(result[0]["Dance"]["ytb_link"].endswith("=dance"))
 
     @patch("youtube_audio_video_downloader.services.downloads.individual_track_search.find_catalog_song_metadata", return_value={})
     @patch("youtube_audio_video_downloader.services.downloads.individual_track_search.find_wikipedia_tracks")

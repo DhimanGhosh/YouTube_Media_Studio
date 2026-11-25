@@ -256,6 +256,9 @@ class MediaPlayerPageTest(unittest.TestCase):
                     self.page._shuffle_items(list(self.page.items), mode)
                 self.assertEqual(self.page.queue, list(reversed(self.page.items)))
                 self.assertEqual(self.page.queue_index, 0)
+                if mode != "play":
+                    self.assertFalse(self.page._shuffle_enabled)
+                    self.assertEqual(self.page._queue_source, self.page.queue)
                 load.assert_called_once()
                 shuffle.assert_called_once()
 
@@ -302,6 +305,29 @@ class MediaPlayerPageTest(unittest.TestCase):
         with patch.object(QMenu, "exec"), patch.object(self.page, "_add_shuffle_actions") as add:
             self.page._show_artist_context_menu(position)
         self.assertEqual(add.call_args.args[1], self.page.items)
+
+    def test_unselected_album_and_artist_context_menus_select_clicked_item(self) -> None:
+        self.page.items[1] = replace(self.page.items[1], album="Other Album", artists="Other Artist")
+        self.page.apply_filters()
+        for widget, handler in ((self.page.albums, self.page._show_album_context_menu),
+                                (self.page.facets, self.page._show_artist_context_menu)):
+            with self.subTest(widget=widget):
+                widget.setCurrentItem(widget.item(0))
+                position = widget.visualItemRect(widget.item(1)).center()
+                with patch.object(QMenu, "exec"):
+                    handler(position)
+                self.assertEqual(widget.selectedItems(), [widget.item(1)])
+
+    def test_multi_album_delete_uses_exact_captured_tracks(self) -> None:
+        tracks = list(self.page.items)
+        def trigger_delete(menu, _position):
+            next(action for action in menu.actions()
+                 if action.text() == "Permanently delete album songs…").trigger()
+        with patch.object(QMenu, "exec", new=trigger_delete), patch.object(
+            self.page, "_permanently_delete_album_tracks",
+        ) as delete:
+            self.page._show_album_folder_context_menu("One, Two", [], tracks, QPoint())
+        delete.assert_called_once_with("One, Two", tracks)
 
     def test_song_context_menu_queues_one_or_multiple_tracks(self) -> None:
         first, second = self.page.items

@@ -4588,6 +4588,8 @@ class MediaLibraryPage(QWidget):
         if entry is None:
             return
         if not entry.isSelected():
+            self.facets.clearSelection()
+            entry.setSelected(True)
             self.facets.setCurrentItem(entry)
         artists = {item.text().casefold() for item in self.facets.selectedItems()}
         tracks = [
@@ -4620,6 +4622,8 @@ class MediaLibraryPage(QWidget):
         if entry is None:
             return
         if not entry.isSelected():
+            self.albums.clearSelection()
+            entry.setSelected(True)
             self.albums.setCurrentItem(entry)
         albums = [str(item.data(Qt.ItemDataRole.UserRole) or "") for item in self.albums.selectedItems()]
         tracks = [item for item in self.items if item.album in albums]
@@ -4703,12 +4707,15 @@ class MediaLibraryPage(QWidget):
             "Delete every indexed media file in this album from disk. This cannot be undone."
         )
         delete_action.triggered.connect(
-            lambda _checked=False, name=album: self._permanently_delete_album(name)
+            lambda _checked=False, name=album, selected=list(tracks):
+            self._permanently_delete_album_tracks(name, selected)
         )
         menu.exec(global_position)
 
     def _permanently_delete_album(self, album: str) -> None:
-        tracks = self._all_album_tracks(album)
+        self._permanently_delete_album_tracks(album, self._all_album_tracks(album))
+
+    def _permanently_delete_album_tracks(self, album: str, tracks: list[LibraryItem]) -> None:
         if not tracks:
             return
         folders = sorted(
@@ -4884,7 +4891,7 @@ class MediaLibraryPage(QWidget):
         """Shuffle this batch once, preserving the position of existing queue entries."""
         if not items:
             return
-        if mode == "play" or not self.queue:
+        if mode == "play":
             self._replace_queue(items, shuffle=True)
             return
         seen: set[str] = set()
@@ -4895,6 +4902,9 @@ class MediaLibraryPage(QWidget):
                 seen.add(key)
                 selected.append(item)
         random.shuffle(selected)
+        if not self.queue:
+            self._replace_queue(selected, shuffle=False)
+            return
         # Appending with global shuffle enabled normally mixes the whole tail.
         # An explicit batch operation must retain all pre-existing queue positions.
         self._shuffle_enabled = False

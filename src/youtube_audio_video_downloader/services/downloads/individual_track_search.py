@@ -85,6 +85,8 @@ def find_individual_album_tracks(
             title_key = _recording_key(title)
             variant_words = set(title_key.split()) & _VARIANT_TERMS
             wanted_tokens = set(title_key.split()) - _VARIANT_TERMS - {"ft", "feat", "featuring"}
+            if not wanted_tokens:
+                wanted_tokens = set(title_key.split())
             search_title = re.sub(r"\s*\((?:male|female)\)", "", title, flags=re.IGNORECASE)
             search_title = re.sub(r"\bremixed\s+by\s+[^)]+", "remix", search_title, flags=re.IGNORECASE)
             search_error = None
@@ -100,6 +102,15 @@ def find_individual_album_tracks(
                     search_error = exc
                     continue
                 entries = (search.get("entries") or []) if isinstance(search, dict) else []
+                credit_lookups = 0
+                if variant_words & {"male", "female"}:
+                    entries = sorted(
+                        (entry for entry in entries if isinstance(entry, dict)),
+                        key=lambda entry: (
+                            not bool(entry.get("channel_is_verified")),
+                            abs(float(entry.get("duration") or 0) - expected),
+                        ),
+                    )
                 for entry in entries:
                     if not isinstance(entry, dict) or not entry.get("id"):
                         continue
@@ -131,7 +142,7 @@ def find_individual_album_tracks(
                         if isinstance(original, dict) and original.get("title"):
                             entry = {**entry, **original}
                             candidate_title = str(entry["title"])
-                            candidate_tokens = set(_key(candidate_title).split())
+                            candidate_tokens = set(_recording_key(candidate_title).split())
                             overlap = len(wanted_tokens & candidate_tokens) / max(1, len(wanted_tokens))
                     if overlap < 0.65:
                         continue
@@ -141,7 +152,7 @@ def find_individual_album_tracks(
                         variant_words, candidate_variants, credited=True,
                     ):
                         continue
-                    if needs_credits and not artists:
+                    if needs_credits and (not artists or expected <= 0):
                         continue
                     if _is_lofi(candidate_title) or candidate_tokens & {
                         "cover", "reaction", "status", "shorts", "teaser", "8d", "slowed",
@@ -150,14 +161,21 @@ def find_individual_album_tracks(
                     duration = int(float(entry.get("duration") or 0))
                     if duration <= 0:
                         continue
+                    if needs_credits and (
+                        not _duration_matches(duration, expected) or credit_lookups >= 3
+                    ):
+                        continue
                     if (needs_credits or str(entry.get("channel") or "").endswith(" - Topic")) and artists:
                         if is_cancelled is not None and is_cancelled():
                             return []
                         try:
+                            if needs_credits:
+                                credit_lookups += 1
                             metadata = downloader.extract_info(
                                 _video_url(entry), download=False, process=False,
                             )
-                        except DownloadError:
+                        except DownloadError as exc:
+                            search_error = exc
                             continue
                         if needs_credits and entry.get("channel_is_verified") and isinstance(metadata, dict):
                             metadata = _with_description_credits(metadata)
@@ -342,7 +360,9 @@ def _variant_compatible(expected: set[str], candidate: set[str], *, credited: bo
         if expected & genders != candidate & genders:
             # Catalog gender labels are often absent (or called "Duet") on YouTube.
             # Only album, singer, title and duration evidence can establish the version.
-            return credited and not (expected - genders) and not (candidate - {"duet"})
+            return credited and _variant_compatible(
+                expected - genders, candidate - {"duet"}, credited=credited,
+            )
         return _variant_compatible(expected - genders, candidate - genders, credited=credited)
     if not expected:
         return not candidate
