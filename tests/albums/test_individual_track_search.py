@@ -13,6 +13,36 @@ from youtube_audio_video_downloader.services.downloads.individual_track_search i
 
 
 class IndividualTrackSearchTest(unittest.TestCase):
+    @patch("youtube_audio_video_downloader.services.downloads.individual_track_search.find_catalog_song_metadata", return_value={})
+    @patch("youtube_audio_video_downloader.services.downloads.individual_track_search.find_wikipedia_tracks")
+    @patch("yt_dlp.YoutubeDL")
+    def test_transliterated_song_title_requires_verified_release_evidence(self, youtube, wiki, catalog):
+        title = "Pyar Mein Sau Uljhanne Hai"
+        wiki.return_value = [{"title": title, "duration_seconds": 329,
+                              "artists": "Shankar Mahadevan, Mahalaxmi Iyer, Sneha Pant, Vijay Prakash"}]
+        entry = {"id": "Bme4ck1j6B8", "duration": 330, "channel_is_verified": True,
+                 "title": "Pyaar Mein Sau Uljhane | Aishwarya Rai | Vivek Oberoi | Kyun Ho Gaya Na | Shankar Mahadevan"}
+        for changes, matches in (
+            ({}, True),
+            ({"channel_is_verified": False}, False),
+            ({"duration": 180}, False),
+            ({"duration": 0}, False),
+            ({"title": entry["title"].replace("Kyun Ho Gaya Na", "Another Album")}, False),
+            ({"title": entry["title"].replace("Shankar Mahadevan", "Another Singer")}, False),
+            ({"title": entry["title"].replace("Pyaar Mein Sau Uljhane", "An Unrelated Song")}, False),
+            ({"title": entry["title"].replace("Uljhane", "Uljhane Remix")}, False),
+        ):
+            with self.subTest(changes=changes):
+                youtube.return_value.__enter__.return_value.extract_info.return_value = {
+                    "entries": [{**entry, **changes}],
+                }
+                if matches:
+                    result = find_individual_album_tracks("Kyun Ho Gaya Na", "2004")
+                    self.assertTrue(result[0][title]["ytb_link"].endswith("=Bme4ck1j6B8"))
+                else:
+                    with self.assertRaises(LookupError):
+                        find_individual_album_tracks("Kyun Ho Gaya Na", "2004")
+
     @patch("youtube_audio_video_downloader.services.downloads.individual_track_search.find_wikipedia_tracks")
     @patch("yt_dlp.YoutubeDL")
     def test_gender_label_can_be_omitted_only_with_matching_release_credits(self, youtube, wiki):

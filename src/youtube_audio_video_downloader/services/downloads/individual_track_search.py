@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from difflib import SequenceMatcher
 from typing import Any, Callable
 
 from youtube_audio_video_downloader.services.albums.album_art_finder import (
@@ -144,7 +145,9 @@ def find_individual_album_tracks(
                             candidate_title = str(entry["title"])
                             candidate_tokens = set(_recording_key(candidate_title).split())
                             overlap = len(wanted_tokens & candidate_tokens) / max(1, len(wanted_tokens))
-                    if overlap < 0.65:
+                    if overlap < 0.65 and not _is_credited_spelling_match(
+                        entry, title_key, album_key, artists, expected,
+                    ):
                         continue
                     candidate_variants = candidate_tokens & _VARIANT_TERMS
                     needs_credits = not _variant_compatible(variant_words, candidate_variants)
@@ -241,6 +244,37 @@ def _video_url(entry: dict) -> str:
     if url.startswith(("http://", "https://")):
         return url
     return f"https://www.youtube.com/watch?v={entry['id']}"
+
+
+def _is_credited_spelling_match(
+    entry: dict, title_key: str, album_key: str, artists: str, expected: int,
+) -> bool:
+    """Allow small transliteration differences only with corroborating release evidence."""
+    if not entry.get("channel_is_verified") or not album_key or expected <= 0:
+        return False
+    duration = int(float(entry.get("duration") or 0))
+    if duration <= 0 or not _duration_matches(duration, expected):
+        return False
+    candidate_key = _recording_key(str(entry.get("title") or ""))
+    padded = f" {candidate_key} "
+    if f" {album_key} " not in padded or not any(
+        f" {artist} " in padded for artist in _artist_keys(artists)
+    ):
+        return False
+    wanted = [word for word in title_key.split() if word not in _VARIANT_TERMS]
+    available = candidate_key.split()
+    if len(wanted) < 3:
+        return False
+    # Compare short ordered title spans, not the whole title plus cast and credits.
+    # Pyar/Pyaar and Uljhanne/Uljhane should not hide an otherwise verified song.
+    for size in range(max(3, len(wanted) - 1), len(wanted) + 2):
+        for start in range(len(available) - size + 1):
+            span = available[start:start + size]
+            if len(set(wanted) & set(span)) < 2:
+                continue
+            if SequenceMatcher(None, " ".join(wanted), " ".join(span)).ratio() >= 0.86:
+                return True
+    return False
 
 
 def _catalog_duration(title: str, artists: str, album_key: str, release_year: str) -> int:

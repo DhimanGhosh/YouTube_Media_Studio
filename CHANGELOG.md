@@ -8,6 +8,7 @@ abbreviated hashes to the next version section.
 
 ### Fixed
 
+- Match small song-title transliteration differences such as Pyar Mein Sau Uljhanne Hai / Pyaar Mein Sau Uljhane when a verified YouTube upload also matches the album, singer credit, and full-song duration.
 - Detect capitalization-only duplicate artist names in Fix artist names and propose one consistent spelling across the library, including artists outside the known alias list.
 - Normalize YO YO Honey Singh and other casing, spacing, or hyphen variants to Yo Yo Honey Singh while preserving initials and acronyms such as KK and AR Rahman.
 - Apply reviewed artist-name repairs to both artist and album-artist tags, remove duplicate credits, and keep case variants from blocking unambiguous longer-name suggestions.
