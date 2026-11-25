@@ -481,6 +481,9 @@ This is the complete **Auto fill album** workflow:
    list, or an exact album/year match in the Apple Music catalog when Wikipedia has no
    usable list, and finds a separate full-length YouTube audio source for every song.
    Turn it off to find a timestamped full-album/jukebox source.
+   Remix and DJ-version rows are omitted. Shared matching rules handle spelling and
+   transliteration differences, using album, singer, duration, and version evidence
+   before accepting a recording. A second, shorter search helps locate full Topic audio.
 4. The app also searches online release evidence for the year and square cover art.
 5. When a full-album source is found, the app immediately extracts timestamped tracks
    and singer credits from its description. With the workspace AI switch on, the
@@ -494,6 +497,9 @@ This is the complete **Auto fill album** workflow:
    identity, boundary, artist, and artwork checks.
 
 Auto-fill can populate **Release Year**, **Album Art**, **Source media**, and **Tracks**.
+Storefront release annotations such as `(From "Ballabhpurer Roopkotha")` are removed
+from song titles. Gender labels are retained as `Shaajo Shaajao - Female` or
+`Shaajo Shaajao - Male`; titles without a version remain simply `Notun Premer Gaan`.
 It does not select the final output/overwrite policy or approve the job on the user's
 behalf.
 
@@ -809,6 +815,13 @@ switching views. A preview uses embedded artwork first, otherwise a representati
 is extracted without modifying the video.
 
 ### Repair artist names
+
+The main library search tolerates common spelling differences. For example,
+`Kaal Ho Na Ho` finds the tracks and album cards for `Kal Ho Naa Ho`. Search also
+handles accents, punctuation, doubled transliteration letters, and a small typo in a
+longer word. Short words in multiword queries must match whole words, so unrelated
+names such as Kishore and Nazar do not satisfy `Ho` and `Na`. Year and artist facets
+continue to apply, and search does not rename the stored metadata.
 
 Select **Fix artist names** to scan all configured library tracks. Placeholder Unknown
 credits are ignored. The app proposes period-free initials, known aliases,

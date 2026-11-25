@@ -11,6 +11,7 @@ from youtube_audio_video_downloader.core.network import urlopen
 from youtube_audio_video_downloader.services.albums.album_art_finder import _catalog_key
 from youtube_audio_video_downloader.services.albums.album_names import normalize_album_name
 from youtube_audio_video_downloader.utils.artist_name_formatter import format_artist_names
+from youtube_audio_video_downloader.utils.music_text import clean_song_title
 
 
 def _request(endpoint: str, **params: object) -> list[dict]:
@@ -55,7 +56,7 @@ def find_catalog_album_tracks(album_name: str, release_year: str = "") -> list[d
     tracks.sort(key=lambda row: (int(row.get("discNumber") or 1), int(row.get("trackNumber") or 0)))
     result = []
     for row in tracks:
-        title = str(row.get("trackName") or "").strip()
+        title = clean_song_title(str(row.get("trackName") or ""), name)
         artists = format_artist_names(str(row.get("artistName") or ""))
         duration = round(float(row.get("trackTimeMillis") or 0) / 1000)
         if not title or not artists or duration <= 0:

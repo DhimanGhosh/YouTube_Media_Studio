@@ -23,6 +23,26 @@ def item(title: str, artist: str, album: str, year: int | None, media_type: str 
 
 
 class MediaLibraryTest(unittest.TestCase):
+    def test_album_search_accepts_transliteration_without_matching_kaalia(self):
+        songs = [item(title, artist, "Kal Ho Naa Ho (2003)", 2003) for title, artist in (
+            ("Kal Ho Naa Ho", "Sonu Nigam"), ("Maahi Ve", "Shankar Mahadevan"),
+            ("Pretty Woman", "Shankar Mahadevan"), ("It's the Time to Disco", "KK"),
+        )]
+        wrong = item("Jahan Teri Yeh Nazar Hai", "Kishore Kumar", "Kaalia (1981)", 1981)
+        for query in ("Kaal Ho Na Ho", "Kal Ho Naa Ho", "kal-ho-na-ho", "KAL HO NA HO"):
+            with self.subTest(query=query):
+                self.assertEqual(filter_library([wrong, *songs], query=query), songs)
+        self.assertEqual(filter_library(songs, query="Kaal Ho Na Ho", artists=["KK"]), [songs[3]])
+        self.assertEqual(filter_library(songs, query="Kaal Ho Na Ho", year_to=2000), [])
+
+    def test_search_handles_accents_and_small_typos_but_keeps_years_exact(self):
+        song = item("Pyaar Mein Sau Uljhane", "Arijit Singh", "Café Music", 2003)
+        for query in ("Pyar Uljhanne", "Arjit Singh", "cafe", "Arijti Singh", "Pyaar 2003"):
+            with self.subTest(query=query):
+                self.assertEqual(filter_library([song], query=query), [song])
+        self.assertEqual(filter_library([song], query="Pyaar 2004"), [])
+        self.assertEqual(filter_library([song], query="unrelated album"), [])
+
     def test_disappearing_files_do_not_abort_scan_and_empty_directories_are_watched(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

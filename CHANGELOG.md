@@ -6,9 +6,17 @@ abbreviated hashes to the next version section.
 
 ## [Unreleased]
 
+### Added
+
+- Add spelling-tolerant local library search for album names, songs, and artists. Queries such as Kaal Ho Na Ho find Kal Ho Naa Ho, handling doubled transliteration letters, accents, punctuation, and small typos while retaining artist, year, and media filters.
+- Omit remix and DJ-version rows from individual-song album auto-fill, and reject those versions when matching original tracks.
+
 ### Fixed
 
 - Match small song-title transliteration differences such as Pyar Mein Sau Uljhanne Hai / Pyaar Mein Sau Uljhane when a verified YouTube upload also matches the album, singer credit, and full-song duration.
+- Verify plausible Topic recordings using watch-page album, title, artist, and duration metadata; use a shorter identity-based fallback query to find full audio hidden by video-heavy search results.
+- Remove quoted storefront album annotations from song titles, keeping Notun Premer Gaan and formatting version labels as Shaajo Shaajao - Female or Shaajo Shaajao - Male.
+- Ignore Wikipedia citation markers in track titles, artist credits, and lengths.
 - Detect capitalization-only duplicate artist names in Fix artist names and propose one consistent spelling across the library, including artists outside the known alias list.
 - Normalize YO YO Honey Singh and other casing, spacing, or hyphen variants to Yo Yo Honey Singh while preserving initials and acronyms such as KK and AR Rahman.
 - Apply reviewed artist-name repairs to both artist and album-artist tags, remove duplicate credits, and keep case variants from blocking unambiguous longer-name suggestions.

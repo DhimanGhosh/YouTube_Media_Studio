@@ -14,6 +14,7 @@ from youtube_audio_video_downloader.services.albums.wikipedia_tracks import find
 from youtube_audio_video_downloader.services.albums.catalog_tracks import find_catalog_album_tracks
 from youtube_audio_video_downloader.utils.artist_name_formatter import format_artist_names
 from youtube_audio_video_downloader.utils.time_utils import format_seconds_as_timestamp
+from youtube_audio_video_downloader.utils.music_text import clean_song_title, music_words
 
 
 _VARIANT_TERMS = {
@@ -24,17 +25,36 @@ _VARIANT_TERMS = {
 
 def _recording_key(value: str) -> str:
     """Normalize catalog remix credits without making the DJ name part of the song."""
-    return _key(re.sub(r"\bremixed\s+by\s+[^)]+", "remix", value, flags=re.IGNORECASE))
+    return _key(re.sub(r"\bremixed\s+by\s+[^)]+", "remix", clean_song_title(value), flags=re.IGNORECASE))
 
 
 def _key(value: str) -> str:
-    return " ".join(re.findall(r"[a-z0-9]+", value.lower()))
+    return " ".join(music_words(value))
+
+
+def _literal_tokens(value: str) -> set[str]:
+    return set(re.findall(r"[^\W_]+", clean_song_title(value).casefold()))
+
+
+def _is_remix_or_dj_version(title: str) -> bool:
+    """Exclude alternate mixes without excluding original songs about a DJ."""
+    return bool(re.search(
+        r"\b(?:re[ -]?mix(?:ed|es)?|mashups?)\b|\b(?:club|dance|extended|party)\s+mix\b"
+        r"|\bdj\b[^()]*\b(?:mix|version|edit)\b"
+        r"|\((?!\s*(?:feat|ft|featuring)\b)[^)]*\bdj\b[^)]*\)", clean_song_title(title), re.IGNORECASE,
+    ))
 
 
 def _is_lofi(value: str) -> bool:
     return bool(
         re.search(r"\blo[-‐‑‒–—\s]?fi\b", value, re.IGNORECASE)
     )
+
+
+def _unwanted_upload(title: str) -> bool:
+    return _is_remix_or_dj_version(title) or _is_lofi(title) or bool(_literal_tokens(title) & {
+        "cover", "reaction", "status", "shorts", "teaser", "8d", "slowed",
+    })
 
 
 def find_individual_album_tracks(
@@ -57,6 +77,9 @@ def find_individual_album_tracks(
             f'No usable track list was found on Wikipedia or the Apple Music catalog for "{album_name}". '
             "You can add tracks manually or paste a full-album YouTube source."
         )
+    album_tracks = [track for track in album_tracks if not _is_remix_or_dj_version(str(track["title"]))]
+    if not album_tracks:
+        raise LookupError("No original album tracks remain after excluding remix and DJ versions.")
     results: list[dict] = []
     options: dict[str, Any] = {
         "quiet": True, "no_warnings": True, "skip_download": True,
@@ -67,7 +90,7 @@ def find_individual_album_tracks(
         for track in album_tracks:
             if is_cancelled is not None and is_cancelled():
                 return []
-            title = str(track["title"])
+            title = clean_song_title(str(track["title"]), album_name)
             artists = str(track["artists"])
             if _is_lofi(title):
                 results.append({title: {
@@ -85,15 +108,15 @@ def find_individual_album_tracks(
             seen_ids = set()
             title_key = _recording_key(title)
             variant_words = set(title_key.split()) & _VARIANT_TERMS
-            wanted_tokens = set(title_key.split()) - _VARIANT_TERMS - {"ft", "feat", "featuring"}
+            wanted_tokens = _literal_tokens(title) - _VARIANT_TERMS - {"ft", "feat", "featuring"}
             if not wanted_tokens:
-                wanted_tokens = set(title_key.split())
-            search_title = re.sub(r"\s*\((?:male|female)\)", "", title, flags=re.IGNORECASE)
+                wanted_tokens = _literal_tokens(title)
+            search_title = re.sub(r"\s*-\s*(?:male|female)\s*$", "", title, flags=re.IGNORECASE)
             search_title = re.sub(r"\bremixed\s+by\s+[^)]+", "remix", search_title, flags=re.IGNORECASE)
             search_error = None
             for query in (
                 f"{album_name} {title} {artists} full song audio lyrical",
-                f"{search_title} {album_name} full audio",
+                f"{search_title} {album_name} {artists}",
             ):
                 if is_cancelled is not None and is_cancelled():
                     return []
@@ -120,13 +143,13 @@ def find_individual_album_tracks(
                     seen_ids.add(entry["id"])
                     candidate_title = str(entry.get("title") or "")
                     candidate_tokens = set(_recording_key(candidate_title).split())
-                    overlap = len(wanted_tokens & candidate_tokens) / max(1, len(wanted_tokens))
+                    overlap = len(wanted_tokens & _literal_tokens(candidate_title)) / max(1, len(wanted_tokens))
                     # Search can translate a song title (Zakhmi -> Wounded) while
                     # the watch page still supplies its original recording title.
                     if overlap < 0.65 and (
                         entry.get("channel_is_verified")
                         and f" {album_key} " in f" {_key(candidate_title)} "
-                        and {"official", "audio"} <= candidate_tokens
+                        and set(_key("official audio").split()) <= candidate_tokens
                         and any(
                             f" {artist} " in f" {_key(candidate_title)} "
                             for artist in _artist_keys(artists)
@@ -144,10 +167,35 @@ def find_individual_album_tracks(
                             entry = {**entry, **original}
                             candidate_title = str(entry["title"])
                             candidate_tokens = set(_recording_key(candidate_title).split())
-                            overlap = len(wanted_tokens & candidate_tokens) / max(1, len(wanted_tokens))
+                            overlap = len(wanted_tokens & _literal_tokens(candidate_title)) / max(1, len(wanted_tokens))
                     if overlap < 0.65 and not _is_credited_spelling_match(
                         entry, title_key, album_key, artists, expected,
                     ):
+                        # Topic uploads often expose the album and singer only on
+                        # the watch page. Inspect a bounded shortlist of plausible
+                        # titles rather than rejecting those recordings up front.
+                        duration = int(float(entry.get("duration") or 0))
+                        if (
+                            expected > 0 and duration > 0 and _duration_matches(duration, expected)
+                            and credit_lookups < 3
+                            and (entry.get("channel_is_verified") or str(entry.get("channel") or "").endswith(" - Topic"))
+                            and _recording_titles_match(title_key, _recording_key(candidate_title))
+                            and not _unwanted_upload(candidate_title)
+                            and _variant_compatible(variant_words, candidate_tokens & _VARIANT_TERMS, credited=True)
+                        ):
+                            if is_cancelled is not None and is_cancelled():
+                                return []
+                            credit_lookups += 1
+                            try:
+                                metadata = downloader.extract_info(_video_url(entry), download=False, process=False)
+                            except DownloadError as exc:
+                                search_error = exc
+                                continue
+                            if _matches_topic_release(metadata, title_key, album_key, artists):
+                                actual_duration = int(float(metadata.get("duration") or duration))
+                                if _duration_matches(actual_duration, expected):
+                                    topic_candidates.append((actual_duration, {**entry, **metadata}))
+                                    break
                         continue
                     candidate_variants = candidate_tokens & _VARIANT_TERMS
                     needs_credits = not _variant_compatible(variant_words, candidate_variants)
@@ -157,9 +205,7 @@ def find_individual_album_tracks(
                         continue
                     if needs_credits and (not artists or expected <= 0):
                         continue
-                    if _is_lofi(candidate_title) or candidate_tokens & {
-                        "cover", "reaction", "status", "shorts", "teaser", "8d", "slowed",
-                    }:
+                    if _unwanted_upload(candidate_title):
                         continue
                     duration = int(float(entry.get("duration") or 0))
                     if duration <= 0:
@@ -256,7 +302,7 @@ def _is_credited_spelling_match(
     if duration <= 0 or not _duration_matches(duration, expected):
         return False
     candidate_key = _recording_key(str(entry.get("title") or ""))
-    padded = f" {candidate_key} "
+    padded = f" {_key(str(entry.get('title') or ''))} "
     if f" {album_key} " not in padded or not any(
         f" {artist} " in padded for artist in _artist_keys(artists)
     ):
@@ -283,7 +329,12 @@ def _catalog_duration(title: str, artists: str, album_key: str, release_year: st
     try:
         catalog = find_catalog_song_metadata(title, artists, timeout=5)
         if (
-            _key(catalog.get("title", "")) == _key(title)
+            _recording_titles_match(_recording_key(title), _recording_key(catalog.get("title", "")))
+            and _variant_compatible(
+                set(_recording_key(title).split()) & _VARIANT_TERMS,
+                set(_recording_key(catalog.get("title", "")).split()) & _VARIANT_TERMS,
+                credited=True,
+            )
             and _key(catalog.get("album", "")) == album_key
             and (not release_year or catalog.get("year") == release_year)
         ):
@@ -313,6 +364,8 @@ def _matches_topic_release(
 ) -> bool:
     if not metadata:
         return False
+    if _is_remix_or_dj_version(str(metadata.get("track") or "")):
+        return False
     if _key(normalize_album_name(metadata.get("album"))) != album_key:
         return False
     wanted = title_key.split()
@@ -320,17 +373,29 @@ def _matches_topic_release(
     variants = set(wanted) & _VARIANT_TERMS
     if not _variant_compatible(variants, set(available) & _VARIANT_TERMS, credited=True):
         return False
-    # The catalog sometimes expands a short Wikipedia title, such as
-    # "Kabhi Aayine (Remix)" to "Kabhi Aayine Pe Likha Tujhe (Remix)".
-    wanted_title = [word for word in wanted if word not in _VARIANT_TERMS]
-    available_title = [word for word in available if word not in _VARIANT_TERMS]
-    if wanted_title != available_title and (
-        len(wanted_title) < 2 or wanted_title != available_title[:len(wanted_title)]
-    ):
+    if not _recording_titles_match(title_key, " ".join(available)):
         return False
     expected_credits = _artist_keys(artists)
     available_credits = _artist_keys(", ".join(metadata.get("artists") or []))
     return bool(expected_credits) and expected_credits <= available_credits
+
+
+def _recording_titles_match(expected: str, candidate: str) -> bool:
+    """Compare clean recording titles; callers verify release, credits and variants."""
+    wanted = [word for word in expected.split() if word not in _VARIANT_TERMS]
+    available = [word for word in candidate.split() if word not in _VARIANT_TERMS]
+    if not wanted or not available:
+        return bool(expected) and expected == candidate
+    if wanted == available:
+        return True
+    shorter, longer = sorted((wanted, available), key=len)
+    if len(shorter) >= 2 and shorter == longer[:len(shorter)]:
+        return True
+    return (
+        min(len(wanted), len(available)) >= 3
+        and len(set(wanted) & set(available)) >= 2
+        and SequenceMatcher(None, " ".join(wanted), " ".join(available)).ratio() >= 0.86
+    )
 
 
 def _with_description_credits(metadata: dict) -> dict:

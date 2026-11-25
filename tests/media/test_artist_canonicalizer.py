@@ -134,8 +134,21 @@ def test_case_repair_updates_both_tags_and_removes_duplicate_credit(read_mock, r
     replacements = {item.detected: item.replacement for item in suggest_artist_renames(
         [read_mock.return_value.artists]
     )}
+    assert replacements["YO YO Honey Singh"] == "Yo Yo Honey Singh"
     report = repair_artist_metadata(["song.mp3"], replacements)
     assert not report.failed
     replace_mock.assert_called_once_with(
         report.updated[0], {"artists": "Yo Yo Honey Singh, KK", "album_artist": "Yo Yo Honey Singh"},
     )
+
+
+def test_reviewed_case_variants_can_have_distinct_exact_replacements():
+    assert apply_artist_replacements("DJ Example, Dj Example", {
+        "DJ Example": "First Artist", "Dj Example": "Second Artist",
+    }) == "First Artist, Second Artist"
+
+
+def test_equal_usage_preserves_acronyms_and_unknown_placeholders():
+    suggestions = suggest_artist_renames(["DJ Example", "Dj Example", "Unknown artist"])
+    assert [(item.detected, item.replacement) for item in suggestions] == [("Dj Example", "DJ Example")]
+    assert apply_artist_replacements("Unknown artist", {"Dj Example": "DJ Example"}) == "Unknown artist"

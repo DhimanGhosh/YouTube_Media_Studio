@@ -69,7 +69,9 @@ def suggest_artist_renames(values: Iterable[str]) -> list[ArtistRenameSuggestion
         spellings.setdefault(normalized.casefold(), set()).add(normalized)
     canonical = {
         key: min(names, key=lambda name: (
-            -usage[name], sum(character.isupper() for character in name), name,
+            -usage[name],
+            -sum(word.isalpha() and word.isupper() and len(word) <= 4 for word in name.split()),
+            sum(character.isupper() for character in name), name,
         ))
         for key, names in spellings.items()
     }
@@ -135,15 +137,23 @@ def apply_artist_replacements(value: str, replacements: Mapping[str, str]) -> st
     value_key = _credit_key(value)
     if value_key in exact_credits:
         return format_artist_names(exact_credits[value_key])
-    lookup = {
-        source.casefold(): target.strip()
+    exact_names = {
+        source.strip(): target.strip()
         for source, target in replacements.items()
         if len(_credit_key(source)) == 1
     }
+    folded_targets: dict[str, set[str]] = {}
+    for source, target in exact_names.items():
+        folded_targets.setdefault(source.casefold(), set()).add(target)
+    lookup = {source: next(iter(targets)) for source, targets in folded_targets.items() if len(targets) == 1}
     resolved: list[str] = []
     seen: set[str] = set()
     for artist in split_artist_credits(value):
-        canonical = format_artist_names(lookup.get(artist.casefold(), artist))
+        replacement = exact_names.get(artist, lookup.get(artist.casefold()))
+        canonical = (
+            artist if replacement is None and _is_unknown_artist(artist)
+            else format_artist_names(replacement if replacement is not None else artist)
+        )
         key = canonical.casefold()
         if canonical and key not in seen:
             resolved.append(canonical)

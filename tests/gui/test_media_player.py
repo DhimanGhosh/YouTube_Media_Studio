@@ -120,7 +120,20 @@ class MediaPlayerPageTest(unittest.TestCase):
         ):
             self.page.review_artist_name_repairs()
         self.assertEqual(repair.call_args.args[1], {"YO YO Honey Singh": "Yo Yo Honey Singh"})
+        self.assertEqual(list(repair.call_args.args[0]), [item.path for item in self.page.items])
         refresh.assert_called_once()
+
+    def test_library_search_finds_album_with_alternate_spelling(self) -> None:
+        self.page.items = [
+            replace(media("Maahi Ve", 2003, 1000), album="Kal Ho Naa Ho (2003)"),
+            replace(media("Jahan Teri Yeh Nazar Hai", 1981, 1000),
+                    album="Kaalia (1981)", artists="Kishore Kumar"),
+        ]
+        self.page.search.setText("Kaal Ho Na Ho")
+        self.page.apply_filters()
+        self.assertEqual(self.page.filtered, [self.page.items[0]])
+        self.assertEqual(self.page.albums.count(), 1)
+        self.assertEqual(self.page.albums.item(0).data(Qt.ItemDataRole.UserRole), "Kal Ho Naa Ho (2003)")
 
     def test_permanent_delete_removes_file_queue_and_playlist_reference(self) -> None:
         path = Path(self.temporary.name) / "delete-me.mp3"

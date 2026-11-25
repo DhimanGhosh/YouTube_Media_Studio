@@ -8,6 +8,21 @@ from youtube_audio_video_downloader.services.albums.catalog_tracks import find_c
 
 class CatalogTracksTest(unittest.TestCase):
     @patch("youtube_audio_video_downloader.services.albums.catalog_tracks._request")
+    def test_release_annotation_is_removed_but_version_and_real_title_are_preserved(self, request):
+        album = {"collectionId": 123, "collectionName": "An Album",
+                 "releaseDate": "2022-10-16", "trackCount": 3}
+        titles = ['Song (From "An Album") [Female]', 'Another [From "An Album"] (Reprise)',
+                  'Theme (From Dawn To Dusk)']
+        request.side_effect = [[album], [
+            {"wrapperType": "track", "kind": "song", "collectionId": 123, "trackNumber": index,
+             "trackName": title, "artistName": "Singer", "trackTimeMillis": 180000}
+            for index, title in enumerate(titles, 1)
+        ]]
+        result = find_catalog_album_tracks("An Album", "2022")
+        self.assertEqual([track["title"] for track in result],
+                         ["Song - Female", "Another (Reprise)", "Theme (From Dawn To Dusk)"])
+
+    @patch("youtube_audio_video_downloader.services.albums.catalog_tracks._request")
     def test_exact_ep_uses_collection_identity_year_and_track_order(self, request) -> None:
         album = {"collectionId": 123, "collectionName": "Dilfek - EP",
                  "releaseDate": "2026-10-16", "trackCount": 2}

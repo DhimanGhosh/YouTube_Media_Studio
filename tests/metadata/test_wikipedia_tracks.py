@@ -16,6 +16,17 @@ from youtube_audio_video_downloader.services.albums.wikipedia_tracks import (
 
 
 class WikipediaTracksTest(unittest.TestCase):
+    def test_citation_markers_do_not_become_song_or_singer_names(self) -> None:
+        tracks = extract_tracks_from_html(
+            '<table><tr><th>Title</th><th>Singer(s)</th><th>Length</th></tr>'
+            '<tr><td>Heartbeat<sup class="reference" id="cite_ref-note"><a>[d]</a></sup></td>'
+            '<td>Instrumental<sup class="reference"><a>[12]</a></sup></td>'
+            '<td>4:23<sup class="reference">[e]</sup></td></tr></table>'
+        )
+        self.assertEqual(tracks[0]["title"], "Heartbeat")
+        self.assertEqual(tracks[0]["artists"], "Instrumental")
+        self.assertEqual(tracks[0]["duration_seconds"], 263)
+
     @patch("youtube_audio_video_downloader.services.albums.wikipedia_tracks._api")
     def test_retries_search_without_soundtrack_for_toolsidas_junior(self, api) -> None:
         api.side_effect = [
