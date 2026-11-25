@@ -64,6 +64,9 @@ from PyQt6.QtWidgets import (
 )
 
 from youtube_audio_video_downloader.gui.components.theme import crystal_style
+from youtube_audio_video_downloader.gui.components.native_glass import (
+    prepare_native_glass, apply_native_glass, native_glass_supported,
+)
 from youtube_audio_video_downloader.gui.runtime.ai_usage import operation_ai_usage
 from youtube_audio_video_downloader.gui.media.media_player import MediaLibraryPage
 from youtube_audio_video_downloader.gui.media.audio_visualizer import MusicVisualizer
@@ -85,6 +88,9 @@ from youtube_audio_video_downloader.config.app_storage import (
     settings_file as application_settings_file,
 )
 from youtube_audio_video_downloader.gui.components.widgets import (
+    ArtworkSearchControls,
+    ArtistNamesSearcher,
+    ReleaseYearSearcher,
     BlankClickSelectionFilter,
     CollapsibleSection,
     GlassCard,
@@ -385,6 +391,7 @@ class MainWindow(QMainWindow):
     ) -> None:
         super().__init__()
         self.setWindowTitle(APP_DISPLAY_NAME)
+        prepare_native_glass(self)
         self.setMinimumSize(1280, 800)
         self.resize(1380, 860)
         self.setWindowFlags(
@@ -550,19 +557,20 @@ class MainWindow(QMainWindow):
             QStyle.StandardPixmap.SP_MediaPlay,
         )
 
-        organize_menu = menu_bar.addMenu("Organize")
+        download_menu.addSeparator()
         self._add_workspace_action(
-            organize_menu,
+            download_menu,
             "Album Splitter",
             4,
             QStyle.StandardPixmap.SP_DirIcon,
         )
         self._add_workspace_action(
-            organize_menu,
+            download_menu,
             "Jukebox Splitter",
             5,
             QStyle.StandardPixmap.SP_MediaSkipForward,
         )
+        organize_menu = menu_bar.addMenu("Organize")
         self._add_workspace_action(
             organize_menu,
             "Track Reorder",
@@ -673,6 +681,8 @@ class MainWindow(QMainWindow):
 
     def _build_settings_dialog(self) -> None:
         self._settings_dialog = QDialog(self)
+        self._settings_dialog.setObjectName("settingsDialog")
+        prepare_native_glass(self._settings_dialog)
         self._settings_dialog.setWindowTitle(f"Settings — {APP_DISPLAY_NAME}")
         self._settings_dialog.setModal(False)
         self._settings_dialog.setMinimumSize(960, 640)
@@ -728,6 +738,7 @@ class MainWindow(QMainWindow):
 
     def _open_settings_dialog(self) -> None:
         self._settings_dialog.show()
+        self._apply_crystalness(self._crystal_level, persist=False)
         self._settings_dialog.raise_()
         self._settings_dialog.activateWindow()
 
@@ -878,6 +889,7 @@ class MainWindow(QMainWindow):
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         content = QWidget()
+        content.setObjectName("pageContent")
         layout = QVBoxLayout(content)
         layout.setContentsMargins(6, 3, 8, 18)
         layout.setSpacing(14)
@@ -903,6 +915,8 @@ class MainWindow(QMainWindow):
         if operation:
             layout.addWidget(self._ai_task_control(operation))
         scroll.setWidget(content)
+        scroll.viewport().setAutoFillBackground(False)
+        content.setAutoFillBackground(False)
         return scroll, layout
 
     def _ai_task_control(self, operation: str, label: str = "Use AI for this task") -> QWidget:
@@ -2001,13 +2015,23 @@ class MainWindow(QMainWindow):
         metadata_form.addRow("", self.edit_file_action_help)
         metadata_form.addRow("Title", self.edit_meta_title)
         metadata_form.addRow("Album", self.edit_meta_album)
-        metadata_form.addRow("Artists", self.edit_meta_artists)
-        metadata_form.addRow("Year / date", self.edit_meta_year)
+        metadata_form.addRow("Artists", self._editor_lookup_row(self.edit_meta_artists, "artists", "file"))
+        metadata_form.addRow("Year / date", self._editor_lookup_row(self.edit_meta_year, "year", "file"))
         metadata_form.addRow("Track number", self.edit_meta_track)
         metadata_form.addRow("Track total", self.edit_meta_track_total)
         metadata_form.addRow("Local trim start", self.edit_file_start)
         metadata_form.addRow("Local trim end", self.edit_file_end)
-        metadata_form.addRow("Artwork path or URL", self.edit_meta_artwork)
+        self.edit_file_cover_controls = ArtworkSearchControls(
+            self.edit_meta_artwork,
+            lambda: {
+                "album_name": self.edit_meta_album.text().strip(),
+                "release_year": self.edit_meta_year.text().strip(),
+                "expected_titles": tuple(filter(None, [self.edit_meta_title.text().strip()])),
+                "source_files": tuple(filter(None, [self.edit_file_input.text().strip()])),
+            },
+            self.edit_meta_remove_artwork,
+        )
+        metadata_form.addRow("Artwork path or URL", self.edit_file_cover_controls)
         metadata_form.addRow("Artwork behavior", self.edit_meta_remove_artwork)
 
         action_row = QWidget()
@@ -2300,9 +2324,19 @@ class MainWindow(QMainWindow):
         self.edit_album_status.setWordWrap(True)
         form.addRow("Album folder", self.edit_album_folder)
         form.addRow("Album name", self.edit_album_name)
-        form.addRow("Release year", self.edit_album_year)
-        form.addRow("Artist(s) override", self.edit_album_artist)
-        form.addRow("Album artwork", self.edit_album_artwork)
+        form.addRow("Release year", self._editor_lookup_row(self.edit_album_year, "year", "album"))
+        form.addRow("Artist(s) override", self._editor_lookup_row(self.edit_album_artist, "artists", "album"))
+        self.edit_album_cover_controls = ArtworkSearchControls(
+            self.edit_album_artwork,
+            lambda: {
+                "album_name": self.edit_album_name.text().strip(),
+                "release_year": self.edit_album_year.text().strip(),
+                "source_files": getattr(self, "_edit_album_cover_files", ())
+                if getattr(self, "_edit_album_cover_folder", "") == self.edit_album_folder.text() else (),
+            },
+            self.edit_album_remove_artwork,
+        )
+        form.addRow("Album artwork", self.edit_album_cover_controls)
         form.addRow("Artwork behavior", self.edit_album_remove_artwork)
         form.addRow("Folder status", self.edit_album_status)
 
@@ -2343,15 +2377,62 @@ class MainWindow(QMainWindow):
         layout.addStretch(1)
         return page
 
+    def _editor_lookup_row(self, field: QLineEdit, target: str, scope: str) -> QWidget:
+        row = QWidget()
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(field, 1)
+        label = f"Find {target}"
+        button = QPushButton(label)
+        button.setObjectName("secondaryButton")
+        button.setToolTip("Fill an editable suggestion; apply the edit when ready to save.")
+        layout.addWidget(button)
+        setattr(self, f"edit_{scope}_find_{target}_button", button)
+        def lookup() -> None:
+            from youtube_audio_video_downloader.services.albums.album_names import split_album_folder_name
+            controls = self.edit_file_cover_controls if scope == "file" else self.edit_album_cover_controls
+            context = controls.identity()
+            album_name, embedded_year = split_album_folder_name(context.get("album_name", ""))
+            if not album_name:
+                controls.status.setText("Enter an album name first.")
+                return
+            original_text = field.text()
+            if target == "year":
+                worker = ReleaseYearSearcher(album_name, self, retry_attempts=1)
+            else:
+                worker = ArtistNamesSearcher(
+                    album_name, context.get("release_year", "") or embedded_year,
+                    self.edit_meta_title.text().strip() if scope == "file" else "", self,
+                )
+            controls.status.setText(f"Finding {target}…")
+            def apply(_name: str, result: dict) -> None:
+                if controls._closing or controls.identity() != context or field.text() != original_text:
+                    return
+                value = str(result.get(target) or "").strip()
+                if value:
+                    field.setText(value)
+                    controls.status.setText(f"Suggested {target} filled. Review or edit it before applying.")
+            def failed(_name: str, message: str) -> None:
+                if not controls._closing and controls.identity() == context:
+                    controls.status.setText(message)
+            worker.found.connect(apply)
+            worker.failed.connect(failed)
+            controls._start(worker, button, label)
+        button.clicked.connect(lookup)
+        return row
+
     def _load_edit_album_folder(self, requested_folder: str) -> None:
         if requested_folder != self.edit_album_folder.text():
             return
+        self._edit_album_cover_files = ()
+        self._edit_album_cover_folder = requested_folder
         try:
             summary = inspect_album_folder(requested_folder)
         except (OSError, RuntimeError, ValueError) as exc:
             self.edit_album_status.setText(str(exc))
             return
         self.edit_album_name.setText(summary.album)
+        self._edit_album_cover_files = tuple(str(path) for path in summary.files)
         self.edit_album_year.setText(summary.year)
         self.edit_album_artist.setText(summary.artists)
         self.edit_album_artwork.set_text("")
@@ -3147,6 +3228,10 @@ class MainWindow(QMainWindow):
         )
         storage_form.addRow("Application data folder", self.settings_data_directory)
         storage_form.addRow("Crystalness", crystal_control)
+        self.settings_glass_status = QLabel()
+        self.settings_glass_status.setObjectName("mutedLabel")
+        self.settings_glass_status.setWordWrap(True)
+        storage_form.addRow("", self.settings_glass_status)
         storage_actions = QHBoxLayout()
         open_storage = QPushButton("Open data folder")
         open_storage.setObjectName("secondaryButton")
@@ -4544,9 +4629,32 @@ class MainWindow(QMainWindow):
 
     def _apply_crystalness(self, value: int, *, persist: bool) -> None:
         level = max(0, min(100, int(value)))
-        self.setStyleSheet(crystal_style(level))
+        self._crystal_level = level
+        native = bool(level and native_glass_supported())
+        if self.isVisible():
+            native = apply_native_glass(self, level)
+        self._native_glass_active = native
+        self.setStyleSheet(crystal_style(level, native_glass=native))
+        background = getattr(self, "_background", None)
+        if background is not None:
+            background.set_native_glass(native)
+        dialog = getattr(self, "_settings_dialog", None)
+        if dialog is not None and dialog.isVisible():
+            dialog_native = apply_native_glass(dialog, level)
+            dialog.setStyleSheet(crystal_style(level, native_glass=dialog_native))
+        status = getattr(self, "settings_glass_status", None)
+        if status is not None:
+            status.setText(
+                "Desktop glass: Windows Acrylic blur. Higher values reveal more of the backdrop; text stays opaque."
+                if native else "Opaque appearance." if not level else
+                "Glassy color treatment. Native desktop blur is unavailable on this platform or compositor."
+            )
         if persist:
             self.settings.setValue("defaults/crystalness", level)
+
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        self._apply_crystalness(getattr(self, "_crystal_level", 65), persist=False)
 
     def _toggle_workspace_persistence(self, enabled: bool) -> None:
         self.settings.setValue("workspace/persist_enabled", enabled)
@@ -5275,6 +5383,8 @@ class MainWindow(QMainWindow):
             )
             os._exit(0)
         background_threads = []
+        for controls in (self.edit_file_cover_controls, self.edit_album_cover_controls):
+            background_threads.extend(controls.cancel_background_tasks())
         for editor in (self.audio_input, self.video_input, self.album_input, self.jukebox_input):
             background_threads.extend(editor.cancel_background_tasks())
         if background_threads:

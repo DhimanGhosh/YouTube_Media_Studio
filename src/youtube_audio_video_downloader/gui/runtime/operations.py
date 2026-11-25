@@ -132,12 +132,46 @@ def execute_operation(
     cancellation_token.raise_if_cancelled()
     # Advisory only: this layer audits intent and ambiguity but never rewrites
     # parameters. Metadata mutation remains guarded by metadata_verifier.
-    if bool(params.get("ai_enabled", True)):
+    resolved_album = operation == "album" and _has_resolved_album_tracks(params.get("input_data"))
+    metadata_edit = operation == "edit_album" or (
+        operation == "edit_media" and str(params.get("action", "metadata") or "metadata") in {"metadata", "video_display"}
+    )
+    if resolved_album or metadata_edit:
+        print("[PREPARE] Using explicit selections; skipping redundant AI preflight. Service validation remains enabled.")
+    elif bool(params.get("ai_enabled", True)):
         preflight_operation(operation, params)
     else:
         print("[AI-DISABLED] Skipping model preflight; using internet/deterministic processing")
     cancellation_token.raise_if_cancelled()
     return handler(params, cancellation_token)
+
+
+def _has_resolved_album_tracks(data: object) -> bool:
+    """Recognize fully specified per-song input without another model/network audit."""
+    if not isinstance(data, dict) or not data:
+        return False
+    enabled = 0
+    for album in data.values():
+        if not isinstance(album, dict):
+            return False
+        if str(album.get("download", "true")).lower() in {"false", "0", "no"}:
+            continue
+        tracks = album.get("tracks")
+        if not isinstance(tracks, list) or not tracks:
+            return False
+        for track in tracks:
+            if not isinstance(track, dict) or len(track) != 1:
+                return False
+            title, values = next(iter(track.items()))
+            if not isinstance(values, dict) or not str(title).strip():
+                return False
+            if str(values.get("download", "true")).lower() in {"false", "0", "no"}:
+                continue
+            source = str(values.get("ytb_link") or "").strip()
+            if not source or not (source.startswith(("https://", "http://")) or Path(source).expanduser().is_file()):
+                return False
+            enabled += 1
+    return enabled > 0
 
 
 def _run_track_reorder(params: dict[str, Any], token: CancellationToken) -> OperationSummary:

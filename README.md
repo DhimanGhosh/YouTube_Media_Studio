@@ -33,8 +33,8 @@ and manage a local playback library.
 
 ## Start with the desktop app
 
-Use the menus along the top: **Download** for songs/videos, **Organize** for albums
-and jukeboxes, **Edit** for tags and artwork, and **View** for Dashboard and Live Logs.
+Use the menus along the top: **Download** for songs, videos, albums, and jukeboxes;
+**Organize** for library tools, **Edit** for tags and artwork, and **View** for Dashboard and Live Logs.
 **Media Player** is at the top right; **File → Settings…** opens a separate settings
 window. No coding is needed.
 

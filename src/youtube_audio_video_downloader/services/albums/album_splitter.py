@@ -8,8 +8,9 @@ import re
 import shutil
 import subprocess
 import tempfile
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, field as dataclass_field
 from functools import partial
 from pathlib import Path
 from typing import Any
@@ -39,6 +40,15 @@ _URL_FIELDS = (
 )
 _TRACK_NAME_FIELDS = ("track_names", "songs", "titles")
 _UNKNOWN_ARTIST = "Unknown"
+
+
+@dataclass
+class _AlbumStartGate:
+    label: str
+    immediate: bool
+    lock: Any = dataclass_field(default_factory=threading.Lock)
+    ready: threading.Event = dataclass_field(default_factory=threading.Event)
+    started: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,6 +174,7 @@ class YouTubeAlbumSplitter:
         self.settings = settings or DownloadSettings()
         self.cancellation_token = cancellation_token or CancellationToken()
         self.metadata_tagger = MetadataTagger()
+        self._download_context = threading.local()
 
     def cancel(self) -> None:
         """Request cooperative cancellation for album splitting work."""
@@ -230,7 +241,8 @@ class YouTubeAlbumSplitter:
         * every full-album source YouTube link is one work item;
         * album/track entries with ``download: false`` are recorded immediately.
 
-        Each network work item applies its own randomized delay before starting.
+        The first album starts immediately. Later albums share one randomized
+        start delay across their tracks, while retaining the global worker limit.
         Local FFmpeg splitting begins only after its full source is available.
         """
 
@@ -254,6 +266,8 @@ class YouTubeAlbumSplitter:
                 ordered_chunks.append([result])
                 print(self._format_result(result))
                 continue
+
+            gate = _AlbumStartGate(job.json_key, immediate=not work_items)
 
             if job.song_tracks:
                 album_name = safe_filename(job.album or job.json_key, fallback=job.json_key)
@@ -288,7 +302,7 @@ class YouTubeAlbumSplitter:
                     work_items.append(
                         (
                             slot,
-                            partial(
+                            partial(self._with_album_start_gate, gate, partial(
                                 self._run_individual_album_track_job,
                                 job=job,
                                 track=track,
@@ -296,7 +310,7 @@ class YouTubeAlbumSplitter:
                                 album_name=album_name,
                                 downloadable_total=downloadable_total,
                                 overwrite=overwrite,
-                            ),
+                            )),
                         )
                     )
                 continue
@@ -306,7 +320,7 @@ class YouTubeAlbumSplitter:
             work_items.append(
                 (
                     slot,
-                    partial(
+                    partial(self._with_album_start_gate, gate, partial(
                         self._run_single_album_job,
                         job,
                         target_root,
@@ -316,7 +330,7 @@ class YouTubeAlbumSplitter:
                         trim_silence_padding=trim_silence_padding,
                         keep_temp=keep_temp,
                         overwrite=overwrite,
-                    ),
+                    )),
                 )
             )
 
@@ -327,8 +341,8 @@ class YouTubeAlbumSplitter:
         worker_count = max(1, min(self.settings.max_workers, len(work_items)))
         print(
             f"[PARALLEL] Starting {len(work_items)} album download work item(s) "
-            f"with {worker_count} worker(s); each uses a random "
-            f"{self.settings.min_delay_seconds}-{self.settings.max_delay_seconds}s delay"
+            f"with {worker_count} worker(s); first album starts immediately; later albums "
+            f"use one shared {self.settings.min_delay_seconds}-{self.settings.max_delay_seconds}s delay"
         )
 
         executor = ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="yt-album")
@@ -747,12 +761,37 @@ class YouTubeAlbumSplitter:
                         path, "removing it before redownload", path.unlink
                     )
 
-    def _wait_before_download(self, label: str) -> None:
-        """Wait a random configured delay before any album network download."""
+    def _with_album_start_gate(self, gate: _AlbumStartGate, work):
+        self._download_context.gate = gate
+        try:
+            return work()
+        finally:
+            del self._download_context.gate
 
-        delay = random.randint(self.settings.min_delay_seconds, self.settings.max_delay_seconds)
-        print(f"[WAIT] {label}: waiting {delay}s before download")
-        self.cancellation_token.wait(delay)
+    def _wait_before_download(self, label: str) -> None:
+        """Release all tracks together after at most one start delay per album."""
+        self.cancellation_token.raise_if_cancelled()
+        gate = getattr(self._download_context, "gate", None)
+        if gate is None:
+            return
+        with gate.lock:
+            leader = not gate.started
+            gate.started = True
+        if leader:
+            try:
+                delay = 0 if gate.immediate else random.randint(
+                    self.settings.min_delay_seconds, self.settings.max_delay_seconds,
+                )
+                if delay:
+                    print(f"[WAIT] {gate.label}: waiting {delay}s before starting album tracks")
+                    self.cancellation_token.wait(delay)
+                print(f"[ALBUM-START] {gate.label}: tracks ready for parallel download")
+            finally:
+                gate.ready.set()
+        else:
+            while not gate.ready.wait(0.1):
+                self.cancellation_token.raise_if_cancelled()
+        self.cancellation_token.raise_if_cancelled()
 
     def _get_retry_wait_seconds(self, error_text: str, attempt: int) -> int:
         """Return retry wait seconds for standalone song downloads."""

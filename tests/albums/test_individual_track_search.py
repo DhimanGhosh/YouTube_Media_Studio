@@ -13,6 +13,85 @@ from youtube_audio_video_downloader.services.downloads.individual_track_search i
 
 
 class IndividualTrackSearchTest(unittest.TestCase):
+    def setUp(self):
+        resolver = patch("youtube_audio_video_downloader.services.downloads.individual_track_search.find_catalog_album_release", return_value={})
+        self.release = resolver.start()
+        self.addCleanup(resolver.stop)
+
+    @patch("youtube_audio_video_downloader.services.downloads.individual_track_search.find_wikipedia_tracks")
+    @patch("yt_dlp.YoutubeDL")
+    def test_catalog_singer_version_uses_clean_query_and_explicit_label_credits(self, youtube, wiki):
+        title = "Aye Dil Pagal Mere (Sunidhi Chauhan Version)"
+        wiki.return_value = [{"title": title, "artists": "Sunidhi Chauhan, Pritam", "duration_seconds": 314}]
+        entry = {"id": "official", "title": "Aye Dil Pagal Mere - Naqaab | Sunidhi Chauhan | Pritam",
+                 "channel_is_verified": True, "duration": 316}
+        youtube.return_value.__enter__.return_value.extract_info.side_effect = [
+            {"entries": [entry]}, {**entry, "description": "Singer(s): Sunidhi Chauhan\nMusic Director: Pritam"},
+        ]
+        result = find_individual_album_tracks("Naqaab", "2007")
+        self.assertTrue(result[0][title]["ytb_link"].endswith("=official"))
+        query = youtube.return_value.__enter__.return_value.extract_info.call_args_list[0].args[0]
+        self.assertNotIn("(Sunidhi Chauhan Version)", query)
+
+    @patch("youtube_audio_video_downloader.services.downloads.individual_track_search.find_wikipedia_tracks")
+    @patch("yt_dlp.YoutubeDL")
+    def test_missing_duration_and_singer_version_require_verified_release_credits(self, youtube, wiki):
+        title = "Ae Dil Pagal Mere (Reprise)"
+        wiki.return_value = [{"title": title, "artists": "Sunidhi Chauhan", "duration_seconds": 0}]
+        self.release.return_value = {"tracks": [{"title": "Aye Dil Pagal Mere (Sunidhi Chauhan Version)",
+                                                "artists": "Sunidhi Chauhan, Pritam", "duration_seconds": 314}]}
+        entry = {"id": "sunidhi", "title": "Aye Dil Pagal Mere", "channel": "Sunidhi Chauhan - Topic", "duration": 314}
+        for singer, accepted in (("Sunidhi Chauhan", True), ("Sonu Nigam", False)):
+            with self.subTest(singer=singer):
+                youtube.return_value.__enter__.return_value.extract_info.side_effect = [
+                    {"entries": [entry]}, {**entry, "track": entry["title"], "album": "Naqaab", "artists": [singer]},
+                    {"entries": []},
+                ]
+                if accepted:
+                    result = find_individual_album_tracks("Naqaab", "2007")
+                    self.assertTrue(result[0][title]["ytb_link"].endswith("=sunidhi"))
+                else:
+                    with self.assertRaises(LookupError):
+                        find_individual_album_tracks("Naqaab", "2007")
+
+    @patch("youtube_audio_video_downloader.services.downloads.individual_track_search.find_catalog_song_metadata")
+    @patch("youtube_audio_video_downloader.services.downloads.individual_track_search.find_wikipedia_tracks")
+    @patch("yt_dlp.YoutubeDL")
+    def test_wrong_wikipedia_duration_can_use_catalog_plus_verified_description(self, youtube, wiki, catalog):
+        wiki.return_value = [{"title": "Kanni Re Kanni", "artists": "Nakash Aziz", "duration_seconds": 352}]
+        catalog.return_value = {"title": "Kanni Re Kanni", "album": "Goodbye", "year": "2022",
+                                "duration_seconds": "232"}
+        entry = {"id": "correct", "title": "Kanni Re Kanni | Goodbye | Nakash A", "duration": 242,
+                 "channel_is_verified": True}
+        youtube.return_value.__enter__.return_value.extract_info.side_effect = [
+            {"entries": [entry]}, {"entries": []},
+            {**entry, "description": "Song: Kanni Re Kanni\nSinger: Nakash Aziz"},
+        ]
+        result = find_individual_album_tracks("Goodbye", "2022")
+        self.assertTrue(result[0]["Kanni Re Kanni"]["ytb_link"].endswith("=correct"))
+        self.assertIn("Wikipedia lists 05:52", result[0]["Kanni Re Kanni"]["length_notice"])
+
+    @patch("youtube_audio_video_downloader.services.downloads.individual_track_search.find_wikipedia_tracks")
+    @patch("yt_dlp.YoutubeDL")
+    def test_missing_reprise_label_requires_explicit_description_song_and_singers(self, youtube, wiki):
+        wiki.return_value = [{"title": "Maaye (Reprise)", "artists": "Devenderpal Singh, Shreya Ghoshal",
+                              "duration_seconds": 274}]
+        entry = {"id": "reprise", "title": "Maaye - Shreya Ghoshal | Goodbye", "duration": 287,
+                 "channel_is_verified": True}
+        for song, matches in (("Maaye Reprise", True), ("Maaye", False)):
+            with self.subTest(song=song):
+                youtube.return_value.__enter__.return_value.extract_info.side_effect = [
+                    {"entries": [entry]},
+                    {**entry, "description": f"Song: {song}\nSingers: Devenderpal Singh & Shreya Ghoshal"},
+                    {"entries": []},
+                ]
+                if matches:
+                    result = find_individual_album_tracks("Goodbye", "2022")
+                    self.assertTrue(result[0]["Maaye (Reprise)"]["ytb_link"].endswith("=reprise"))
+                else:
+                    with self.assertRaises(LookupError):
+                        find_individual_album_tracks("Goodbye", "2022")
+
     @patch("youtube_audio_video_downloader.services.downloads.individual_track_search.find_wikipedia_tracks")
     @patch("yt_dlp.YoutubeDL")
     def test_topic_metadata_can_verify_spelling_and_album_transliteration(self, youtube, wiki):

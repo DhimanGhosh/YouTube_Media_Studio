@@ -6,6 +6,7 @@ import time
 import unittest
 from pathlib import Path
 from types import MethodType
+from unittest.mock import patch
 
 from youtube_audio_video_downloader.config.settings import DownloadSettings
 from youtube_audio_video_downloader.domain.models import DownloadResult, DownloadStatus
@@ -17,6 +18,38 @@ from youtube_audio_video_downloader.services.albums.album_splitter import (
 
 
 class AlbumGlobalParallelismTest(unittest.TestCase):
+    def test_only_later_albums_wait_once_and_tracks_share_the_start_gate(self) -> None:
+        for album_count in (1, 2):
+            with self.subTest(albums=album_count):
+                splitter = YouTubeAlbumSplitter(DownloadSettings(
+                    max_workers=6, min_delay_seconds=7, max_delay_seconds=7,
+                ))
+                def fake_track(self, job, track, *_args):
+                    self._wait_before_download(track.title)
+                    return DownloadResult(song=track.title, status=DownloadStatus.DOWNLOADED,
+                                          file_name=f"{track.title}.mp3")
+                splitter._download_individual_album_track = MethodType(fake_track, splitter)
+                jobs = [AlbumSplitJob(json_key=f"Album {album}", ytb_link="", song_tracks=[
+                    AlbumSongSpec(index, index, f"{album}-{index}", "https://youtu.be/abcdefghijk", ["Singer"])
+                    for index in range(1, 4)
+                ]) for album in range(album_count)]
+                with tempfile.TemporaryDirectory() as directory, patch.object(
+                    splitter.cancellation_token, "wait",
+                ) as wait, patch(
+                    "youtube_audio_video_downloader.services.albums.album_splitter.random.randint",
+                    return_value=7,
+                ) as random_delay:
+                    results = splitter._execute_album_work_items(
+                        jobs, Path(directory), silence_threshold_db=-35, min_silence_duration=1.5,
+                        min_track_duration=45, trim_silence_padding=0.25, keep_temp=False, overwrite=False,
+                    )
+                self.assertEqual(len(results), album_count * 3)
+                self.assertTrue(all(result.status == DownloadStatus.DOWNLOADED for result in results))
+                self.assertEqual(wait.call_count, album_count - 1)
+                self.assertEqual(random_delay.call_count, album_count - 1)
+                if album_count > 1:
+                    wait.assert_called_once_with(7)
+
     def test_all_existing_tracks_remove_unused_provisional_album_folder(self) -> None:
         splitter = YouTubeAlbumSplitter(
             DownloadSettings(max_workers=1, min_delay_seconds=0, max_delay_seconds=0)

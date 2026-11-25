@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from youtube_audio_video_downloader.services.albums.album_art_finder import (
+    AlbumArtNotFoundError,
     extract_square_image_urls,
     find_album_art,
     find_catalog_song_metadata,
@@ -15,6 +16,21 @@ from youtube_audio_video_downloader.services.albums.album_art_finder import (
 
 
 class AlbumArtFinderTest(unittest.TestCase):
+    @patch("youtube_audio_video_downloader.services.albums.catalog_tracks.find_catalog_album_release")
+    @patch("youtube_audio_video_downloader.services.albums.album_art_finder.urlopen")
+    def test_track_bound_cover_does_not_fall_back_to_a_namesake_or_rotate(self, urlopen_mock, release):
+        release.return_value = {}
+        with self.assertRaisesRegex(AlbumArtNotFoundError, "verified against the tracks"):
+            find_album_art("Goodbye (2022)", expected_titles=("Maaye", "Kanni Re Kanni"))
+        release.assert_called_with("Goodbye", "2022", expected_titles=("Maaye", "Kanni Re Kanni"))
+        urlopen_mock.assert_not_called()
+        release.return_value = {"album_art": "https://correct/cover.jpg"}
+        self.assertEqual(find_album_art("Goodbye", release_year="2022", expected_titles=("Maaye",)),
+                         "https://correct/cover.jpg")
+        with self.assertRaisesRegex(AlbumArtNotFoundError, "already the verified"):
+            find_album_art("Goodbye", release_year="2022", expected_titles=("Maaye",),
+                           exclude_url="https://correct/cover.jpg")
+
 
     @patch("yt_dlp.YoutubeDL")
     def test_youtube_art_fallback_requires_exact_title_and_artist(self, ydl_class) -> None:

@@ -11,7 +11,7 @@ from youtube_audio_video_downloader.services.albums.album_art_finder import (
 )
 from youtube_audio_video_downloader.services.albums.album_names import normalize_album_name
 from youtube_audio_video_downloader.services.albums.wikipedia_tracks import find_wikipedia_tracks
-from youtube_audio_video_downloader.services.albums.catalog_tracks import find_catalog_album_tracks
+from youtube_audio_video_downloader.services.albums.catalog_tracks import find_catalog_album_tracks, find_catalog_album_release
 from youtube_audio_video_downloader.utils.artist_name_formatter import format_artist_names
 from youtube_audio_video_downloader.utils.time_utils import format_seconds_as_timestamp
 from youtube_audio_video_downloader.utils.music_text import clean_song_title, music_words
@@ -57,6 +57,62 @@ def _unwanted_upload(title: str) -> bool:
     })
 
 
+def _without_artist_version(title: str, artists: str) -> str:
+    """Separate an explicit named-singer version from its core song title."""
+    def remove(match: re.Match[str]) -> str:
+        annotation = _key(match.group(1)).split()
+        for artist in _artist_keys(artists):
+            words = artist.split()
+            if annotation[:len(words)] == words and set(annotation[len(words):]) <= {"version", "vocal", "solo"}:
+                return " "
+        return match.group(0)
+    return " ".join(re.sub(r"[\[(]([^()\[\]]+)[\])]", remove, title).split())
+
+
+def _complete_track_evidence(tracks: list[dict], album_name: str, release_year: str) -> list[dict]:
+    """Fill missing lengths and singer-version aliases from one verified album release."""
+    if all(track.get("duration_seconds") for track in tracks):
+        return tracks
+    try:
+        release = find_catalog_album_release(
+            album_name, release_year, expected_titles=tuple(str(track["title"]) for track in tracks),
+        )
+    except (OSError, ValueError):
+        return tracks
+    catalog_tracks = release.get("tracks", [])
+    result = []
+    for track in tracks:
+        if track.get("duration_seconds"):
+            result.append(track)
+            continue
+        title = str(track["title"])
+        artists = str(track.get("artists") or "")
+        credits = _artist_keys(artists)
+        wanted_key = _recording_key(title)
+        wanted_variants = set(wanted_key.split()) & _VARIANT_TERMS
+        matches = []
+        for candidate in catalog_tracks:
+            candidate_title = str(candidate.get("title") or "")
+            if _is_remix_or_dj_version(candidate_title) or not credits or not credits <= _artist_keys(str(candidate.get("artists") or "")):
+                continue
+            core_title = _without_artist_version(candidate_title, artists)
+            candidate_key = _recording_key(core_title)
+            variants = set(candidate_key.split()) & _VARIANT_TERMS
+            named_artist_alias = core_title != candidate_title
+            compatible = _variant_compatible(wanted_variants, variants, credited=True)
+            if not compatible and not named_artist_alias and not (not wanted_variants and variants <= {"male", "female", "version"}):
+                continue
+            if _recording_titles_match(wanted_key, candidate_key) and candidate.get("duration_seconds"):
+                matches.append((candidate, core_title))
+        if len(matches) == 1:
+            candidate, match_title = matches[0]
+            track = {**track, "duration_seconds": candidate["duration_seconds"],
+                     "_duration_source": "Apple Music catalog", "_match_title": match_title,
+                     "_verify_credits": True}
+        result.append(track)
+    return result
+
+
 def find_individual_album_tracks(
     album_name: str,
     release_year: str = "",
@@ -80,6 +136,7 @@ def find_individual_album_tracks(
     album_tracks = [track for track in album_tracks if not _is_remix_or_dj_version(str(track["title"]))]
     if not album_tracks:
         raise LookupError("No original album tracks remain after excluding remix and DJ versions.")
+    album_tracks = _complete_track_evidence(album_tracks, album_name, release_year)
     results: list[dict] = []
     options: dict[str, Any] = {
         "quiet": True, "no_warnings": True, "skip_download": True,
@@ -92,6 +149,11 @@ def find_individual_album_tracks(
                 return []
             title = clean_song_title(str(track["title"]), album_name)
             artists = str(track["artists"])
+            match_title = clean_song_title(str(track.get("_match_title") or title), album_name)
+            core_title = _without_artist_version(match_title, artists)
+            verify_credits = bool(track.get("_verify_credits")) or core_title != match_title
+            match_title = core_title
+            duration_source = str(track.get("_duration_source") or track.get("source") or "Wikipedia")
             if _is_lofi(title):
                 results.append({title: {
                     "ytb_link": "",
@@ -106,16 +168,16 @@ def find_individual_album_tracks(
             candidates = []
             topic_candidates = []
             seen_ids = set()
-            title_key = _recording_key(title)
+            title_key = _recording_key(match_title)
             variant_words = set(title_key.split()) & _VARIANT_TERMS
-            wanted_tokens = _literal_tokens(title) - _VARIANT_TERMS - {"ft", "feat", "featuring"}
+            wanted_tokens = _literal_tokens(match_title) - _VARIANT_TERMS - {"ft", "feat", "featuring"}
             if not wanted_tokens:
-                wanted_tokens = _literal_tokens(title)
-            search_title = re.sub(r"\s*-\s*(?:male|female)\s*$", "", title, flags=re.IGNORECASE)
+                wanted_tokens = _literal_tokens(match_title)
+            search_title = re.sub(r"\s*-\s*(?:male|female)\s*$", "", match_title, flags=re.IGNORECASE)
             search_title = re.sub(r"\bremixed\s+by\s+[^)]+", "remix", search_title, flags=re.IGNORECASE)
             search_error = None
             for query in (
-                f"{album_name} {title} {artists} full song audio lyrical",
+                f"{album_name} {match_title} {artists} full song audio lyrical",
                 f"{search_title} {album_name} {artists}",
             ):
                 if is_cancelled is not None and is_cancelled():
@@ -191,15 +253,20 @@ def find_individual_album_tracks(
                             except DownloadError as exc:
                                 search_error = exc
                                 continue
-                            if _matches_topic_release(metadata, title_key, album_key, artists):
+                            if _matches_topic_release(metadata, title_key, album_key, artists, allow_credit_alias=verify_credits,
+                                                      alternative_title_key=_recording_key(title) if verify_credits else ""):
                                 actual_duration = int(float(metadata.get("duration") or duration))
                                 if _duration_matches(actual_duration, expected):
                                     topic_candidates.append((actual_duration, {**entry, **metadata}))
                                     break
                         continue
                     candidate_variants = candidate_tokens & _VARIANT_TERMS
-                    needs_credits = not _variant_compatible(variant_words, candidate_variants)
-                    if needs_credits and not _variant_compatible(
+                    needs_credits = verify_credits or not _variant_compatible(variant_words, candidate_variants)
+                    missing_version = bool(variant_words - {"male", "female", "version"}) and not candidate_variants
+                    can_read_version = missing_version and (
+                        entry.get("channel_is_verified") or str(entry.get("channel") or "").endswith(" - Topic")
+                    )
+                    if needs_credits and not verify_credits and not can_read_version and not _variant_compatible(
                         variant_words, candidate_variants, credited=True,
                     ):
                         continue
@@ -227,8 +294,11 @@ def find_individual_album_tracks(
                             search_error = exc
                             continue
                         if needs_credits and entry.get("channel_is_verified") and isinstance(metadata, dict):
-                            metadata = _with_description_credits(metadata)
-                        if _matches_topic_release(metadata, title_key, album_key, artists):
+                            metadata = _with_description_credits(
+                                metadata, album_name if f" {album_key} " in f" {_key(candidate_title)} " else "",
+                            )
+                        if _matches_topic_release(metadata, title_key, album_key, artists, allow_credit_alias=verify_credits,
+                                                  alternative_title_key=_recording_key(title) if verify_credits else ""):
                             actual_duration = int(float(metadata.get("duration") or duration))
                             if not needs_credits or _duration_matches(actual_duration, expected):
                                 topic_candidates.append((actual_duration, {**entry, **metadata}))
@@ -251,9 +321,30 @@ def find_individual_album_tracks(
                         (duration, entry) for duration, entry in candidates
                         if _has_recording_credits(entry["title"], album_key, artists)
                     ]
+                    metadata_checks = 0
+                    for duration, entry in candidates:
+                        if metadata_checks >= 3:
+                            break
+                        if not entry.get("channel_is_verified") or f" {album_key} " not in f" {_key(entry['title'])} ":
+                            continue
+                        if not _duration_matches(duration, catalog_duration):
+                            continue
+                        if is_cancelled is not None and is_cancelled():
+                            return []
+                        metadata_checks += 1
+                        try:
+                            metadata = downloader.extract_info(_video_url(entry), download=False, process=False)
+                        except DownloadError as exc:
+                            search_error = exc
+                            continue
+                        metadata = _with_description_credits(metadata, album_name)
+                        if _matches_topic_release(metadata, title_key, album_key, artists):
+                            credited_candidates.append((int(float(metadata.get("duration") or duration)), {**entry, **metadata}))
                     chosen = _closest_match(credited_candidates, catalog_duration)
                 else:
                     chosen = _closest_match(candidates, catalog_duration or expected)
+            if chosen is None and search_error is not None:
+                raise search_error
             if chosen is None:
                 closest = _closest_match(candidates, expected, check_duration=False)
                 results.append({title: {
@@ -264,7 +355,7 @@ def find_individual_album_tracks(
                     "download": "false",
                     "match_status": "No safe close-duration YouTube match",
                     "length_notice": _length_notice(
-                        expected, closest, matched=False, source_name=str(track.get("source") or "Wikipedia")
+                        expected, closest, matched=False, source_name=duration_source
                     ),
                 }})
                 continue
@@ -276,7 +367,7 @@ def find_individual_album_tracks(
                 "download": "true",
                 "match_status": "Matched",
                 "length_notice": _length_notice(
-                    expected, chosen, matched=True, source_name=str(track.get("source") or "Wikipedia")
+                    expected, chosen, matched=True, source_name=duration_source
                 ),
             }})
     if not any(values["ytb_link"] or values.get("length_notice")
@@ -361,15 +452,21 @@ def _has_recording_credits(video_title: str, album_key: str, artists: str) -> bo
 
 def _matches_topic_release(
     metadata: dict | None, title_key: str, album_key: str, artists: str,
+    *, allow_credit_alias: bool = False, alternative_title_key: str = "",
 ) -> bool:
     if not metadata:
         return False
+    if alternative_title_key and _matches_topic_release(metadata, alternative_title_key, album_key, artists):
+        return True
     if _is_remix_or_dj_version(str(metadata.get("track") or "")):
         return False
     if _key(normalize_album_name(metadata.get("album"))) != album_key:
         return False
     wanted = title_key.split()
-    available = _recording_key(str(metadata.get("track") or "")).split()
+    track_title = str(metadata.get("track") or "")
+    available = _recording_key(_without_artist_version(track_title, artists) if allow_credit_alias else track_title).split()
+    if allow_credit_alias and set(available) & _VARIANT_TERMS <= {"male", "female", "version"}:
+        available = [word for word in available if word not in {"male", "female", "version"}]
     variants = set(wanted) & _VARIANT_TERMS
     if not _variant_compatible(variants, set(available) & _VARIANT_TERMS, credited=True):
         return False
@@ -398,23 +495,27 @@ def _recording_titles_match(expected: str, candidate: str) -> bool:
     )
 
 
-def _with_description_credits(metadata: dict) -> dict:
+def _with_description_credits(metadata: dict, album_name: str = "") -> dict:
     """Read labeled release credits on verified labels' lyrical uploads."""
+    if not isinstance(metadata, dict):
+        return {}
     if metadata.get("track") and metadata.get("album") and metadata.get("artists"):
         return metadata
     description = str(metadata.get("description") or "")
     fields = {}
-    for key, labels in (("album", "movie|album|film"), ("artists", "singer|singers|vocals")):
+    for key, labels in (("album", "movie|album|film"), ("artists", r"singer(?:\(s\)|s)?|vocals|playback singer"),
+                        ("composer", "music director|composer"),
+                        ("track", "song(?: name)?")):
         match = re.search(rf"^\s*(?:{labels})\s*:\s*([^\r\n]+)", description, re.IGNORECASE | re.MULTILINE)
         if match:
             fields[key] = match.group(1).strip()
-    if len(fields) != 2:
+    if not fields.get("artists") or not (fields.get("album") or album_name):
         return metadata
     return {
         **metadata,
-        "track": metadata.get("track") or metadata.get("title"),
-        "album": fields["album"],
-        "artists": [fields["artists"]],
+        "track": metadata.get("track") or fields.get("track") or metadata.get("title"),
+        "album": metadata.get("album") or fields.get("album") or album_name,
+        "artists": [fields["artists"], *([fields["composer"]] if fields.get("composer") else [])],
     }
 
 
