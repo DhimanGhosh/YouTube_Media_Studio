@@ -107,6 +107,21 @@ class MediaPlayerPageTest(unittest.TestCase):
         self.temporary.cleanup()
         self.environment_patch.stop()
 
+    def test_fix_artist_names_detects_and_applies_case_only_variant(self) -> None:
+        self.page.items[0] = replace(self.page.items[0], artists="YO YO Honey Singh")
+        self.page.items[1] = replace(self.page.items[1], artists="Yo Yo Honey Singh, KK")
+        with patch.object(
+            ArtistRepairDialog, "exec", return_value=ArtistRepairDialog.DialogCode.Accepted,
+        ), patch(
+            "youtube_audio_video_downloader.gui.media.media_player.repair_artist_metadata",
+            return_value=Mock(scanned=2, updated=(Path("song.mp3"),), failed=()),
+        ) as repair, patch.object(self.page, "refresh_library") as refresh, patch.object(
+            QMessageBox, "information",
+        ):
+            self.page.review_artist_name_repairs()
+        self.assertEqual(repair.call_args.args[1], {"YO YO Honey Singh": "Yo Yo Honey Singh"})
+        refresh.assert_called_once()
+
     def test_permanent_delete_removes_file_queue_and_playlist_reference(self) -> None:
         path = Path(self.temporary.name) / "delete-me.mp3"
         path.write_bytes(b"media")

@@ -13,6 +13,43 @@ from youtube_audio_video_downloader.services.media.artist_canonicalizer import (
 from youtube_audio_video_downloader.services.media.media_metadata import EditableMediaMetadata
 
 
+def test_screenshot_capitalization_variants_share_one_canonical_artist() -> None:
+    values = [
+        "Yo Yo Honey Singh, Mamta Sharma, Nitu Choudhry",
+        "YO YO Honey Singh",
+        "Pritam, Imran Aziz Mian, Yo Yo Honey Singh, Irshad Kamil",
+        "KK, Shefali Alvares, Yo Yo Honey Singh",
+        "Mika Singh, Bohemia, Yo Yo Honey Singh, Shefali Alvares",
+    ]
+    suggestions = suggest_artist_renames(values)
+    replacements = {item.detected: item.replacement for item in suggestions}
+    assert replacements["YO YO Honey Singh"] == "Yo Yo Honey Singh"
+    fixed = [apply_artist_replacements(value, replacements) for value in values]
+    assert fixed[1] == "Yo Yo Honey Singh"
+    assert not suggest_artist_renames(fixed)
+
+
+def test_case_variants_of_unlisted_artists_use_one_existing_spelling() -> None:
+    values = ["DJ Example", "DJ Example", "Dj Example", "will.i.am", "Will.I.Am"]
+    suggestions = suggest_artist_renames(values)
+    replacements = {item.detected: item.replacement for item in suggestions}
+    assert replacements == {"Dj Example": "DJ Example", "Will.I.Am": "will.i.am"}
+    fixed = [apply_artist_replacements(value, replacements) for value in values]
+    assert fixed == ["DJ Example", "DJ Example", "DJ Example", "will.i.am", "will.i.am"]
+    assert not suggest_artist_renames(fixed)
+    assert suggest_artist_renames(reversed(values)) == suggestions
+
+
+def test_case_duplicates_do_not_make_a_longer_artist_name_ambiguous() -> None:
+    suggestions = suggest_artist_renames(
+        ["Example Artist", "Example Artist Senior", "EXAMPLE Artist Senior"]
+    )
+    assert {(item.detected, item.replacement) for item in suggestions} == {
+        ("Example Artist", "Example Artist Senior"),
+        ("EXAMPLE Artist Senior", "Example Artist Senior"),
+    }
+
+
 def test_suggestions_merge_dotted_initials_and_short_full_name_variants() -> None:
     suggestions = suggest_artist_renames(
         [
@@ -85,4 +122,20 @@ def test_repair_updates_artist_and_album_artist_tags(read_mock, replace_mock) ->
     replace_mock.assert_called_once_with(
         report.updated[0],
         {"artists": "KK, Arijit Singh", "album_artist": "AR Rahman"},
+    )
+
+
+@patch("youtube_audio_video_downloader.services.media.artist_canonicalizer.replace_media_metadata")
+@patch("youtube_audio_video_downloader.services.media.artist_canonicalizer.read_media_metadata")
+def test_case_repair_updates_both_tags_and_removes_duplicate_credit(read_mock, replace_mock):
+    read_mock.return_value = EditableMediaMetadata(
+        artists="YO YO Honey Singh, Yo Yo Honey Singh, KK", album_artist="YO YO Honey Singh",
+    )
+    replacements = {item.detected: item.replacement for item in suggest_artist_renames(
+        [read_mock.return_value.artists]
+    )}
+    report = repair_artist_metadata(["song.mp3"], replacements)
+    assert not report.failed
+    replace_mock.assert_called_once_with(
+        report.updated[0], {"artists": "Yo Yo Honey Singh, KK", "album_artist": "Yo Yo Honey Singh"},
     )

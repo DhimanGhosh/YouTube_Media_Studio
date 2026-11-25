@@ -811,8 +811,11 @@ is extracted without modifying the video.
 ### Repair artist names
 
 Select **Fix artist names** to scan all configured library tracks. Placeholder Unknown
-credits are ignored. The app proposes period-free initials, known aliases, and
-unambiguous longer identities, then waits for review.
+credits are ignored. The app proposes period-free initials, known aliases,
+capitalization-only duplicates, and unambiguous longer identities, then waits for
+review. For example, `YO YO Honey Singh` becomes `Yo Yo Honey Singh`. Other case-only
+duplicates use the most common formatted spelling in the library, with a stable
+tie-break. Reviewed changes update both artist and album-artist tags.
 
 ![Artist-name review](media/user-guide/dialogs/artist-name-review.png)
 

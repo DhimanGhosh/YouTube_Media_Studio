@@ -4,6 +4,14 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [Unreleased]
+
+### Fixed
+
+- Detect capitalization-only duplicate artist names in Fix artist names and propose one consistent spelling across the library, including artists outside the known alias list.
+- Normalize YO YO Honey Singh and other casing, spacing, or hyphen variants to Yo Yo Honey Singh while preserving initials and acronyms such as KK and AR Rahman.
+- Apply reviewed artist-name repairs to both artist and album-artist tags, remove duplicate credits, and keep case variants from blocking unambiguous longer-name suggestions.
+
 ## [2.22.0] - 2026-11-26
 
 ### Added
