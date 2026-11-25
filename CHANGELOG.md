@@ -4,6 +4,19 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [Unreleased]
+
+### Added
+
+- Add Shuffle play, Shuffle play next, and Shuffle queue for playlists, selected songs, albums, and groups of selected albums or artists in the desktop media player.
+- Support selecting multiple album cards. Shuffle queue appends the randomized batch after existing tracks; Shuffle play next inserts it immediately after the current track without interrupting playback. Both start playback when Now Playing is empty.
+
+### Fixed
+
+- Match individual album recordings when YouTube omits Wikipedia's male/female labels or uses a different label such as Duet, requiring matching album, song, singer credits, and duration before accepting the recording.
+- Recognize catalog remix credits such as Pee Loon (remixed by DJ A-myth) as the corresponding Remix recording, while retaining checks against other versions and shortened uploads.
+- Wrap media-player action buttons to keep the expanded playback controls readable.
+
 ## [2.21.0] - 2026-11-24
 
 ### Removed

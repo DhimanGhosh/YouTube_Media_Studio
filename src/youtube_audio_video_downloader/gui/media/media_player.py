@@ -1798,6 +1798,9 @@ class MediaLibraryPage(QWidget):
             ("Play selected", self.play_selected, True),
             ("Play selected next", self.play_next_selected, False),
             ("Queue selected", self.enqueue_selected, False),
+            ("Shuffle selected", lambda: self.shuffle_selected("play"), False),
+            ("Shuffle play next", lambda: self.shuffle_selected("next"), False),
+            ("Shuffle queue", lambda: self.shuffle_selected("queue"), False),
             ("Play all matches", self.play_all_matches, False),
             ("Shuffle all", self.shuffle_all_matches, False),
         ):
@@ -1863,17 +1866,12 @@ class MediaLibraryPage(QWidget):
         while layout.count():
             layout.takeAt(0)
         width = self.artist_track_splitter.widget(1).width()
-        compact = width < 900
         metadata = self.track_action_widgets[:4]
         commands = self.track_action_widgets[4:]
         for column, widget in enumerate(metadata):
             layout.addWidget(widget, 0, column)
         layout.setColumnStretch(len(metadata), 1)
-        if not compact:
-            for offset, widget in enumerate(commands, start=len(metadata) + 1):
-                layout.addWidget(widget, 0, offset)
-            return
-        columns = 3 if width < 720 else len(commands)
+        columns = 3 if width < 720 else 4
         for index, widget in enumerate(commands):
             layout.addWidget(widget, 1 + (index // columns), index % columns)
 
@@ -1910,7 +1908,7 @@ class MediaLibraryPage(QWidget):
         browser_layout.addLayout(heading)
         self.albums = AlbumGridListWidget()
         self.albums.setViewMode(QListWidget.ViewMode.IconMode)
-        self.albums.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.albums.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.albums.setIconSize(QSize(108, 108))
         self.albums.setGridSize(QSize(178, 165))
         self.albums.setResizeMode(QListWidget.ResizeMode.Adjust)
@@ -1946,17 +1944,22 @@ class MediaLibraryPage(QWidget):
         self.album_detail_context.setObjectName("mutedLabel")
         detail_header.addWidget(self.album_detail_context)
         detail_header.addStretch(1)
-        for text, mode in (
+        album_actions = QGridLayout()
+        for column, (text, mode) in enumerate((
             ("Play all", "play"),
             ("Shuffle all", "shuffle"),
-        ):
+            ("Play all next", "next"),
+            ("Shuffle all next", "shuffle_next"),
+            ("Queue all", "queue"),
+            ("Shuffle queue all", "shuffle_queue"),
+        )):
             button = QPushButton(text)
             button.setObjectName("primaryButton" if text == "Play all" else "secondaryButton")
             button.clicked.connect(
                 lambda _checked=False, queue_mode=mode:
                 self.play_album_tracks(queue_mode, False)
             )
-            detail_header.addWidget(button)
+            album_actions.addWidget(button, 0, column)
         self.add_open_album_to_playlist_button = QPushButton("Add to playlist")
         self.add_open_album_to_playlist_button.setObjectName("secondaryButton")
         self.add_open_album_to_playlist_button.setToolTip(
@@ -1966,20 +1969,23 @@ class MediaLibraryPage(QWidget):
             self.add_open_album_tracks_to_playlist
         )
         detail_header.addWidget(self.add_open_album_to_playlist_button)
-        for text, mode, selected in (
+        for column, (text, mode, selected) in enumerate((
             ("Play selected", "play", True),
             ("Play selected next", "next", True),
             ("Queue selected", "queue", True),
             ("Shuffle selected", "shuffle", True),
-        ):
+            ("Shuffle selected next", "shuffle_next", True),
+            ("Shuffle queue selected", "shuffle_queue", True),
+        )):
             button = QPushButton(text)
             button.setObjectName("primaryButton" if text == "Play all" else "secondaryButton")
             button.clicked.connect(
                 lambda _checked=False, queue_mode=mode, only_selected=selected:
                 self.play_album_tracks(queue_mode, only_selected)
             )
-            detail_header.addWidget(button)
+            album_actions.addWidget(button, 1, column)
         detail_layout.addLayout(detail_header)
+        detail_layout.addLayout(album_actions)
         self.album_tracks = self._new_media_table(["Title", "Artist", "Year", "Length"])
         self.album_tracks.itemSelectionChanged.connect(self._update_album_track_context)
         self.album_tracks.doubleClicked.connect(
@@ -2082,6 +2088,9 @@ class MediaLibraryPage(QWidget):
             ("Play next", self.play_next_selected_playlist_tracks, False),
             ("Queue", self.queue_selected_playlist_tracks, False),
             ("Remove", self.remove_selected_playlist_tracks, False),
+            ("Shuffle play", lambda: self.shuffle_playlist_tracks("play"), False),
+            ("Shuffle play next", lambda: self.shuffle_playlist_tracks("next"), False),
+            ("Shuffle queue", lambda: self.shuffle_playlist_tracks("queue"), False),
         )):
             button = QPushButton(text)
             button.setMinimumWidth(112)
@@ -2511,6 +2520,10 @@ class MediaLibraryPage(QWidget):
     def play_next_selected_playlist_tracks(self) -> None:
         selected = self._selected_playlist_items() or self._visible_playlist_items()
         self._play_next(selected)
+
+    def shuffle_playlist_tracks(self, mode: str) -> None:
+        selected = self._selected_playlist_items() or self._visible_playlist_items()
+        self._shuffle_items(selected, mode)
 
     def remove_selected_playlist_tracks(self) -> None:
         removals: dict[str, set[int]] = {}
@@ -4226,12 +4239,8 @@ class MediaLibraryPage(QWidget):
 
     def _render_albums(self) -> None:
         vertical_scroll = self.albums.verticalScrollBar().value()
-        selected_album = ""
         selected_entries = self.albums.selectedItems()
-        if selected_entries:
-            selected_album = str(
-                selected_entries[0].data(Qt.ItemDataRole.UserRole) or ""
-            )
+        selected_albums = {str(entry.data(Qt.ItemDataRole.UserRole) or "") for entry in selected_entries}
         self._album_art_generation += 1
         generation = self._album_art_generation
         self._pending_album_art = []
@@ -4251,7 +4260,7 @@ class MediaLibraryPage(QWidget):
             if icon is not None and not icon.isNull():
                 entry.setIcon(icon)
             self.albums.addItem(entry)
-            if album == selected_album:
+            if album in selected_albums:
                 entry.setSelected(True)
         self._update_album_browser_context()
         generation_for_scroll = self._album_art_generation
@@ -4373,9 +4382,8 @@ class MediaLibraryPage(QWidget):
             self.album_back_button.setToolTip("Return to the complete album grid")
         selected = self.albums.selectedItems()
         if selected:
-            album = str(selected[0].data(Qt.ItemDataRole.UserRole) or "")
-            if album:
-                context += f"  •  Selected album: {album}"
+            names = [str(entry.data(Qt.ItemDataRole.UserRole) or "") for entry in selected]
+            context += f"  •  Selected album(s): {', '.join(names)}"
         self.album_browser_context.setText(context)
         self.album_browser_context.setToolTip(context)
 
@@ -4473,6 +4481,7 @@ class MediaLibraryPage(QWidget):
         queue_action.triggered.connect(
             lambda _checked=False, selected=list(items): self._append_to_queue(selected)
         )
+        self._add_shuffle_actions(menu, items)
         menu.addSeparator()
         self._add_playlist_destinations(menu, items)
         if source_playlist:
@@ -4578,13 +4587,17 @@ class MediaLibraryPage(QWidget):
         entry = self.facets.itemAt(position)
         if entry is None:
             return
-        artist = entry.text()
+        if not entry.isSelected():
+            self.facets.setCurrentItem(entry)
+        artists = {item.text().casefold() for item in self.facets.selectedItems()}
         tracks = [
             item for item in self.items
-            if artist.casefold() in {value.casefold() for value in split_artists(item.artists)}
+            if artists & {value.casefold() for value in split_artists(item.artists)}
         ]
         menu = QMenu(self)
-        menu.setTitle(artist)
+        menu.setTitle(", ".join(item.text() for item in self.facets.selectedItems()))
+        self._add_shuffle_actions(menu, tracks)
+        menu.addSeparator()
         self._add_playlist_destinations(
             menu, tracks, label="Add artist tracks to playlist"
         )
@@ -4606,14 +4619,17 @@ class MediaLibraryPage(QWidget):
         entry = self.albums.itemAt(position)
         if entry is None:
             return
-        album = str(entry.data(Qt.ItemDataRole.UserRole) or "")
+        if not entry.isSelected():
+            self.albums.setCurrentItem(entry)
+        albums = [str(item.data(Qt.ItemDataRole.UserRole) or "") for item in self.albums.selectedItems()]
+        tracks = [item for item in self.items if item.album in albums]
         self._show_album_folder_context_menu(
-            album,
+            ", ".join(albums),
             sorted(
-                {Path(item.path).expanduser().parent.resolve() for item in self._all_album_tracks(album)},
+                {Path(item.path).expanduser().parent.resolve() for item in tracks},
                 key=lambda path: str(path).casefold(),
             ),
-            self._all_album_tracks(album),
+            tracks,
             self.albums.viewport().mapToGlobal(position),
         )
 
@@ -4654,6 +4670,7 @@ class MediaLibraryPage(QWidget):
         queue_action.triggered.connect(
             lambda _checked=False, selected=list(tracks): self._append_to_queue(selected)
         )
+        self._add_shuffle_actions(menu, tracks)
         menu.addSeparator()
         self._add_playlist_destinations(
             menu, tracks, label="Add album to playlist"
@@ -4851,6 +4868,44 @@ class MediaLibraryPage(QWidget):
     def play_next_selected(self) -> None:
         self._play_next(self._selected_library_items())
 
+    def shuffle_selected(self, mode: str) -> None:
+        self._shuffle_items(self._selected_library_items(), mode)
+
+    def _add_shuffle_actions(self, menu: QMenu, items: list[LibraryItem]) -> None:
+        for label, mode in (("Shuffle play", "play"), ("Shuffle play next", "next"),
+                            ("Shuffle queue", "queue")):
+            action = menu.addAction(label)
+            action.triggered.connect(
+                lambda _checked=False, selected=list(items), queue_mode=mode:
+                self._shuffle_items(selected, queue_mode)
+            )
+
+    def _shuffle_items(self, items: list[LibraryItem], mode: str) -> None:
+        """Shuffle this batch once, preserving the position of existing queue entries."""
+        if not items:
+            return
+        if mode == "play" or not self.queue:
+            self._replace_queue(items, shuffle=True)
+            return
+        seen: set[str] = set()
+        selected = []
+        for item in items:
+            key = item.path.casefold()
+            if key not in seen:
+                seen.add(key)
+                selected.append(item)
+        random.shuffle(selected)
+        # Appending with global shuffle enabled normally mixes the whole tail.
+        # An explicit batch operation must retain all pre-existing queue positions.
+        self._shuffle_enabled = False
+        self.settings.setValue("library/shuffle", False)
+        self._update_playback_mode_buttons()
+        self._queue_source = list(self.queue)
+        if mode == "next":
+            self._play_next(selected)
+        else:
+            self._append_to_queue(selected)
+
     def _append_to_queue(self, selected: list[LibraryItem]) -> int:
         """Append unique tracks without interrupting the item currently playing."""
 
@@ -4932,7 +4987,9 @@ class MediaLibraryPage(QWidget):
         )
         if not tracks:
             return
-        if mode == "queue":
+        if mode.startswith("shuffle_"):
+            self._shuffle_items(tracks, mode.removeprefix("shuffle_"))
+        elif mode == "queue":
             self._append_to_queue(tracks)
         elif mode == "next":
             self._play_next(tracks)

@@ -219,6 +219,90 @@ class MediaPlayerPageTest(unittest.TestCase):
             ["Short", "Third", "Long"],
         )
 
+    def test_shuffle_batch_preserves_existing_queue_and_current_playback(self) -> None:
+        existing = [media(name, 2020, 1000) for name in ("Previous", "Current", "Later")]
+        added = list(self.page.items)
+        for mode, expected in (
+            ("queue", existing + list(reversed(added))),
+            ("next", existing[:2] + list(reversed(added)) + existing[2:]),
+        ):
+            with self.subTest(mode=mode):
+                self.page.queue = list(existing)
+                self.page._queue_source = list(existing)
+                self.page.queue_index = 1
+                self.page._shuffle_enabled = True
+                with patch.object(self.page, "_load_current") as load, patch(
+                    "youtube_audio_video_downloader.gui.media.media_player.random.shuffle",
+                    side_effect=lambda values: values.reverse(),
+                ) as shuffle:
+                    self.page._shuffle_items(added + [added[0]], mode)
+                self.assertEqual(self.page.queue, expected)
+                self.assertEqual(self.page.queue_index, 1)
+                self.assertEqual(self.page.queue[self.page.queue_index], existing[1])
+                self.assertEqual(self.page._queue_source, expected)
+                load.assert_not_called()
+                shuffle.assert_called_once()
+
+    def test_all_shuffle_modes_start_playback_when_queue_is_empty(self) -> None:
+        for mode in ("play", "queue", "next"):
+            with self.subTest(mode=mode):
+                self.page.queue = []
+                self.page._queue_source = []
+                self.page.queue_index = -1
+                with patch.object(self.page, "_load_current") as load, patch(
+                    "youtube_audio_video_downloader.gui.media.media_player.random.shuffle",
+                    side_effect=lambda values: values.reverse(),
+                ) as shuffle:
+                    self.page._shuffle_items(list(self.page.items), mode)
+                self.assertEqual(self.page.queue, list(reversed(self.page.items)))
+                self.assertEqual(self.page.queue_index, 0)
+                load.assert_called_once()
+                shuffle.assert_called_once()
+
+    def test_shuffle_next_moves_existing_copies_without_duplicates(self) -> None:
+        first, second = self.page.items
+        third = media("Third", 2020, 1000)
+        self.page.queue = [first, second, third]
+        self.page._queue_source = list(self.page.queue)
+        self.page.queue_index = 0
+        with patch("youtube_audio_video_downloader.gui.media.media_player.random.shuffle",
+                   side_effect=lambda values: values.reverse()):
+            self.page._shuffle_items([second, third, first, second], "next")
+        self.assertEqual(self.page.queue, [first, third, second])
+
+    def test_shuffle_playlist_uses_selection_or_whole_visible_playlist(self) -> None:
+        for selected in ([], [self.page.items[0]]):
+            with self.subTest(selected=bool(selected)), patch.object(
+                self.page, "_selected_playlist_items", return_value=selected,
+            ), patch.object(
+                self.page, "_visible_playlist_items", return_value=self.page.items,
+            ), patch.object(self.page, "_shuffle_items") as shuffle:
+                for mode in ("play", "next", "queue"):
+                    self.page.shuffle_playlist_tracks(mode)
+                    shuffle.assert_called_with(selected or self.page.items, mode)
+
+    def test_album_context_shuffle_includes_all_selected_albums(self) -> None:
+        self.page.items[1] = replace(self.page.items[1], album="Other Album")
+        self.page.apply_filters()
+        for row in range(self.page.albums.count()):
+            self.page.albums.item(row).setSelected(True)
+        position = self.page.albums.visualItemRect(self.page.albums.item(0)).center()
+        with patch.object(self.page, "_show_album_folder_context_menu") as show:
+            self.page._show_album_context_menu(position)
+        self.assertEqual(show.call_args.args[2], self.page.items)
+        self.page._render_albums()
+        self.assertEqual(len(self.page.albums.selectedItems()), 2)
+
+    def test_artist_context_shuffle_collects_selected_artists_without_duplicate_songs(self) -> None:
+        self.page.items[1] = replace(self.page.items[1], artists="Other Artist, Test Artist")
+        self.page.apply_filters()
+        for row in range(self.page.facets.count()):
+            self.page.facets.item(row).setSelected(True)
+        position = self.page.facets.visualItemRect(self.page.facets.item(0)).center()
+        with patch.object(QMenu, "exec"), patch.object(self.page, "_add_shuffle_actions") as add:
+            self.page._show_artist_context_menu(position)
+        self.assertEqual(add.call_args.args[1], self.page.items)
+
     def test_song_context_menu_queues_one_or_multiple_tracks(self) -> None:
         first, second = self.page.items
         current = media("Current", 2024, 180_000)
