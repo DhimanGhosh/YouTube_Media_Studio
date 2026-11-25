@@ -13,12 +13,17 @@ from .theme import menu_glass_style
 
 
 def visible_menu_icon(widget: QWidget, symbol: QStyle.StandardPixmap) -> QIcon:
-    """Lighten monochrome system glyphs without recoloring folder/document icons."""
+    """Lighten dark monochrome glyphs while preserving colored system artwork."""
     original = widget.style().standardIcon(symbol)
-    if symbol not in {
-        QStyle.StandardPixmap.SP_MediaVolume, QStyle.StandardPixmap.SP_MediaPlay,
-        QStyle.StandardPixmap.SP_MediaSkipForward, QStyle.StandardPixmap.SP_ArrowUp,
-    }:
+    sample = original.pixmap(32, 32).toImage()
+    colors = [sample.pixelColor(x, y) for x in range(sample.width()) for y in range(sample.height())
+              if sample.pixelColor(x, y).alpha() > 200]
+    if (
+        not colors
+        or any(max(color.red(), color.green(), color.blue()) - min(color.red(), color.green(), color.blue()) > 32
+               for color in colors)
+        or sum(color.lightness() for color in colors) / len(colors) >= 160
+    ):
         return original
     icon = QIcon()
     for size in (16, 24, 32, 48, 64):
