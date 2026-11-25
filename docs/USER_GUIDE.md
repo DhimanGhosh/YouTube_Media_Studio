@@ -49,7 +49,7 @@ text remains the authoritative description of what it does.
 
 ## Your first album in five steps
 
-1. Open **Organize → Album Splitter** from the menu at the top.
+1. Open **Download → Album Splitter** from the menu at the top.
 2. Enter the album name and use **Auto fill album**; review the songs it finds. For a
    jukebox URL, choose **YouTube URL** under Source media. For a file already on your
    computer, choose **Local file** and use **Browse**.
@@ -79,7 +79,7 @@ again. **View → Live Logs** contains the detailed error and recovery attempts.
    and Google Images evidence.
 5. Select **Save and apply defaults**.
 6. Choose **Download → Search Song** when only a plain-language description is known.
-   Open a downloader or splitter directly from **Download** or **Organize** when the
+   Open a downloader or splitter directly from **Download** when the
    source URL is already known.
 7. Use **View → Dashboard** for overall progress and **View → Live Logs** for the result
    of each individual item.
@@ -113,7 +113,7 @@ open /Applications/YouTubeMediaStudio.app
 ## How the interface works
 
 The standard top menu bar opens every workspace. **Download** contains search and
-download tools; **Organize** contains splitters, reorder, consolidation, and utilities;
+download tools and splitters; **Organize** contains reorder, consolidation, and utilities;
 **Edit** contains file and album editors; **View** contains Dashboard and Live Logs; and
 the dedicated **Media Player** action opens playback directly. Menu icons mirror each tool, and logical separators divide related
 commands. A selected workspace remains available while other jobs run in the background.
@@ -270,6 +270,14 @@ operation logs.
 Changing the application-data folder safely copies existing application data and takes
 effect on the next start. Crash reporting is local and opt-in. **Open data folder** opens
 the exact active location.
+
+**Crystalness** controls the background transparency without fading text. On Windows 11
+22H2 or newer, the app and Settings use untinted native glass blur, with Desktop Acrylic
+as a fallback. Higher values expose
+more of the blurred desktop; zero restores an opaque background. Windows transparency
+settings and compositor availability can affect the effect. Other platforms retain the
+glassy color treatment and report that native desktop blur is unavailable. Click anywhere
+on the slider to jump directly to that level, or drag its handle to adjust it gradually.
 
 Application updates use public GitHub Releases and require no Google sign-in. The
 stable 2.x channel is used for all updates.
@@ -454,6 +462,12 @@ each selected song into that same pool, so several songs—even from different a
 can run together. **File → Settings… → Batch processing and network → Parallel workers**
 sets this limit. The UI runs separately from these workers.
 
+The first album starts its track downloads immediately within the worker limit;
+one album has no configured startup wait. Each later album shares one random start
+delay across its tracks, using the existing minimum/maximum delay settings. Fully
+resolved per-track album links skip redundant AI preflight; service validation,
+existing-file checks, and download retry/backoff still run.
+
 ## Split an album or jukebox
 
 Use **Album Splitter** for one release whose tracks share album metadata. Use **Jukebox
@@ -481,6 +495,9 @@ This is the complete **Auto fill album** workflow:
    list, or an exact album/year match in the Apple Music catalog when Wikipedia has no
    usable list, and finds a separate full-length YouTube audio source for every song.
    Turn it off to find a timestamped full-album/jukebox source.
+   Remix and DJ-version rows are omitted. Shared matching rules handle spelling and
+   transliteration differences, using album, singer, duration, and version evidence
+   before accepting a recording. A second, shorter search helps locate full Topic audio.
 4. The app also searches online release evidence for the year and square cover art.
 5. When a full-album source is found, the app immediately extracts timestamped tracks
    and singer credits from its description. With the workspace AI switch on, the
@@ -494,6 +511,9 @@ This is the complete **Auto fill album** workflow:
    identity, boundary, artist, and artwork checks.
 
 Auto-fill can populate **Release Year**, **Album Art**, **Source media**, and **Tracks**.
+Storefront release annotations such as `(From "Ballabhpurer Roopkotha")` are removed
+from song titles. Gender labels are retained as `Shaajo Shaajao - Female` or
+`Shaajo Shaajao - Male`; titles without a version remain simply `Notun Premer Gaan`.
 It does not select the final output/overwrite policy or approve the job on the user's
 behalf.
 
@@ -509,8 +529,9 @@ behalf.
   **Find on YouTube** or **Auto fill album** to populate separate full-song links instead
   of searching for a jukebox. This switch is on by default on every album card.
 - **Find year** searches Wikipedia release evidence.
-- **Find cover** searches for a square cover; selecting it again excludes the current
-  URL so another candidate can be found.
+- **Find cover** verifies a square cover against the release year and available
+  track evidence. If the verified cover is already selected, it reports that instead
+  of rotating through unrelated releases with the same name.
 - **Preview** downloads at most the preview limit and opens the current HTTP(S) cover in
   a dialog without writing it to a media file.
 - **Import timestamps** opens a preview-required parser dialog and adds all accepted
@@ -609,6 +630,9 @@ automatically.
 ### Update metadata only
 
 Edit title, album, comma-separated artists, year/date, track number/total, and artwork.
+**Find year** and **Find artists** fill editable suggestions. **Find cover** verifies
+the album's year and track evidence; **Preview** supports both local images and URLs.
+Finding a value does not write tags: review the result and apply the edit to save it.
 An empty metadata field removes that tag. A blank artwork input preserves the current
 cover; **Remove existing artwork** deletes it. Metadata changes are written to a
 temporary copy and atomically replace the source. Edited audio is renamed safely as
@@ -646,6 +670,12 @@ also exposes the playback crop/aspect profile action.
 ## Edit an album folder
 
 ![Edit Album workspace](media/user-guide/workspaces/edit-album.png)
+
+Use **Find year**, **Find artists**, **Find cover**, and **Preview** to prepare editable
+suggestions before applying changes. Find artists fills the optional shared artist
+override; leave it blank to preserve each track's own credits. Cover search verifies
+the release against the loaded folder's tracks and does not rotate to unrelated
+albums with the same name when you retry.
 
 | Callout | Area | Use |
 | --- | --- | --- |
@@ -810,9 +840,19 @@ is extracted without modifying the video.
 
 ### Repair artist names
 
+The main library search tolerates common spelling differences. For example,
+`Kaal Ho Na Ho` finds the tracks and album cards for `Kal Ho Naa Ho`. Search also
+handles accents, punctuation, doubled transliteration letters, and a small typo in a
+longer word. Short words in multiword queries must match whole words, so unrelated
+names such as Kishore and Nazar do not satisfy `Ho` and `Na`. Year and artist facets
+continue to apply, and search does not rename the stored metadata.
+
 Select **Fix artist names** to scan all configured library tracks. Placeholder Unknown
-credits are ignored. The app proposes period-free initials, known aliases, and
-unambiguous longer identities, then waits for review.
+credits are ignored. The app proposes period-free initials, known aliases,
+capitalization-only duplicates, and unambiguous longer identities, then waits for
+review. For example, `YO YO Honey Singh` becomes `Yo Yo Honey Singh`. Other case-only
+duplicates use the most common formatted spelling in the library, with a stable
+tie-break. Reviewed changes update both artist and album-artist tags.
 
 ![Artist-name review](media/user-guide/dialogs/artist-name-review.png)
 

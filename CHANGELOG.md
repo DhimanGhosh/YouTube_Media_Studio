@@ -4,6 +4,34 @@ All notable changes to YouTube Media Studio are recorded here. Automated release
 promote curated `Unreleased` notes when present; otherwise they add commit subjects and
 abbreviated hashes to the next version section.
 
+## [Unreleased]
+
+### Added
+
+- Add spelling-tolerant local library search for album names, songs, and artists. Queries such as Kaal Ho Na Ho find Kal Ho Naa Ho, handling doubled transliteration letters, accents, punctuation, and small typos while retaining artist, year, and media filters.
+- Omit remix and DJ-version rows from individual-song album auto-fill, and reject those versions when matching original tracks.
+- Add Find cover, Preview, Find year, and Find artists to Edit File and Edit Album. Suggestions remain editable and are saved only when the edit is applied.
+- Start the first album's tracks immediately within the configured parallel worker limit. Each later album uses one shared configurable random delay rather than delaying every track; fully resolved album requests skip redundant AI preflight.
+- Group Album Splitter and Jukebox Splitter under Download with the other download workflows.
+- Use untinted native Windows glass for real background blur in the main window and Settings, with Desktop Acrylic as a fallback. Crystalness controls background transparency while text stays opaque, with an opaque zero setting and a color-treatment fallback on unsupported platforms.
+- Make Crystalness progress smoothly across 0–100%, with a nearly opaque 1% setting and a clearly transparent upper end in both the main window and Settings.
+- Jump directly to the clicked Crystalness slider position while preserving handle dragging and keyboard controls.
+- Make the top menu bar follow the selected glass transparency instead of retaining an opaque black strip.
+
+### Fixed
+
+- Match small song-title transliteration differences such as Pyar Mein Sau Uljhanne Hai / Pyaar Mein Sau Uljhane when a verified YouTube upload also matches the album, singer credit, and full-song duration.
+- Verify plausible Topic recordings using watch-page album, title, artist, and duration metadata; use a shorter identity-based fallback query to find full audio hidden by video-heavy search results.
+- Remove quoted storefront album annotations from song titles, keeping Notun Premer Gaan and formatting version labels as Shaajo Shaajao - Female or Shaajo Shaajao - Male.
+- Ignore Wikipedia citation markers in track titles, artist credits, and lengths.
+- Resolve cover art against the exact release year and soundtrack track list, rejecting unrelated namesake singles and preventing Find cover from cycling through unverified releases.
+- Prefer a full catalog album over a namesake Single/EP when Wikipedia is unavailable; keep ambiguity checks between full albums. Search without version qualifiers on fallback while still verifying the requested recording, including Sad and Reprise versions.
+- Verify labeled song and singer credits in official descriptions to resolve omitted Reprise labels and catalog-confirmed duration corrections, including all nine Goodbye tracks.
+- Reconcile missing track durations and singer-named versions against a verified album release, including Naqaab's Sunidhi Chauhan recording without confusing it with the Sonu Nigam version.
+- Detect capitalization-only duplicate artist names in Fix artist names and propose one consistent spelling across the library, including artists outside the known alias list.
+- Normalize YO YO Honey Singh and other casing, spacing, or hyphen variants to Yo Yo Honey Singh while preserving initials and acronyms such as KK and AR Rahman.
+- Apply reviewed artist-name repairs to both artist and album-artist tags, remove duplicate credits, and keep case variants from blocking unambiguous longer-name suggestions.
+
 ## [2.22.0] - 2026-11-26
 
 ### Added

@@ -12,7 +12,7 @@ from urllib.request import Request
 from youtube_audio_video_downloader.core.network import urlopen
 
 from youtube_audio_video_downloader.config.app_identity import http_user_agent
-from youtube_audio_video_downloader.services.albums.album_names import normalize_album_name
+from youtube_audio_video_downloader.services.albums.album_names import normalize_album_name, split_album_folder_name
 from youtube_audio_video_downloader.utils.artist_name_formatter import (
     format_artist_names,
 )
@@ -248,11 +248,32 @@ def find_album_art(
     release_year: str = "",
     *,
     exclude_url: str = "",
+    expected_titles: tuple[str, ...] = (),
+    require_verified: bool = False,
 ) -> str:
     """Return a square cover, optionally skipping the currently displayed URL."""
-    name = normalize_album_name(album_name)
+    name, embedded_year = split_album_folder_name(album_name)
+    release_year = release_year.strip() or embedded_year
     if not name:
         raise ValueError("Enter an album name before searching for its cover.")
+    if require_verified and not expected_titles:
+        from youtube_audio_video_downloader.services.albums.wikipedia_tracks import find_wikipedia_tracks
+
+        try:
+            expected_titles = tuple(str(track["title"]) for track in find_wikipedia_tracks(name, release_year))
+        except (OSError, ValueError):
+            expected_titles = ()
+    if expected_titles or require_verified:
+        from youtube_audio_video_downloader.services.albums.catalog_tracks import find_catalog_album_release
+
+        release = find_catalog_album_release(name, release_year, expected_titles=expected_titles)
+        cover = str(release.get("album_art") or "")
+        if cover and cover != exclude_url:
+            return cover
+        raise AlbumArtNotFoundError(
+            "The current cover is already the verified album cover."
+            if cover else f'No cover could be verified against the tracks or release identity of "{name}" ({release_year}).'
+        )
     try:
         return _find_catalog_album_art(
             name,
@@ -430,7 +451,7 @@ def _find_catalog_album_art(
     """Use Apple's key-free catalog when Google serves an anti-bot page."""
     album_name = normalize_album_name(album_name)
     request = Request(
-        "https://itunes.apple.com/search?entity=album&limit=10&term="
+        "https://itunes.apple.com/search?country=IN&entity=album&limit=50&term="
         + quote_plus(album_name),
         headers={"User-Agent": http_user_agent()},
     )
@@ -441,36 +462,18 @@ def _find_catalog_album_art(
     for result in results:
         if not isinstance(result, dict):
             continue
-        collection = re.sub(
-            r"[^a-z0-9]+", " ", str(result.get("collectionName") or "").lower()
-        ).strip()
+        collection = _catalog_key(normalize_album_name(result.get("collectionName")))
         artwork = str(result.get("artworkUrl100") or "").strip()
         result_year = str(result.get("releaseDate") or "")[:4]
-        if release_year and result_year:
-            try:
-                # Soundtracks are sometimes released shortly before the film.
-                if abs(int(result_year) - int(release_year)) > 1:
-                    continue
-            except ValueError:
-                continue
+        if release_year and result_year != release_year:
+            continue
         candidate = artwork.replace("/100x100bb.", "/1200x1200bb.")
         if (
             candidate
             and candidate != exclude_url
-            and (
-                collection == normalized_name
-                or collection.startswith(normalized_name + " ")
-            )
+            and collection == normalized_name
         ):
             return candidate
-    if results and not release_year:
-        for result in results:
-            if not isinstance(result, dict):
-                continue
-            artwork = str(result.get("artworkUrl100") or "").strip()
-            candidate = artwork.replace("/100x100bb.", "/1200x1200bb.")
-            if candidate and candidate != exclude_url:
-                return candidate
     raise AlbumArtNotFoundError(
         f'No square album art was found for "{album_name}". You can still paste a URL manually.'
     )

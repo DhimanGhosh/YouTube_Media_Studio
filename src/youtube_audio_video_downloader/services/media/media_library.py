@@ -13,6 +13,7 @@ from mutagen import File as MutagenFile, MutagenError
 
 from youtube_audio_video_downloader.services.albums.album_names import canonical_album_name
 from youtube_audio_video_downloader.services.media.media_metadata import read_media_metadata
+from youtube_audio_video_downloader.utils.music_text import matches_music_query, music_words
 
 
 AUDIO_EXTENSIONS = frozenset({".mp3", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".wav", ".wma"})
@@ -86,14 +87,14 @@ def filter_library(
 ) -> list[LibraryItem]:
     """Filter items by free text and any combination of collection facets."""
 
-    needles = [part.casefold() for part in query.split() if part.strip()]
+    needles = music_words(query)
     wanted_artists = {value.casefold() for value in artists if value.strip()}
     wanted_albums = {value.casefold() for value in albums if value.strip()}
     result: list[LibraryItem] = []
     for item in items:
         haystack = f"{item.title} {item.album} {item.artists} {item.year or ''} {Path(item.path).name}".casefold()
         item_artists = {part.casefold() for part in split_artists(item.artists)}
-        if needles and not all(needle in haystack for needle in needles):
+        if needles and not matches_music_query(needles, haystack):
             continue
         if wanted_artists and item_artists.isdisjoint(wanted_artists):
             continue

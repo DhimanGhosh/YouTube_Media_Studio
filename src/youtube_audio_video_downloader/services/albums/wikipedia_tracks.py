@@ -109,8 +109,20 @@ class _TableParser(HTMLParser):
         self._cell_rowspan = 1
         self._cell_colspan = 1
         self._rowspans: dict[int, tuple[int, str]] = {}
+        self._reference_depth = 0
 
     def handle_starttag(self, tag: str, attrs) -> None:
+        if self._reference_depth:
+            if tag == "sup":
+                self._reference_depth += 1
+            return
+        attributes = dict(attrs)
+        if tag == "sup" and (
+            "reference" in (attributes.get("class") or "").split()
+            or str(attributes.get("id") or "").startswith("cite_")
+        ):
+            self._reference_depth = 1
+            return
         if tag in {"h2", "h3", "h4", "h5", "h6"} and self._table is None:
             self._heading_level = int(tag[1])
             self._heading_text = []
@@ -140,6 +152,8 @@ class _TableParser(HTMLParser):
             self._cell.append(", ")
 
     def handle_data(self, data: str) -> None:
+        if self._reference_depth:
+            return
         if self._cell is not None:
             self._cell.append(data)
         elif self._heading_level:
@@ -148,6 +162,10 @@ class _TableParser(HTMLParser):
             self._caption_text.append(data)
 
     def handle_endtag(self, tag: str) -> None:
+        if self._reference_depth:
+            if tag == "sup":
+                self._reference_depth -= 1
+            return
         if self._heading_level and tag == f"h{self._heading_level}":
             level = self._heading_level
             self._heading_level = 0

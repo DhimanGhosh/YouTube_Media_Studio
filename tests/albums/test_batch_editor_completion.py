@@ -464,7 +464,7 @@ class BatchEditorCompletionTest(unittest.TestCase):
             patch(
                 "youtube_audio_video_downloader.gui.components.widgets.find_album_art",
                 return_value="cover",
-            ),
+            ) as cover_search,
             patch(
                 "youtube_audio_video_downloader.gui.components.widgets.find_album_jukebox_video"
             ) as jukebox_search,
@@ -477,6 +477,7 @@ class BatchEditorCompletionTest(unittest.TestCase):
 
         individual_search.assert_called_once()
         jukebox_search.assert_not_called()
+        self.assertEqual(cover_search.call_args.kwargs["expected_titles"], ("Song",))
 
     def test_populated_entry_keeps_existing_nonblank_entries(self) -> None:
         editor = JsonBatchEditor("jukebox")

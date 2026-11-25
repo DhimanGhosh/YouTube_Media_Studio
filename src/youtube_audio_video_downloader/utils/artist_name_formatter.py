@@ -22,6 +22,7 @@ _KNOWN_ARTIST_ALIASES = {
 _KNOWN_COMPACT_ALIASES = {
     "arrahman": "AR Rahman",
     "kk": "KK",
+    "yoyohoneysingh": "Yo Yo Honey Singh",
 }
 _KNOWN_CREDIT_ALIASES = {
     ("vishal", "shekhar"): "Vishal Dadlani, Shekhar Ravjiani",

@@ -48,6 +48,9 @@ from PyQt6.QtWidgets import (
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
+    QSlider,
+    QStyle,
+    QStyleOptionSlider,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -77,6 +80,10 @@ from youtube_audio_video_downloader.services.metadata.release_year_finder import
 from youtube_audio_video_downloader.services.downloads.individual_track_search import (
     find_individual_album_tracks,
 )
+from youtube_audio_video_downloader.services.media.media_metadata import read_media_metadata
+from youtube_audio_video_downloader.services.albums.wikipedia_tracks import find_wikipedia_tracks
+from youtube_audio_video_downloader.services.albums.catalog_tracks import find_catalog_album_tracks
+from youtube_audio_video_downloader.utils.music_text import clean_song_title, music_words
 
 
 def _qt_alive(*objects: object) -> bool:
@@ -274,6 +281,27 @@ class BlankClickSelectionFilter(QObject):
         return None
 
 
+class ClickJumpSlider(QSlider):
+    """Jump to a clicked position while retaining native handle dragging and keys."""
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton:
+            option = QStyleOptionSlider()
+            self.initStyleOption(option)
+            handle = self.style().subControlRect(
+                QStyle.ComplexControl.CC_Slider, option, QStyle.SubControl.SC_SliderHandle, self,
+            )
+            if not handle.contains(event.position().toPoint()):
+                horizontal = self.orientation() == Qt.Orientation.Horizontal
+                size = handle.width() if horizontal else handle.height()
+                span = (self.width() if horizontal else self.height()) - size
+                position = event.position().x() if horizontal else event.position().y()
+                self.setValue(QStyle.sliderValueFromPosition(
+                    self.minimum(), self.maximum(), round(position - size / 2), max(1, span), option.upsideDown,
+                ))
+        super().mousePressEvent(event)
+
+
 class RetryingThread(QThread):
     """QThread with the shared bounded retry behavior used by inline lookups."""
 
@@ -329,17 +357,37 @@ class AlbumArtSearcher(RetryingThread):
         *,
         retry_attempts: int = 3,
         exclude_url: str = "",
+        release_year: str = "",
+        expected_titles: tuple[str, ...] = (),
+        source_files: tuple[str, ...] = (),
     ) -> None:
         super().__init__(parent, retry_attempts=retry_attempts)
         self.album_name = album_name
         self.exclude_url = exclude_url
+        self.release_year = release_year
+        self.expected_titles = expected_titles
+        self.source_files = source_files
 
     def run(self) -> None:
         try:
+            titles = list(self.expected_titles)
+            for path in self.source_files:
+                if self.isInterruptionRequested():
+                    return
+                try:
+                    title = read_media_metadata(path).title.strip()
+                    if title:
+                        titles.append(title)
+                except (OSError, RuntimeError, ValueError):
+                    continue
+            expected_titles = tuple(dict.fromkeys(titles))
             self.found.emit(
                 self.album_name,
                 self.retry_call(
-                    lambda: find_album_art(self.album_name, exclude_url=self.exclude_url)
+                    lambda: find_album_art(
+                        self.album_name, exclude_url=self.exclude_url,
+                        release_year=self.release_year, expected_titles=expected_titles, require_verified=True,
+                    )
                 ),
             )
         except Exception as exc:  # Network/search errors are displayed inline.
@@ -360,6 +408,9 @@ class CoverImageLoader(RetryingThread):
         try:
 
             def load() -> bytes:
+                if not self.url.lower().startswith(("http://", "https://")):
+                    with Path(self.url).expanduser().open("rb") as source:
+                        return source.read(15 * 1024 * 1024 + 1)
                 request = Request(self.url, headers={"User-Agent": "Mozilla/5.0"})
                 with urlopen(request, timeout=15) as response:  # noqa: S310
                     return response.read(15 * 1024 * 1024 + 1)
@@ -494,6 +545,40 @@ class ReleaseYearSearcher(RetryingThread):
             self.failed.emit(self.album_name, str(exc))
 
 
+class ArtistNamesSearcher(RetryingThread):
+    """Suggest performers for a known album or one track without changing its tags."""
+    found = pyqtSignal(str, object)
+    failed = pyqtSignal(str, str)
+
+    def __init__(self, album_name: str, release_year: str = "", song_title: str = "", parent=None):
+        super().__init__(parent, retry_attempts=1)
+        self.album_name = album_name
+        self.release_year = release_year
+        self.song_title = song_title
+
+    def run(self) -> None:
+        try:
+            try:
+                rows = find_wikipedia_tracks(self.album_name, self.release_year)
+            except (OSError, ValueError):
+                rows = []
+            if not rows:
+                rows = find_catalog_album_tracks(self.album_name, self.release_year)
+            if self.song_title:
+                wanted = music_words(clean_song_title(self.song_title))
+                matches = [row for row in rows if music_words(clean_song_title(str(row.get("title") or ""))) == wanted]
+                if len(matches) != 1:
+                    raise LookupError("No unambiguous artist suggestion matched this song in the album.")
+                rows = matches
+            artists = format_artist_names(", ".join(str(row.get("artists") or "") for row in rows))
+            if not artists:
+                raise LookupError("No artist credits were found for this album.")
+            if not self.isInterruptionRequested():
+                self.found.emit(self.album_name, {"artists": artists})
+        except Exception as exc:
+            self.failed.emit(self.album_name, str(exc))
+
+
 class TrackMetadataSearcher(RetryingThread):
     """Resolve a jukebox track's album, artists, artwork, and year."""
 
@@ -572,15 +657,6 @@ class AlbumMetadataAutoFiller(RetryingThread):
                 result.update(year_result)
             except Exception as exc:
                 result["errors"].append(f"year: {exc}")  # type: ignore[union-attr]
-        try:
-            result["album_art"] = self.retry_call(
-                lambda: find_album_art(
-                    self.lookup_name,
-                    release_year=str(result.get("year") or ""),
-                )
-            )
-        except Exception as exc:
-            result["errors"].append(f"cover: {exc}")  # type: ignore[union-attr]
         if self.isInterruptionRequested():
             return
         try:
@@ -601,6 +677,22 @@ class AlbumMetadataAutoFiller(RetryingThread):
         except Exception as exc:
             source = "individual tracks" if self.individual_tracks else "YouTube jukebox"
             result["errors"].append(f"{source}: {exc}")  # type: ignore[union-attr]
+        if self.isInterruptionRequested():
+            return
+        expected_titles = tuple(
+            str(next(iter(track))) for track in result.get("individual_tracks", [])
+            if isinstance(track, dict) and track
+        )
+        try:
+            result["album_art"] = self.retry_call(
+                lambda: find_album_art(
+                    self.lookup_name, release_year=str(result.get("year") or ""),
+                    expected_titles=expected_titles,
+                    require_verified=True,
+                )
+            )
+        except Exception as exc:
+            result["errors"].append(f"cover: {exc}")
         if not self.isInterruptionRequested():
             self.completed.emit(self.album_name, result)
 
@@ -635,6 +727,100 @@ class CoverPreviewDialog(QDialog):
         layout.addWidget(close_button, 0, Qt.AlignmentFlag.AlignCenter)
 
 
+class ArtworkSearchControls(QWidget):
+    """Browse, find and preview artwork while deferring all metadata writes to Apply."""
+
+    def __init__(self, picker: PathPicker, identity, remove_artwork: QCheckBox, parent=None):
+        super().__init__(parent)
+        self.picker = picker
+        self.identity = identity
+        self.remove_artwork = remove_artwork
+        self._threads: set[QThread] = set()
+        self._dialogs: set[CoverPreviewDialog] = set()
+        self._closing = False
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        row = QHBoxLayout()
+        row.addWidget(picker, 1)
+        self.find_button = QPushButton("Find cover")
+        self.preview_button = QPushButton("Preview")
+        for button in (self.find_button, self.preview_button):
+            button.setObjectName("secondaryButton")
+            row.addWidget(button)
+        layout.addLayout(row)
+        self.status = QLabel()
+        self.status.setObjectName("mutedLabel")
+        self.status.setWordWrap(True)
+        layout.addWidget(self.status)
+        self.find_button.clicked.connect(self.find_cover)
+        self.preview_button.clicked.connect(self.preview)
+
+    def _start(self, worker: QThread, button: QPushButton, label: str) -> None:
+        self._threads.add(worker)
+        button.setEnabled(False)
+        worker.finished.connect(lambda: _finish_async_button(button, label))
+        worker.finished.connect(lambda: self._threads.discard(worker))
+        worker.finished.connect(worker.deleteLater)
+        worker.start()
+
+    def find_cover(self) -> None:
+        context = self.identity()
+        if not context.get("album_name"):
+            self.status.setText("Enter an album name first.")
+            return
+        if not context.get("expected_titles") and not context.get("source_files"):
+            self.status.setText("Load a media file or album folder first so its cover can be verified.")
+            return
+        worker = AlbumArtSearcher(
+            context["album_name"], self, release_year=context.get("release_year", ""),
+            expected_titles=tuple(context.get("expected_titles", ())),
+            source_files=tuple(context.get("source_files", ())), retry_attempts=1,
+        )
+        self.status.setText("Finding a cover for this release…")
+        def apply(_name: str, url: str) -> None:
+            if not self._closing and _qt_alive(self) and self.identity() == context:
+                self.picker.set_text(url)
+                self.remove_artwork.setChecked(False)
+                self.status.setText("Verified cover found. Preview it, then apply the edit to save.")
+        def failed(_name: str, message: str) -> None:
+            if not self._closing and _qt_alive(self) and self.identity() == context:
+                self.status.setText(message)
+        worker.found.connect(apply)
+        worker.failed.connect(failed)
+        self._start(worker, self.find_button, "Find cover")
+
+    def preview(self) -> None:
+        url = self.picker.text().strip()
+        if not url:
+            self.status.setText("Choose an artwork file or find a cover first.")
+            return
+        worker = CoverImageLoader(url, self, retry_attempts=1)
+        def show(loaded_url: str, data: bytes) -> None:
+            if self._closing or not _qt_alive(self) or self.picker.text().strip() != loaded_url:
+                return
+            pixmap = QPixmap()
+            if not pixmap.loadFromData(data):
+                self.status.setText("The selected artwork could not be decoded as an image.")
+                return
+            dialog = CoverPreviewDialog(pixmap, self)
+            self._dialogs.add(dialog)
+            dialog.finished.connect(lambda _result: self._dialogs.discard(dialog))
+            dialog.finished.connect(dialog.deleteLater)
+            dialog.open()
+        worker.loaded.connect(show)
+        worker.failed.connect(lambda _url, message: self.status.setText(message) if not self._closing and _qt_alive(self) else None)
+        self._start(worker, self.preview_button, "Preview")
+
+    def cancel_background_tasks(self) -> list[QThread]:
+        self._closing = True
+        running = [worker for worker in self._threads if worker.isRunning()]
+        for worker in running:
+            worker.requestInterruption()
+        for dialog in list(self._dialogs):
+            dialog.close()
+        return running
+
+
 class LiquidBackground(QWidget):
     """Animated blurred-looking gradient blobs behind the glass shell."""
 
@@ -642,6 +828,7 @@ class LiquidBackground(QWidget):
         super().__init__(parent)
         self._phase = 0.0
         self._interactive_resize = False
+        self._native_glass = False
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         timer = QTimer(self)
         timer.timeout.connect(self._advance)
@@ -656,6 +843,10 @@ class LiquidBackground(QWidget):
             self._timer.stop()
         elif not self._timer.isActive():
             self._timer.start(32)
+        self.update()
+
+    def set_native_glass(self, active: bool) -> None:
+        self._native_glass = bool(active)
         self.update()
 
     @property
@@ -675,9 +866,10 @@ class LiquidBackground(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         base = QLinearGradient(0, 0, self.width(), self.height())
-        base.setColorAt(0.0, QColor(7, 11, 27))
-        base.setColorAt(0.46, QColor(13, 17, 38))
-        base.setColorAt(1.0, QColor(7, 20, 30))
+        opacity = 0 if self._native_glass else 255
+        base.setColorAt(0.0, QColor(7, 11, 27, opacity))
+        base.setColorAt(0.46, QColor(13, 17, 38, opacity))
+        base.setColorAt(1.0, QColor(7, 20, 30, opacity))
         painter.fillRect(self.rect(), base)
 
         if self._interactive_resize:
@@ -706,6 +898,8 @@ class LiquidBackground(QWidget):
 
         painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Screen)
         for x_ratio, y_ratio, radius_ratio, color in blobs:
+            if self._native_glass:
+                color.setAlpha(color.alpha() // 4)
             center_x = self.width() * x_ratio
             center_y = self.height() * y_ratio
             radius = min(self.width(), self.height()) * radius_ratio
@@ -1233,7 +1427,7 @@ class JsonBatchEditor(QWidget):
                 album_name_edit = name_edit if self.kind == "album" else fields.get("album")
                 form.addRow(
                     "Album Art",
-                    self._album_art_row(widget, album_name_edit, section),
+                    self._album_art_row(widget, album_name_edit, section, fields=fields),
                 )
             elif field == "ytb_link" and self.kind in {"album", "jukebox"}:
                 form.addRow(
@@ -2322,9 +2516,9 @@ class JsonBatchEditor(QWidget):
         art_edit.setPlaceholderText("Paste a URL or find a square cover automatically")
         find_button = QPushButton("Find cover")
         find_button.setObjectName("secondaryButton")
-        find_button.setToolTip("Search Google Images for the first square album-art image")
+        find_button.setToolTip("Find artwork using the album identity, release year, and available tracks")
         find_button.clicked.connect(
-            lambda checked=False: self._find_album_art(album_edit, art_edit, find_button, section)
+            lambda checked=False: self._find_album_art(album_edit, art_edit, find_button, section, fields=fields)
         )
         if fields is not None:
             fields["__find_cover_button__"] = find_button
@@ -2404,6 +2598,8 @@ class JsonBatchEditor(QWidget):
         art_edit: QLineEdit,
         button: QPushButton,
         section: CollapsibleSection,
+        *,
+        fields: dict | None = None,
     ) -> None:
         album_name = self._field_value(album_edit) if album_edit is not None else ""
         if not album_name:
@@ -2418,13 +2614,15 @@ class JsonBatchEditor(QWidget):
             self,
             retry_attempts=self.retry_attempts,
             exclude_url=art_edit.text().strip(),
+            release_year=self._field_value(fields.get("release_year")) if fields else "",
+            expected_titles=tuple(next(iter(track)) for track in self._track_data(fields.get("__tracks__", []))) if fields else (),
         )
         self._album_art_searchers.add(searcher)
 
         def apply_result(searched_name: str, url: str) -> None:
             if self._field_value(album_edit) == searched_name:
                 art_edit.setText(url)
-                art_edit.setToolTip("Square cover found with Google Images")
+                art_edit.setToolTip("Album cover found using release identity and available track evidence")
                 section.set_status("Cover found")
 
         def apply_error(searched_name: str, message: str) -> None:

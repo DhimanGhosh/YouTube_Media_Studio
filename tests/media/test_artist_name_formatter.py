@@ -10,6 +10,14 @@ from youtube_audio_video_downloader.utils.artist_name_formatter import (
 
 
 class ArtistNameFormatterTest(unittest.TestCase):
+    def test_normalizes_honey_singh_casing_without_changing_acronyms(self) -> None:
+        for name in ("YO YO Honey Singh", "Yo Yo Honey Singh", "yo yo honey singh",
+                     "YO-YO Honey Singh", "YoYo Honey Singh"):
+            with self.subTest(name=name):
+                self.assertEqual(format_artist_names(name), "Yo Yo Honey Singh")
+        self.assertEqual(format_artist_names("KK, AR Rahman, DJ Example"),
+                         "KK, AR Rahman, DJ Example")
+
     def test_normalizes_ampersand_and_case_insensitive_and(self) -> None:
         self.assertEqual(
             format_artist_names(

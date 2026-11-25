@@ -37,9 +37,108 @@ from youtube_audio_video_downloader.services.albums.album_editor import (  # noq
 
 
 class MainWindowGlobalAiUiTest(unittest.TestCase):
+    def test_crystalness_click_jumps_to_position_and_keeps_dragging(self) -> None:
+        from PyQt6.QtCore import QPoint
+        slider = self.window.settings_crystalness
+        slider.resize(400, 26)
+        slider.setValue(1)
+        QTest.mouseClick(slider, Qt.MouseButton.LeftButton, pos=QPoint(300, 13))
+        self.assertGreater(slider.value(), 70)
+        self.assertLess(slider.value(), 80)
+        QTest.mousePress(slider, Qt.MouseButton.LeftButton, pos=QPoint(300, 13))
+        QTest.mouseMove(slider, QPoint(100, 13))
+        QTest.mouseRelease(slider, Qt.MouseButton.LeftButton, pos=QPoint(100, 13))
+        self.assertGreater(slider.value(), 20)
+        self.assertLess(slider.value(), 30)
+
+    def test_settings_transparency_has_a_small_first_step_and_visible_range(self) -> None:
+        with patch("youtube_audio_video_downloader.gui.application.main_window.native_glass_supported", return_value=True), patch(
+            "youtube_audio_video_downloader.gui.application.main_window.apply_native_glass", return_value=True,
+        ):
+            self.window.show()
+            self.window._open_settings_dialog()
+            self.window.settings_categories.setCurrentRow(7)
+            colors = []
+            menu_colors = []
+            for level in (0, 1, 50, 100):
+                self.window._apply_crystalness(level, persist=False)
+                self.app.processEvents()
+                image = self.window._settings_surface.grab().toImage()
+                colors.append(image.pixelColor(image.width() // 2, image.height() - 100))
+                menu_image = self.window.menuBar().grab().toImage()
+                menu_colors.append(menu_image.pixelColor(menu_image.width() // 2, menu_image.height() // 2))
+            self.assertEqual(colors[0].alpha(), 255)
+            self.assertLessEqual(abs(colors[0].alpha() - colors[1].alpha()), 3)
+            self.assertGreater(colors[1].alpha(), colors[2].alpha())
+            self.assertGreater(colors[2].alpha(), colors[3].alpha())
+            self.assertGreater(menu_colors[1].alpha(), menu_colors[2].alpha())
+            self.assertGreater(menu_colors[2].alpha(), menu_colors[3].alpha())
+            self.assertEqual(self.window.windowOpacity(), 1.0)
+
+    def test_download_menu_contains_all_download_workflows(self) -> None:
+        menus = {action.text(): action.menu() for action in self.window.menuBar().actions() if action.menu()}
+        download = [action.text() for action in menus["Download"].actions() if not action.isSeparator()]
+        self.assertEqual(download, ["Search Song", "Audio Downloader", "Video Downloader",
+                                    "Album Splitter", "Jukebox Splitter"])
+        organize = [action.text() for action in menus["Organize"].actions()]
+        self.assertNotIn("Album Splitter", organize)
+        self.assertNotIn("Jukebox Splitter", organize)
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.app = QApplication.instance() or QApplication([])
+
+    def test_edit_file_and_album_have_verified_cover_search_and_preview(self) -> None:
+        for controls in (self.window.edit_file_cover_controls, self.window.edit_album_cover_controls):
+            self.assertEqual(controls.find_button.text(), "Find cover")
+            self.assertEqual(controls.preview_button.text(), "Preview")
+        self.window.edit_meta_album.setText("Goodbye (2022)")
+        self.window.edit_meta_year.setText("2022")
+        self.window.edit_meta_title.setText("Maaye")
+        self.window.edit_meta_remove_artwork.setChecked(True)
+        controls = self.window.edit_file_cover_controls
+        with patch("youtube_audio_video_downloader.gui.components.widgets.AlbumArtSearcher.start"):
+            controls.find_cover()
+        worker = next(iter(controls._threads))
+        self.assertEqual(worker.release_year, "2022")
+        self.assertEqual(worker.expected_titles, ("Maaye",))
+        worker.found.emit("Goodbye (2022)", "https://verified/cover.jpg")
+        self.assertEqual(self.window.edit_meta_artwork.text(), "https://verified/cover.jpg")
+        self.assertFalse(self.window.edit_meta_remove_artwork.isChecked())
+        worker.finished.emit()
+
+    def test_cover_result_for_previous_album_does_not_replace_current_edit(self) -> None:
+        self.window.edit_meta_album.setText("Goodbye")
+        self.window.edit_meta_title.setText("Maaye")
+        controls = self.window.edit_file_cover_controls
+        with patch("youtube_audio_video_downloader.gui.components.widgets.AlbumArtSearcher.start"):
+            controls.find_cover()
+        worker = next(iter(controls._threads))
+        self.window.edit_meta_album.setText("Another Album")
+        worker.found.emit("Goodbye", "https://stale/cover.jpg")
+        self.assertEqual(self.window.edit_meta_artwork.text(), "")
+        worker.finished.emit()
+
+    def test_edit_lookup_buttons_fill_editable_year_and_artists_without_saving(self) -> None:
+        for scope in ("file", "album"):
+            with self.subTest(scope=scope):
+                album = self.window.edit_meta_album if scope == "file" else self.window.edit_album_name
+                album.setText("Goodbye (2022)")
+                controls = self.window.edit_file_cover_controls if scope == "file" else self.window.edit_album_cover_controls
+                for target, value, worker_class in (("year", "2022", "ReleaseYearSearcher"),
+                                                     ("artists", "Amit Trivedi", "ArtistNamesSearcher")):
+                    button = getattr(self.window, f"edit_{scope}_find_{target}_button")
+                    with patch(f"youtube_audio_video_downloader.gui.application.main_window.{worker_class}.start"):
+                        button.click()
+                    worker = next(iter(controls._threads))
+                    worker.found.emit("Goodbye", {target: value})
+                    field = (self.window.edit_meta_year if target == "year" else self.window.edit_meta_artists) if scope == "file" else (
+                        self.window.edit_album_year if target == "year" else self.window.edit_album_artist)
+                    self.assertEqual(field.text(), value)
+                    correction = "2021" if target == "year" else "My correction"
+                    field.setText(correction)
+                    self.assertEqual(field.text(), correction)
+                    worker.finished.emit()
 
     def test_stale_downloader_at_startup_is_logged_without_a_popup(self) -> None:
         with (

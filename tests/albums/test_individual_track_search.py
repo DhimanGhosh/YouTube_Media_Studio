@@ -13,6 +13,172 @@ from youtube_audio_video_downloader.services.downloads.individual_track_search i
 
 
 class IndividualTrackSearchTest(unittest.TestCase):
+    def setUp(self):
+        resolver = patch("youtube_audio_video_downloader.services.downloads.individual_track_search.find_catalog_album_release", return_value={})
+        self.release = resolver.start()
+        self.addCleanup(resolver.stop)
+
+    @patch("youtube_audio_video_downloader.services.downloads.individual_track_search.find_wikipedia_tracks")
+    @patch("yt_dlp.YoutubeDL")
+    def test_catalog_singer_version_uses_clean_query_and_explicit_label_credits(self, youtube, wiki):
+        title = "Aye Dil Pagal Mere (Sunidhi Chauhan Version)"
+        wiki.return_value = [{"title": title, "artists": "Sunidhi Chauhan, Pritam", "duration_seconds": 314}]
+        entry = {"id": "official", "title": "Aye Dil Pagal Mere - Naqaab | Sunidhi Chauhan | Pritam",
+                 "channel_is_verified": True, "duration": 316}
+        youtube.return_value.__enter__.return_value.extract_info.side_effect = [
+            {"entries": [entry]}, {**entry, "description": "Singer(s): Sunidhi Chauhan\nMusic Director: Pritam"},
+        ]
+        result = find_individual_album_tracks("Naqaab", "2007")
+        self.assertTrue(result[0][title]["ytb_link"].endswith("=official"))
+        query = youtube.return_value.__enter__.return_value.extract_info.call_args_list[0].args[0]
+        self.assertNotIn("(Sunidhi Chauhan Version)", query)
+
+    @patch("youtube_audio_video_downloader.services.downloads.individual_track_search.find_wikipedia_tracks")
+    @patch("yt_dlp.YoutubeDL")
+    def test_fallback_query_omits_version_but_verification_still_requires_it(self, youtube, wiki):
+        wiki.return_value = [{"title": "Maaye Reprise", "artists": "Singer", "duration_seconds": 274}]
+        entry = {"id": "reprise", "title": "Maaye - Singer | Goodbye", "duration": 287, "channel_is_verified": True}
+        extract = youtube.return_value.__enter__.return_value.extract_info
+        extract.side_effect = [{"entries": []}, {"entries": [entry]},
+                               {**entry, "description": "Song Name - Maaye Reprise\nSinger - Singer"}]
+        result = find_individual_album_tracks("Goodbye", "2022")
+        self.assertTrue(result[0]["Maaye Reprise"]["ytb_link"].endswith("=reprise"))
+        self.assertEqual(extract.call_args_list[1].args[0], "ytsearch8:Maaye Goodbye Singer")
+
+    @patch("youtube_audio_video_downloader.services.downloads.individual_track_search.find_wikipedia_tracks")
+    @patch("yt_dlp.YoutubeDL")
+    def test_missing_duration_and_singer_version_require_verified_release_credits(self, youtube, wiki):
+        title = "Ae Dil Pagal Mere (Reprise)"
+        wiki.return_value = [{"title": title, "artists": "Sunidhi Chauhan", "duration_seconds": 0}]
+        self.release.return_value = {"tracks": [{"title": "Aye Dil Pagal Mere (Sunidhi Chauhan Version)",
+                                                "artists": "Sunidhi Chauhan, Pritam", "duration_seconds": 314}]}
+        entry = {"id": "sunidhi", "title": "Aye Dil Pagal Mere", "channel": "Sunidhi Chauhan - Topic", "duration": 314}
+        for singer, accepted in (("Sunidhi Chauhan", True), ("Sonu Nigam", False)):
+            with self.subTest(singer=singer):
+                youtube.return_value.__enter__.return_value.extract_info.side_effect = [
+                    {"entries": [entry]}, {**entry, "track": entry["title"], "album": "Naqaab", "artists": [singer]},
+                    {"entries": []},
+                ]
+                if accepted:
+                    result = find_individual_album_tracks("Naqaab", "2007")
+                    self.assertTrue(result[0][title]["ytb_link"].endswith("=sunidhi"))
+                else:
+                    with self.assertRaises(LookupError):
+                        find_individual_album_tracks("Naqaab", "2007")
+
+    @patch("youtube_audio_video_downloader.services.downloads.individual_track_search.find_catalog_song_metadata")
+    @patch("youtube_audio_video_downloader.services.downloads.individual_track_search.find_wikipedia_tracks")
+    @patch("yt_dlp.YoutubeDL")
+    def test_wrong_wikipedia_duration_can_use_catalog_plus_verified_description(self, youtube, wiki, catalog):
+        wiki.return_value = [{"title": "Kanni Re Kanni", "artists": "Nakash Aziz", "duration_seconds": 352}]
+        catalog.return_value = {"title": "Kanni Re Kanni", "album": "Goodbye", "year": "2022",
+                                "duration_seconds": "232"}
+        entry = {"id": "correct", "title": "Kanni Re Kanni | Goodbye | Nakash A", "duration": 242,
+                 "channel_is_verified": True}
+        youtube.return_value.__enter__.return_value.extract_info.side_effect = [
+            {"entries": [entry]}, {"entries": []},
+            {**entry, "description": "Song: Kanni Re Kanni\nSinger: Nakash Aziz"},
+        ]
+        result = find_individual_album_tracks("Goodbye", "2022")
+        self.assertTrue(result[0]["Kanni Re Kanni"]["ytb_link"].endswith("=correct"))
+        self.assertIn("Wikipedia lists 05:52", result[0]["Kanni Re Kanni"]["length_notice"])
+
+    @patch("youtube_audio_video_downloader.services.downloads.individual_track_search.find_wikipedia_tracks")
+    @patch("yt_dlp.YoutubeDL")
+    def test_missing_reprise_label_requires_explicit_description_song_and_singers(self, youtube, wiki):
+        wiki.return_value = [{"title": "Maaye (Reprise)", "artists": "Devenderpal Singh, Shreya Ghoshal",
+                              "duration_seconds": 274}]
+        entry = {"id": "reprise", "title": "Maaye - Shreya Ghoshal | Goodbye", "duration": 287,
+                 "channel_is_verified": True}
+        for song, matches in (("Maaye Reprise", True), ("Maaye", False)):
+            with self.subTest(song=song):
+                youtube.return_value.__enter__.return_value.extract_info.side_effect = [
+                    {"entries": [entry]},
+                    {**entry, "description": f"Song: {song}\nSingers: Devenderpal Singh & Shreya Ghoshal"},
+                    {"entries": []},
+                ]
+                if matches:
+                    result = find_individual_album_tracks("Goodbye", "2022")
+                    self.assertTrue(result[0]["Maaye (Reprise)"]["ytb_link"].endswith("=reprise"))
+                else:
+                    with self.assertRaises(LookupError):
+                        find_individual_album_tracks("Goodbye", "2022")
+
+    @patch("youtube_audio_video_downloader.services.downloads.individual_track_search.find_wikipedia_tracks")
+    @patch("yt_dlp.YoutubeDL")
+    def test_topic_metadata_can_verify_spelling_and_album_transliteration(self, youtube, wiki):
+        title = "Pyar Mein Sau Uljhanne Hai"
+        wiki.return_value = [{"title": title, "artists": "Singer", "duration_seconds": 329}]
+        entry = {"id": "topic", "title": "Pyaar Mein Sau Uljhane", "channel": "Singer - Topic",
+                 "duration": 330}
+        for album, matches in (("Kal Ho Naa Ho", True), ("Another Album", False)):
+            with self.subTest(album=album):
+                youtube.return_value.__enter__.return_value.extract_info.side_effect = [
+                    {"entries": [entry]},
+                    {**entry, "track": entry["title"], "album": album, "artists": ["Singer"]},
+                    {"entries": []},
+                ]
+                if matches:
+                    result = find_individual_album_tracks("Kaal Ho Na Ho", "2003")
+                    self.assertTrue(result[0][title]["ytb_link"].endswith("=topic"))
+                else:
+                    with self.assertRaises(LookupError):
+                        find_individual_album_tracks("Kaal Ho Na Ho", "2003")
+
+    @patch("youtube_audio_video_downloader.services.downloads.individual_track_search.find_wikipedia_tracks")
+    @patch("yt_dlp.YoutubeDL")
+    def test_catalog_title_annotation_is_cleaned_for_display_and_topic_matching(self, youtube, wiki):
+        title = 'Shaajo Shaajao (From "Ballabhpurer Roopkotha") [Female]'
+        wiki.return_value = [{"title": title, "artists": "Sahana Bajpaie", "duration_seconds": 273}]
+        entry = {"id": "female", "title": 'Shaajo Shaajao ( From "Ballabhpurer Roopkotha") (Female)',
+                 "channel": "Sahana Bajpaie - Topic", "duration": 273}
+        youtube.return_value.__enter__.return_value.extract_info.side_effect = [
+            {"entries": [entry]},
+            {**entry, "track": entry["title"], "artists": ["Sahana Bajpaie"],
+             "album": "Ballabhpurer Roopkotha (Original Motion Picture Soundtrack)"},
+        ]
+        result = find_individual_album_tracks("Ballabhpurer Roopkotha", "2022")
+        self.assertEqual(list(result[0]), ["Shaajo Shaajao - Female"])
+        self.assertTrue(result[0]["Shaajo Shaajao - Female"]["ytb_link"].endswith("=female"))
+
+    @patch("youtube_audio_video_downloader.services.downloads.individual_track_search.find_wikipedia_tracks")
+    @patch("yt_dlp.YoutubeDL")
+    def test_album_with_only_remix_versions_explains_omission_without_search(self, youtube, wiki):
+        wiki.return_value = [{"title": "Song (DJ Mix)", "artists": "Singer"}]
+        with self.assertRaisesRegex(LookupError, "excluding remix and DJ"):
+            find_individual_album_tracks("Album")
+        youtube.assert_not_called()
+
+    @patch("youtube_audio_video_downloader.services.downloads.individual_track_search.find_catalog_song_metadata", return_value={})
+    @patch("youtube_audio_video_downloader.services.downloads.individual_track_search.find_wikipedia_tracks")
+    @patch("yt_dlp.YoutubeDL")
+    def test_transliterated_song_title_requires_verified_release_evidence(self, youtube, wiki, catalog):
+        title = "Pyar Mein Sau Uljhanne Hai"
+        wiki.return_value = [{"title": title, "duration_seconds": 329,
+                              "artists": "Shankar Mahadevan, Mahalaxmi Iyer, Sneha Pant, Vijay Prakash"}]
+        entry = {"id": "Bme4ck1j6B8", "duration": 330, "channel_is_verified": True,
+                 "title": "Pyaar Mein Sau Uljhane | Aishwarya Rai | Vivek Oberoi | Kyun Ho Gaya Na | Shankar Mahadevan"}
+        for changes, matches in (
+            ({}, True),
+            ({"channel_is_verified": False}, False),
+            ({"duration": 180}, False),
+            ({"duration": 0}, False),
+            ({"title": entry["title"].replace("Kyun Ho Gaya Na", "Another Album")}, False),
+            ({"title": entry["title"].replace("Shankar Mahadevan", "Another Singer")}, False),
+            ({"title": entry["title"].replace("Pyaar Mein Sau Uljhane", "An Unrelated Song")}, False),
+            ({"title": entry["title"].replace("Uljhane", "Uljhane Remix")}, False),
+        ):
+            with self.subTest(changes=changes):
+                youtube.return_value.__enter__.return_value.extract_info.return_value = {
+                    "entries": [{**entry, **changes}],
+                }
+                if matches:
+                    result = find_individual_album_tracks("Kyun Ho Gaya Na", "2004")
+                    self.assertTrue(result[0][title]["ytb_link"].endswith("=Bme4ck1j6B8"))
+                else:
+                    with self.assertRaises(LookupError):
+                        find_individual_album_tracks("Kyun Ho Gaya Na", "2004")
+
     @patch("youtube_audio_video_downloader.services.downloads.individual_track_search.find_wikipedia_tracks")
     @patch("yt_dlp.YoutubeDL")
     def test_gender_label_can_be_omitted_only_with_matching_release_credits(self, youtube, wiki):
@@ -38,7 +204,7 @@ class IndividualTrackSearchTest(unittest.TestCase):
                 extract.side_effect = [{"entries": [entry]}, metadata, {"entries": []}]
                 if matches:
                     result = find_individual_album_tracks("Once Upon a Time in Mumbaai", "2010")
-                    self.assertTrue(result[0]["I Am in Love (Male)"]["ytb_link"].endswith("=recording"))
+                    self.assertTrue(result[0]["I Am in Love - Male"]["ytb_link"].endswith("=recording"))
                 else:
                     with self.assertRaises(LookupError):
                         find_individual_album_tracks("Once Upon a Time in Mumbaai", "2010")
@@ -55,7 +221,7 @@ class IndividualTrackSearchTest(unittest.TestCase):
              "album": "Once Upon a Time in Mumbaai", "artists": ["Pritam", "Tulsi Kumar"]},
         ]
         result = find_individual_album_tracks("Once Upon a Time in Mumbaai", "2010")
-        self.assertTrue(result[0]["Pee Loon (Female)"]["ytb_link"].endswith("=duet"))
+        self.assertTrue(result[0]["Pee Loon - Female"]["ytb_link"].endswith("=duet"))
 
     @patch("youtube_audio_video_downloader.services.downloads.individual_track_search.find_wikipedia_tracks")
     @patch("yt_dlp.YoutubeDL")
@@ -76,7 +242,7 @@ class IndividualTrackSearchTest(unittest.TestCase):
                 ]
                 if matches:
                     result = find_individual_album_tracks("Once Upon a Time in Mumbaai", "2010")
-                    self.assertTrue(result[0]["Pee Loon (Male)"]["ytb_link"].endswith("=lyrical"))
+                    self.assertTrue(result[0]["Pee Loon - Male"]["ytb_link"].endswith("=lyrical"))
                 else:
                     with self.assertRaises(LookupError):
                         find_individual_album_tracks("Once Upon a Time in Mumbaai", "2010")
@@ -84,15 +250,19 @@ class IndividualTrackSearchTest(unittest.TestCase):
     @patch("youtube_audio_video_downloader.services.downloads.individual_track_search.find_catalog_song_metadata", return_value={})
     @patch("youtube_audio_video_downloader.services.downloads.individual_track_search.find_wikipedia_tracks")
     @patch("yt_dlp.YoutubeDL")
-    def test_remix_attribution_is_not_required_in_youtube_title(self, youtube, wiki, catalog):
-        title = "Pee Loon (remixed by DJ A-myth)"
-        wiki.return_value = [{"title": title, "artists": "Mohit Chauhan", "duration_seconds": 249}]
+    def test_remix_and_dj_rows_are_omitted_without_searching_them(self, youtube, wiki, catalog):
+        titles = ["Pee Loon", "Pee Loon (remixed by DJ A-myth)", "Pee Loon (DJ Version)",
+                  "Pee Loon (DJ Star)", "Pee Loon (Mashup)", "Pee Loon (Dance)", "Pee Loon [Club Edit]"]
+        wiki.return_value = [{"title": title, "artists": "Mohit Chauhan", "duration_seconds": 249}
+                             for title in titles]
         youtube.return_value.__enter__.return_value.extract_info.return_value = {
             "entries": [{"id": "base", "title": "Pee Loon", "duration": 249},
                         {"id": "remix", "title": "Pee Loon (Remix)", "duration": 248}],
         }
         result = find_individual_album_tracks("Once Upon a Time in Mumbaai", "2010")
-        self.assertTrue(result[0][title]["ytb_link"].endswith("=remix"))
+        self.assertEqual([next(iter(track)) for track in result], ["Pee Loon"])
+        self.assertTrue(result[0]["Pee Loon"]["ytb_link"].endswith("=base"))
+        self.assertEqual(youtube.return_value.__enter__.return_value.extract_info.call_count, 2)
 
     def test_gender_does_not_override_conflicting_recording_variants(self):
         self.assertTrue(_variant_compatible({"female"}, {"female", "version"}))
@@ -247,7 +417,7 @@ class IndividualTrackSearchTest(unittest.TestCase):
             tracks[0]["Pink Lips"]["length_notice"],
             "Wikipedia lists 03:29. Matched YouTube audio runs 04:15.",
         )
-        self.assertIn("Pink Lips Hate Story 2 full audio", extract.call_args.args[0])
+        self.assertIn("Pink Lips Hate Story 2 Meet Bros Anjjan, Khushboo Grewal", extract.call_args.args[0])
 
         extract.side_effect = [{"entries": [searches[1]["entries"][-1]]}, DownloadError("timeout")]
         tracks = find_individual_album_tracks("Hate Story 2", "2014")
@@ -270,10 +440,10 @@ class IndividualTrackSearchTest(unittest.TestCase):
     @patch("yt_dlp.YoutubeDL")
     def test_topic_recording_checks_album_and_artist_credits(self, youtube, wiki) -> None:
         wiki.return_value = [
-            {"title": "Kabhi Aayine (Remix)", "artists": "KK", "duration_seconds": 285},
+            {"title": "Kabhi Aayine (Reprise)", "artists": "KK", "duration_seconds": 285},
         ]
         extract = youtube.return_value.__enter__.return_value.extract_info
-        title = "Kabhi Aayine Pe Likha Tujhe (Remix)"
+        title = "Kabhi Aayine Pe Likha Tujhe (Reprise)"
         extract.side_effect = [
             {"entries": [
                 {"id": "wrong", "title": title, "channel": "Other - Topic", "duration": 285},
@@ -281,14 +451,14 @@ class IndividualTrackSearchTest(unittest.TestCase):
                 {"id": "right", "title": title, "channel": "K.K. - Topic", "duration": 342},
             ]},
             {"track": title, "album": "Hate Story 2", "artists": ["Other"]},
-            {"track": "Another Song (Remix)", "album": "Hate Story 2", "artists": ["K.K."]},
+            {"track": "Another Song (Reprise)", "album": "Hate Story 2", "artists": ["K.K."]},
             {"track": title, "album": "Hate Story 2", "artists": ["K.K.", "Rashid Khan"]},
         ]
 
         tracks = find_individual_album_tracks("Hate Story 2", "2014")
 
         self.assertEqual(
-            tracks[0]["Kabhi Aayine (Remix)"]["ytb_link"], "https://www.youtube.com/watch?v=right"
+            tracks[0]["Kabhi Aayine (Reprise)"]["ytb_link"], "https://www.youtube.com/watch?v=right"
         )
 
 

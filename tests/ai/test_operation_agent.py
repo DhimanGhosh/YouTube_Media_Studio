@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import patch
 
 from youtube_audio_video_downloader.core.cancellation import CancellationToken
-from youtube_audio_video_downloader.gui.runtime.operations import execute_operation
+from youtube_audio_video_downloader.gui.runtime.operations import execute_operation, OperationSummary
 from youtube_audio_video_downloader.services.ai.ai_provider import AIResponse
 from youtube_audio_video_downloader.services.ai.operation_agent import (
     OPERATION_PREFLIGHT_TIMEOUT_SECONDS,
@@ -17,6 +17,27 @@ from youtube_audio_video_downloader.services.ai.operation_agent import (
 
 
 class OperationAgentTest(unittest.TestCase):
+    def test_resolved_album_starts_handler_without_model_preflight(self) -> None:
+        params = {"agentic_model": "global:test", "ai_enabled": True, "input_data": {
+            "Album": {"tracks": [{"Song": {"ytb_link": "https://youtu.be/abcdefghijk"}},
+                                   {"Missing": {"ytb_link": "", "download": "false"}}]},
+        }}
+        with patch("youtube_audio_video_downloader.gui.runtime.operations.preflight_operation") as preflight, patch(
+            "youtube_audio_video_downloader.gui.runtime.operations._run_album", return_value=OperationSummary("album"),
+        ) as handler:
+            execute_operation("album", params, CancellationToken())
+        preflight.assert_not_called()
+        handler.assert_called_once()
+        self.assertIs(handler.call_args.args[0], params)
+
+    def test_unresolved_album_keeps_advisory_preflight(self) -> None:
+        with patch("youtube_audio_video_downloader.gui.runtime.operations.preflight_operation") as preflight, patch(
+            "youtube_audio_video_downloader.gui.runtime.operations._run_album", return_value=OperationSummary("album"),
+        ):
+            execute_operation("album", {"input_data": {"Album": {"tracks": [{"Song": {"ytb_link": ""}}]}}},
+                              CancellationToken())
+        preflight.assert_called_once()
+
     def test_uses_global_model_and_preserves_explicit_references_verbatim(self) -> None:
         captured: list[dict[str, object]] = []
 

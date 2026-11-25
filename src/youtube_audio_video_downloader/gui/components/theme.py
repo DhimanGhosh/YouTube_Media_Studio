@@ -481,21 +481,29 @@ QToolTip {
 """
 
 
-def crystal_style(crystalness: int = 65) -> str:
+def crystal_style(crystalness: int = 65, *, native_glass: bool = False) -> str:
     """Return the base theme with a live, intensity-adjustable glass treatment."""
 
     level = max(0, min(100, int(crystalness)))
-    shell_alpha = round(242 - level * 0.9)
+    # Qt interprets alpha=1 as 100%, so use 2/255 as the clear end point.
+    shell_alpha = round(255 - level * (2.53 if native_glass else 1.03))
     card_alpha = round(7 + level * 0.19)
     border_alpha = round(18 + level * 0.72)
     sidebar_alpha = round(8 + level * 0.12)
     highlight_alpha = round(18 + level * 0.42)
     return APP_STYLE + f"""
+QMainWindow {{ background: {'transparent' if native_glass else '#070b1b'}; }}
+QWidget#pageContent {{ background: transparent; }}
+QDialog#settingsDialog {{ background: transparent; }}
+QWidget#settingsSurface {{ background: rgba(9, 14, 29, {shell_alpha}); }}
+QMenuBar {{ background: rgba(9, 14, 29, {shell_alpha}); border: none; }}
+QMenuBar::item {{ background: transparent; padding: 4px 8px; }}
+QMenuBar::item:selected, QMenuBar::item:pressed {{ background: rgba(104, 133, 255, 95); }}
 QWidget#windowShell {{
     background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-        stop:0 rgba(20, 29, 55, {min(245, shell_alpha + 8)}),
+        stop:0 rgba(20, 29, 55, {min(255, shell_alpha + round(level * 0.08))}),
         stop:0.45 rgba(9, 14, 29, {shell_alpha}),
-        stop:1 rgba(8, 22, 34, {max(120, shell_alpha - 8)}));
+        stop:1 rgba(8, 22, 34, {max(2 if native_glass else 120, shell_alpha - round(level * 0.08))}));
     border-color: rgba(220, 230, 255, {border_alpha});
 }}
 QWidget#sidebar {{

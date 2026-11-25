@@ -51,7 +51,7 @@ def _is_unknown_artist(value: str) -> bool:
 
 
 def suggest_artist_renames(values: Iterable[str]) -> list[ArtistRenameSuggestion]:
-    """Suggest aliases plus an unambiguous longer name present in the library."""
+    """Suggest aliases, consistent casing, and unambiguous longer library names."""
 
     per_track = [split_artist_credits(value) for value in values]
     counts = Counter(part for parts in per_track for part in set(parts))
@@ -60,6 +60,22 @@ def suggest_artist_renames(values: Iterable[str]) -> list[ArtistRenameSuggestion
         for source in counts
         if not _is_unknown_artist(source)
     }
+    # The formatter preserves stage-name casing and acronyms. Two spellings can
+    # therefore both be well formatted while still naming the same artist.
+    usage = Counter()
+    spellings: dict[str, set[str]] = {}
+    for source, normalized in formatted.items():
+        usage[normalized] += counts[source]
+        spellings.setdefault(normalized.casefold(), set()).add(normalized)
+    canonical = {
+        key: min(names, key=lambda name: (
+            -usage[name],
+            -sum(word.isalpha() and word.isupper() and len(word) <= 4 for word in name.split()),
+            sum(character.isupper() for character in name), name,
+        ))
+        for key, names in spellings.items()
+    }
+    formatted = {source: canonical[name.casefold()] for source, name in formatted.items()}
     candidates = set(formatted.values())
     for source, normalized in tuple(formatted.items()):
         source_tokens = normalized.casefold().split()
@@ -95,7 +111,7 @@ def suggest_artist_renames(values: Iterable[str]) -> list[ArtistRenameSuggestion
             suggestions.append(ArtistRenameSuggestion(source, contextual, tracks))
     return sorted(
         suggestions,
-        key=lambda suggestion: suggestion.detected.casefold(),
+        key=lambda suggestion: (suggestion.detected.casefold(), suggestion.detected),
     )
 
 
@@ -121,15 +137,23 @@ def apply_artist_replacements(value: str, replacements: Mapping[str, str]) -> st
     value_key = _credit_key(value)
     if value_key in exact_credits:
         return format_artist_names(exact_credits[value_key])
-    lookup = {
-        source.casefold(): target.strip()
+    exact_names = {
+        source.strip(): target.strip()
         for source, target in replacements.items()
         if len(_credit_key(source)) == 1
     }
+    folded_targets: dict[str, set[str]] = {}
+    for source, target in exact_names.items():
+        folded_targets.setdefault(source.casefold(), set()).add(target)
+    lookup = {source: next(iter(targets)) for source, targets in folded_targets.items() if len(targets) == 1}
     resolved: list[str] = []
     seen: set[str] = set()
     for artist in split_artist_credits(value):
-        canonical = format_artist_names(lookup.get(artist.casefold(), artist))
+        replacement = exact_names.get(artist, lookup.get(artist.casefold()))
+        canonical = (
+            artist if replacement is None and _is_unknown_artist(artist)
+            else format_artist_names(replacement if replacement is not None else artist)
+        )
         key = canonical.casefold()
         if canonical and key not in seen:
             resolved.append(canonical)
